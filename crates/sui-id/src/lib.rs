@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod assets;
+pub mod backup;
 pub mod config;
 pub mod errors;
 pub mod gc;

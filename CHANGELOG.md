@@ -5,6 +5,40 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-25
+
+### Added
+- **Backup and restore subcommands.**
+  - `sui-id backup --to PATH` produces a tarball containing a
+    SQLite-consistent snapshot (via `VACUUM INTO`, safe to take while
+    the server is running) and a verbatim copy of the master key file.
+    The tarball is created with mode `0600` because it carries the key.
+  - `sui-id restore --from PATH` is the inverse operation. By default it
+    refuses to overwrite an existing database or key file at the
+    destination paths; pass `--force` to override.
+  - Both subcommands respect `--config PATH` for the storage paths and
+    are documented in `--help`.
+  - Backup uses an in-house POSIX ustar writer/reader rather than
+    pulling in the `tar` crate; the audit surface stays small.
+- **Threat model documentation** (`docs/threat-model.md`). Spells out
+  the adversaries sui-id plans for (network attacker on path or
+  intra-host, stolen DB file, online password guessing, CSRF, open
+  redirect, JWT confusion, replay-after-revocation), the adversaries it
+  does not (host-root, side-channels, phishing, RP compromise), and the
+  assumptions an operator must uphold.
+- README now has a `## Documentation` section linking to the operator
+  guide, integrator guide, threat model, and publishing notes.
+- 4 additional tests: 3 backup/restore unit tests in `sui_id::backup`
+  and 1 end-to-end test that round-trips a real database with users and
+  clients through `backup` → `restore` → re-open and verifies row
+  counts.
+
+### Fixed
+- CLI argument parsing now correctly handles flag values whose contents
+  start with `/` or otherwise resemble a positional argument (e.g.
+  `--config /tmp/x.toml`). The earlier draft of the subcommand
+  dispatcher misinterpreted the path as the subcommand.
+
 ## [0.2.0] - 2026-04-25
 
 ### Added

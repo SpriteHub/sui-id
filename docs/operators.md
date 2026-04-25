@@ -85,22 +85,31 @@ same way you would treat a TLS private key.
 
 ## Backup and restore
 
-A working backup contains two files:
-
-- The SQLite database (whatever you set as `db_path`).
-- The master key file (whatever you set as `key_file`).
-
-To take a consistent backup while sui-id is running, use SQLite's `.backup`
-command on the database, then copy the key file separately:
+A working backup contains two files: the SQLite database and the master
+key. sui-id ships a subcommand that bundles both into a single tarball
+with restrictive permissions:
 
 ```bash
-sqlite3 /var/lib/sui-id/sui-id.sqlite ".backup '/tmp/backup.sqlite'"
-cp /var/lib/sui-id/sui-id.key /tmp/backup.key
-chmod 0600 /tmp/backup.sqlite /tmp/backup.key
+sui-id backup --to /var/backups/sui-id-$(date +%F).tar --config /etc/sui-id/sui-id.toml
 ```
 
-Restore by stopping sui-id, putting both files back at their configured
-paths, and starting sui-id again.
+The output file is created with mode `0600`. The SQLite snapshot is
+produced via `VACUUM INTO`, which is safe to run while sui-id is serving
+traffic — no need to stop the daemon for backups.
+
+To restore, point `sui-id restore` at the tarball:
+
+```bash
+sui-id restore --from /var/backups/sui-id-2026-04-25.tar --config /etc/sui-id/sui-id.toml
+```
+
+By default `restore` refuses to overwrite an existing database or key
+file at the destination paths. Pass `--force` if you really mean it
+(typically only when recovering onto a fresh host).
+
+> **Be careful where the tarball ends up.** It contains the master key.
+> Anyone who can read the archive can decrypt the SQLite columns inside
+> it. Treat the backup the same way you treat the key file itself.
 
 ## Reverse proxying
 
@@ -168,3 +177,11 @@ WantedBy=multi-user.target
 For now, sui-id is pre-release: take a backup, replace the binary, and
 restart. If a release ever requires a destructive migration, the
 `CHANGELOG.md` entry will say so explicitly.
+
+## Further reading
+
+- [`docs/threat-model.md`](threat-model.md) describes what sui-id defends
+  against, what it does not, and what assumptions an operator must
+  uphold for the design to work.
+- [`docs/integrators.md`](integrators.md) is the corresponding guide for
+  developers integrating an application against a sui-id instance.

@@ -166,3 +166,11 @@ exposing the underlying cause to the caller.
 
 If you need any of those today, you may need a different IdP. Several are on
 the [roadmap](../ROADMAP.md).
+
+## Further reading
+
+- [`docs/operators.md`](operators.md) is the corresponding guide for
+  someone deploying sui-id.
+- [`docs/threat-model.md`](threat-model.md) describes the threats the
+  protocol surface defends against and what assumptions you may safely
+  make about a properly-configured sui-id deployment.

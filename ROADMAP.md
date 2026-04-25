@@ -5,10 +5,8 @@ a promise.
 
 ## Near term
 
-- **Documentation pass.** Expand `docs/` with an operator's guide, integrator
-  guide, and threat model.
-- **Backup helper.** A subcommand that dumps the SQLite file and the master
-  key into a tarball with proper permissions, plus a `--restore` counterpart.
+(None outstanding — all near-term items shipped in v0.3.0. Next batch
+draws from medium-term.)
 
 ## Medium term
 
@@ -20,6 +18,9 @@ a promise.
 - **Per-client `post_logout_redirect_uris`.** Today logout reuses the
   authorization `redirect_uris` set; a real deployment may want a separate
   list. Adding it is a schema migration.
+- **CSRF tokens on admin forms.** `SameSite=Lax` is sufficient against the
+  classic attack today, but a synchronizer token would keep the property
+  intact under future routing changes.
 - **MFA.** TOTP first; WebAuthn second. Both are big enough to be their own
   releases.
 
@@ -42,6 +43,8 @@ a promise.
 - OpenID Connect RP-Initiated Logout 1.0 (`/oauth2/logout`).
 - `server.trusted_proxies` opt-in for `X-Forwarded-For`-derived client IP.
 - Annotated `sui-id.example.toml` configuration template.
+- `sui-id backup` / `sui-id restore` subcommands with hot SQLite snapshot.
+- `docs/threat-model.md` and a documentation index in the README.
 
 ## Explicitly **not** on the roadmap
 

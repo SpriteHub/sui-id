@@ -128,6 +128,19 @@ crates/
 docs/               Operator and integrator documentation
 ```
 
+## Documentation
+
+- [`docs/operators.md`](docs/operators.md) — installing, configuring,
+  reverse-proxying, backup, and operating sui-id.
+- [`docs/integrators.md`](docs/integrators.md) — pointing an application
+  at a sui-id instance: discovery, registration, the OIDC flow, and the
+  shape of the tokens.
+- [`docs/threat-model.md`](docs/threat-model.md) — what sui-id defends
+  against, what it does not, and what assumptions the operator must
+  uphold for the design to work.
+- [`PUBLISHING.md`](PUBLISHING.md) — how the maintainers publish to
+  crates.io. Not relevant to end users.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) for the full text and
