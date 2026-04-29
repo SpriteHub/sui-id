@@ -12,6 +12,11 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClientRow> {
     let redirect_uris: Vec<String> = serde_json::from_str(&uris_json).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
     })?;
+    let allowed_scopes: String = row.get(7)?;
+    let post_logout_json: String = row.get(8)?;
+    let post_logout_redirect_uris: Vec<String> = serde_json::from_str(&post_logout_json).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e))
+    })?;
     Ok(ClientRow {
         id: row
             .get::<_, String>(0)?
@@ -21,21 +26,31 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClientRow> {
         confidential: row.get::<_, i64>(2)? != 0,
         secret_hash: row.get(3)?,
         redirect_uris,
+        allowed_scopes,
+        post_logout_redirect_uris,
         is_disabled: row.get::<_, i64>(5)? != 0,
         is_deleted: row.get::<_, i64>(6)? != 0,
-        created_at: row.get::<_, DateTime<Utc>>(7)?,
-        updated_at: row.get::<_, DateTime<Utc>>(8)?,
+        created_at: row.get::<_, DateTime<Utc>>(9)?,
+        updated_at: row.get::<_, DateTime<Utc>>(10)?,
     })
 }
 
-const SELECT: &str = "SELECT id, name, confidential, secret_hash, redirect_uris, is_disabled, is_deleted, created_at, updated_at FROM clients";
+// Column order in SELECT: id, name, confidential, secret_hash, redirect_uris,
+//                         is_disabled, is_deleted, allowed_scopes,
+//                         post_logout_redirect_uris, created_at, updated_at.
+const SELECT: &str = "SELECT id, name, confidential, secret_hash, redirect_uris, \
+                      is_disabled, is_deleted, allowed_scopes, \
+                      post_logout_redirect_uris, created_at, updated_at FROM clients";
 
 pub fn create(db: &Database, c: &ClientRow) -> StoreResult<()> {
     let uris = serde_json::to_string(&c.redirect_uris)?;
+    let post_logout = serde_json::to_string(&c.post_logout_redirect_uris)?;
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO clients(id, name, confidential, secret_hash, redirect_uris, is_disabled, is_deleted, created_at, updated_at) \
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO clients(id, name, confidential, secret_hash, redirect_uris, \
+                                 is_disabled, is_deleted, allowed_scopes, \
+                                 post_logout_redirect_uris, created_at, updated_at) \
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 c.id.to_string(),
                 c.name,
@@ -44,6 +59,8 @@ pub fn create(db: &Database, c: &ClientRow) -> StoreResult<()> {
                 uris,
                 c.is_disabled as i64,
                 c.is_deleted as i64,
+                c.allowed_scopes,
+                post_logout,
                 c.created_at,
                 c.updated_at,
             ],
@@ -99,6 +116,39 @@ pub fn update_basic(
             "UPDATE clients SET name = ?1, redirect_uris = ?2, updated_at = ?3 WHERE id = ?4",
             params![new_name, uris_json, Utc::now(), id.to_string()],
         )?;
+        Ok(())
+    })
+}
+
+/// Replace the `allowed_scopes` policy for a client.
+pub fn set_allowed_scopes(db: &Database, id: ClientId, scopes: &str) -> StoreResult<()> {
+    db.with_conn(|conn| {
+        let n = conn.execute(
+            "UPDATE clients SET allowed_scopes = ?1, updated_at = ?2 WHERE id = ?3",
+            params![scopes, Utc::now(), id.to_string()],
+        )?;
+        if n == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
+    })
+}
+
+/// Replace the `post_logout_redirect_uris` list for a client.
+pub fn set_post_logout_redirect_uris(
+    db: &Database,
+    id: ClientId,
+    uris: &[String],
+) -> StoreResult<()> {
+    let json = serde_json::to_string(uris)?;
+    db.with_conn(|conn| {
+        let n = conn.execute(
+            "UPDATE clients SET post_logout_redirect_uris = ?1, updated_at = ?2 WHERE id = ?3",
+            params![json, Utc::now(), id.to_string()],
+        )?;
+        if n == 0 {
+            return Err(StoreError::NotFound);
+        }
         Ok(())
     })
 }

@@ -425,10 +425,34 @@ pub async fn logout(
     }
 
     // Validate the post_logout_redirect_uri against the hinted client.
-    let redirect_target = match (q.post_logout_redirect_uri.as_deref(), hinted_client.or_else(|| q.client_id.as_deref().and_then(|s| s.parse().ok()))) {
+    //
+    // Resolution order:
+    //   1. Match against the client's own `post_logout_redirect_uris`
+    //      (added in v0.6.0 via migration 0002). This is the standards-
+    //      blessed list: an RP that registered logout URIs explicitly
+    //      should only receive logout redirects to those URIs.
+    //   2. If the client has *no* logout URIs registered, fall back to
+    //      its `redirect_uris` for backwards compatibility with clients
+    //      that pre-date this feature. We log a deprecation note when
+    //      the fallback is taken.
+    let redirect_target = match (
+        q.post_logout_redirect_uri.as_deref(),
+        hinted_client.or_else(|| q.client_id.as_deref().and_then(|s| s.parse().ok())),
+    ) {
         (Some(uri), Some(cid)) => match sui_id_store::repos::clients::get(&app.db, cid) {
             Ok(client) if !client.is_disabled && !client.is_deleted => {
-                if client.redirect_uris.iter().any(|u| u == uri) {
+                if !client.post_logout_redirect_uris.is_empty() {
+                    if client.post_logout_redirect_uris.iter().any(|u| u == uri) {
+                        Some(uri.to_owned())
+                    } else {
+                        None
+                    }
+                } else if client.redirect_uris.iter().any(|u| u == uri) {
+                    tracing::warn!(
+                        client_id = %cid,
+                        "logout: falling back to redirect_uris for post_logout_redirect_uri \
+                         match (deprecated; register post_logout_redirect_uris on the client)"
+                    );
                     Some(uri.to_owned())
                 } else {
                     None

@@ -35,6 +35,15 @@ pub struct ClientRow {
     pub confidential: bool,
     pub secret_hash: Option<String>,
     pub redirect_uris: Vec<String>,
+    /// Space-separated list of permitted scope values. Empty string means
+    /// "no policy configured" — interpreted as "permit any scope" for
+    /// backwards compatibility with rows created before migration 0002.
+    pub allowed_scopes: String,
+    /// Logout return URIs registered for this client. Independent of
+    /// `redirect_uris`. An empty list triggers a fall-back to
+    /// `redirect_uris` for backwards compatibility (with a deprecation
+    /// log line) — see `sui_id_core::session::resolve_post_logout_uri`.
+    pub post_logout_redirect_uris: Vec<String>,
     pub is_disabled: bool,
     pub is_deleted: bool,
     pub created_at: DateTime<Utc>,

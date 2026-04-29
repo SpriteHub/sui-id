@@ -174,28 +174,55 @@ pub struct CreatedClient {
     pub generated_secret: Option<String>,
 }
 
+/// Input to `create_client`. Supplied as a single struct so the call site
+/// reads as a labelled record rather than a long positional list.
+pub struct CreateClientSpec<'a> {
+    pub name: &'a str,
+    pub redirect_uris: &'a [String],
+    pub confidential: bool,
+    /// Space-separated list of allowed scopes. Empty → permit any scope.
+    pub allowed_scopes: &'a str,
+    /// RP-initiated logout return URIs. Empty → fall back to
+    /// `redirect_uris` at logout time (with a deprecation warning logged).
+    pub post_logout_redirect_uris: &'a [String],
+}
+
 pub fn create_client(
     db: &Database,
     clock: &SharedClock,
     actor: UserId,
-    name: &str,
-    redirect_uris: &[String],
-    confidential: bool,
+    spec: CreateClientSpec<'_>,
 ) -> CoreResult<CreatedClient> {
     require_admin(db, actor)?;
-    if name.trim().is_empty() {
+    if spec.name.trim().is_empty() {
         return Err(CoreError::BadRequest("client name must not be empty".into()));
     }
-    if redirect_uris.is_empty() {
+    if spec.redirect_uris.is_empty() {
         return Err(CoreError::BadRequest(
             "at least one redirect_uri must be provided".into(),
         ));
     }
-    for uri in redirect_uris {
+    for uri in spec.redirect_uris {
         validate_redirect_uri(uri)?;
     }
+    for uri in spec.post_logout_redirect_uris {
+        validate_redirect_uri(uri)?;
+    }
+    // Empty scope policy is allowed (means "permit any") — but if a list
+    // is given, sanity-check that scope tokens look reasonable. RFC 6749
+    // §3.3 restricts scope tokens to a printable subset.
+    for tok in spec.allowed_scopes.split_whitespace() {
+        if !tok
+            .chars()
+            .all(|c| c == '!' || ('#'..='[').contains(&c) || (']'..='~').contains(&c))
+        {
+            return Err(CoreError::BadRequest(format!(
+                "invalid character in scope token {tok:?}"
+            )));
+        }
+    }
 
-    let secret_plain = if confidential {
+    let secret_plain = if spec.confidential {
         Some(tokens::random_token(32))
     } else {
         None
@@ -208,10 +235,12 @@ pub fn create_client(
     let now = clock.now();
     let row = ClientRow {
         id: ClientId::new(),
-        name: name.to_owned(),
-        confidential,
+        name: spec.name.to_owned(),
+        confidential: spec.confidential,
         secret_hash,
-        redirect_uris: redirect_uris.to_vec(),
+        redirect_uris: spec.redirect_uris.to_vec(),
+        allowed_scopes: spec.allowed_scopes.to_owned(),
+        post_logout_redirect_uris: spec.post_logout_redirect_uris.to_vec(),
         is_disabled: false,
         is_deleted: false,
         created_at: now,
@@ -223,6 +252,56 @@ pub fn create_client(
         row,
         generated_secret: secret_plain,
     })
+}
+
+/// Update the per-client scope policy. Empty string means "permit any".
+pub fn set_client_allowed_scopes(
+    db: &Database,
+    actor: UserId,
+    target: ClientId,
+    scopes: &str,
+) -> CoreResult<()> {
+    require_admin(db, actor)?;
+    for tok in scopes.split_whitespace() {
+        if !tok
+            .chars()
+            .all(|c| c == '!' || ('#'..='[').contains(&c) || (']'..='~').contains(&c))
+        {
+            return Err(CoreError::BadRequest(format!(
+                "invalid character in scope token {tok:?}"
+            )));
+        }
+    }
+    clients::set_allowed_scopes(db, target, scopes).map_err(|e| match e {
+        sui_id_store::StoreError::NotFound => CoreError::NotFound,
+        other => CoreError::from(other),
+    })?;
+    audit_ok(db, actor, "client.set_allowed_scopes", Some(target.to_string()));
+    Ok(())
+}
+
+/// Replace the `post_logout_redirect_uris` for a client.
+pub fn set_client_post_logout_redirect_uris(
+    db: &Database,
+    actor: UserId,
+    target: ClientId,
+    uris: &[String],
+) -> CoreResult<()> {
+    require_admin(db, actor)?;
+    for uri in uris {
+        validate_redirect_uri(uri)?;
+    }
+    clients::set_post_logout_redirect_uris(db, target, uris).map_err(|e| match e {
+        sui_id_store::StoreError::NotFound => CoreError::NotFound,
+        other => CoreError::from(other),
+    })?;
+    audit_ok(
+        db,
+        actor,
+        "client.set_post_logout_redirect_uris",
+        Some(target.to_string()),
+    );
+    Ok(())
 }
 
 pub fn list_clients(db: &Database, actor: UserId) -> CoreResult<Vec<ClientRow>> {

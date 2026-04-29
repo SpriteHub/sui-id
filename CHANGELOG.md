@@ -5,6 +5,78 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-04-26
+
+### Added — schema migration 0002
+
+The `clients` table gains two new columns:
+
+- `allowed_scopes TEXT NOT NULL DEFAULT ''` — space-separated list of
+  permitted scope tokens.
+- `post_logout_redirect_uris TEXT NOT NULL DEFAULT '[]'` — JSON array
+  of permitted RP-initiated logout return URIs.
+
+Existing rows from v0.5.0 and earlier come through the migration with
+both columns at their defaults (empty / `[]`). The application layer
+treats those defaults as "permit any" and "fall back to redirect_uris"
+respectively, so existing clients keep working unchanged.
+
+### Added — per-client scope policy
+
+- Authorization-endpoint scope checking. When a client has a non-empty
+  `allowed_scopes` policy, sui-id checks every requested scope token
+  against the policy and rejects requests that exceed it with
+  `invalid_scope` per RFC 6749 §5.2. An empty policy (the legacy
+  default) skips the check, preserving backwards compatibility.
+- The client-create form on the admin UI now exposes an "Allowed
+  scopes" input. The default value rendered into the form is
+  `openid profile`, but operators may type anything (including a
+  blank value, which means "permit any").
+- `core::admin::CreateClientSpec` struct replaces the previous
+  six-positional-argument `create_client` signature. Adds field-level
+  documentation and a single point of validation for scope-token
+  characters (RFC 6749 §3.3 printable subset).
+- New use cases: `core::admin::set_client_allowed_scopes` and
+  `core::admin::set_client_post_logout_redirect_uris` (the UI for
+  editing them post-creation will land in a follow-up release).
+- New repository operations: `clients::set_allowed_scopes` and
+  `clients::set_post_logout_redirect_uris`.
+- New audit-log actions: `client.set_allowed_scopes`,
+  `client.set_post_logout_redirect_uris`.
+
+### Added — per-client post_logout_redirect_uris
+
+- The RP-initiated logout endpoint (`/oauth2/logout`) now resolves a
+  supplied `post_logout_redirect_uri` against the client's own
+  `post_logout_redirect_uris` list first. When the list is non-empty,
+  unregistered URIs are rejected even if they happen to be valid
+  authorization `redirect_uris`.
+- Backwards compatibility: when the list is empty (the on-disk default
+  for clients created before migration 0002), sui-id falls back to
+  matching against `redirect_uris` exactly as v0.5.0 did, and emits a
+  deprecation warning to the structured log so operators can migrate.
+- The client-create form has a new "Post-logout redirect URIs" textarea
+  (one URI per line, optional).
+
+### Added — tests
+
+- 4 new end-to-end tests:
+  - `authorize_rejects_scope_outside_client_policy`
+  - `authorize_with_empty_policy_permits_any_scope`
+  - `logout_uses_post_logout_redirect_uris_when_registered`
+  - `logout_falls_back_to_redirect_uris_when_post_logout_list_empty`
+
+### Changed
+
+- `core::admin::create_client` signature changed to take a
+  `CreateClientSpec` struct. This is a breaking change to anyone
+  consuming `sui-id-core` directly; the binary itself is unaffected.
+- `ClientSummary` (in `sui-id-shared`) gains the two new fields with
+  `#[serde(default)]` so legacy serialised forms still deserialise.
+- The clients table on the admin UI grew "Allowed scopes" and
+  "Logout URIs" columns. The table is wider; consider reviewing if
+  you have unusual viewports.
+
 ## [0.5.0] - 2026-04-25
 
 ### Added

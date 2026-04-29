@@ -60,7 +60,7 @@ sui-id --config sui-id.toml
 If you'd rather build from source:
 
 ```bash
-git clone https://github.com/sui-id/sui-id && cd sui-id
+git clone https://github.com/nabbisen/sui-id && cd sui-id
 cargo build --release
 ./target/release/sui-id --print-sample-config > sui-id.toml
 ./target/release/sui-id --config sui-id.toml

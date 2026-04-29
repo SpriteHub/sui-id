@@ -276,6 +276,8 @@ pub async fn clients_get(
             id: r.id,
             name: r.name,
             redirect_uris: r.redirect_uris,
+            allowed_scopes: r.allowed_scopes,
+            post_logout_redirect_uris: r.post_logout_redirect_uris,
             confidential: r.confidential,
             is_disabled: r.is_disabled,
             is_deleted: r.is_deleted,
@@ -293,6 +295,10 @@ pub struct CreateClientForm {
     pub redirect_uris: String,
     #[serde(default)]
     pub confidential: Option<String>,
+    #[serde(default)]
+    pub allowed_scopes: String,
+    #[serde(default)]
+    pub post_logout_redirect_uris: String,
     #[serde(rename = "_csrf", default)]
     pub csrf: String,
 }
@@ -311,18 +317,38 @@ pub async fn clients_create(
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty())
         .collect();
+    let post_logout_uris: Vec<String> = form
+        .post_logout_redirect_uris
+        .lines()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .collect();
     let confidential = form
         .confidential
         .as_deref()
         .map(|v| matches!(v, "true" | "on" | "1"))
         .unwrap_or(true);
+    // Default policy: openid + profile if the operator left the field
+    // blank. Empty-after-trim is also accepted as "permit any" but only
+    // when the operator explicitly types whitespace; the form's default
+    // value is a sensible policy.
+    let raw_scopes = form.allowed_scopes.trim();
+    let allowed_scopes = if raw_scopes.is_empty() {
+        "openid profile"
+    } else {
+        raw_scopes
+    };
     let created = admin_uc::create_client(
         &app.db,
         &app.clock,
         admin_id,
-        form.name.trim(),
-        &uris,
-        confidential,
+        sui_id_core::admin::CreateClientSpec {
+            name: form.name.trim(),
+            redirect_uris: &uris,
+            confidential,
+            allowed_scopes,
+            post_logout_redirect_uris: &post_logout_uris,
+        },
     )
     .map_err(HttpError::html)?;
 
@@ -334,6 +360,8 @@ pub async fn clients_create(
             id: r.id,
             name: r.name,
             redirect_uris: r.redirect_uris,
+            allowed_scopes: r.allowed_scopes,
+            post_logout_redirect_uris: r.post_logout_redirect_uris,
             confidential: r.confidential,
             is_disabled: r.is_disabled,
             is_deleted: r.is_deleted,

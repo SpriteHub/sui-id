@@ -89,7 +89,31 @@ pub fn begin_authorization(db: &Database, params: AuthorizeParams) -> CoreResult
             description: "redirect_uri does not match a registered URI".into(),
         });
     }
+    enforce_scope_policy(&client.allowed_scopes, &params.scope)?;
     Ok(AcceptedAuthorize { params })
+}
+
+/// Check the requested scope string against the client's `allowed_scopes`
+/// policy. An empty policy is the legacy "permit any" mode (rows from
+/// before migration 0002) and skips the check. Otherwise the requested
+/// scope tokens must all appear in the policy. Returns `invalid_scope`
+/// per RFC 6749 §5.2 when a request exceeds the policy.
+fn enforce_scope_policy(allowed: &str, requested: &str) -> CoreResult<()> {
+    let allowed_trimmed = allowed.trim();
+    if allowed_trimmed.is_empty() {
+        return Ok(());
+    }
+    let allowed_set: std::collections::HashSet<&str> =
+        allowed_trimmed.split_whitespace().collect();
+    for tok in requested.split_whitespace() {
+        if !allowed_set.contains(tok) {
+            return Err(CoreError::Protocol {
+                code: ProtocolError::InvalidScope,
+                description: format!("scope {tok:?} is not permitted for this client"),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Outcome of [`complete_authorization`]: the URL to redirect the browser to.

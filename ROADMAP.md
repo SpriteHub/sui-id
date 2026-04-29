@@ -10,13 +10,13 @@ draws from medium-term.)
 
 ## Medium term
 
-- **Per-client scope policy.** Today every active client may request any
-  scope. Allow clients to declare a permitted scope set.
-- **Per-client `post_logout_redirect_uris`.** Today logout reuses the
-  authorization `redirect_uris` set; a real deployment may want a separate
-  list. Adding it is a schema migration.
 - **MFA.** TOTP first; WebAuthn second. Both are big enough to be their own
   releases.
+- **Editing existing clients.** v0.6.0 added scope-policy and
+  post-logout-URI fields at *create* time but not yet a UI for editing
+  them on existing clients. The use-case helpers
+  `set_client_allowed_scopes` and `set_client_post_logout_redirect_uris`
+  are in place; what's missing is a page to drive them.
 
 ## Longer term, less certain
 
@@ -41,6 +41,8 @@ draws from medium-term.)
 - `docs/threat-model.md` and a documentation index in the README.
 - Signing key rotation UI with a JWKS grace window.
 - CSRF tokens on every admin form (synchronizer-token + double-submit cookie).
+- Per-client scope policy enforced at `/oauth2/authorize`.
+- Per-client `post_logout_redirect_uris` (separate from `redirect_uris`).
 
 ## Explicitly **not** on the roadmap
 

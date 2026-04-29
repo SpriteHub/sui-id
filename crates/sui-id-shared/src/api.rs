@@ -107,6 +107,15 @@ pub struct ClientSummary {
     pub id: ClientId,
     pub name: String,
     pub redirect_uris: Vec<String>,
+    /// Space-separated list of permitted scopes. Empty string means
+    /// "no policy configured" — interpreted as "permit any scope" for
+    /// backwards compatibility with rows created before migration 0002.
+    #[serde(default)]
+    pub allowed_scopes: String,
+    /// RP-initiated logout return URIs. Empty list falls back to
+    /// `redirect_uris` at logout time (legacy compatibility).
+    #[serde(default)]
+    pub post_logout_redirect_uris: Vec<String>,
     pub confidential: bool,
     pub is_disabled: bool,
     pub is_deleted: bool,

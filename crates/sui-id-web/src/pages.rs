@@ -267,6 +267,17 @@ fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
     let delete_url = format!("/admin/clients/{id_str}/delete");
     let csrf_disable = csrf.clone();
     let csrf_delete = csrf.clone();
+    let scopes_display = if c.allowed_scopes.trim().is_empty() {
+        "(any)".to_string()
+    } else {
+        c.allowed_scopes.clone()
+    };
+    let logout_count = c.post_logout_redirect_uris.len();
+    let logout_display = if logout_count == 0 {
+        "(falls back to redirect_uris)".to_string()
+    } else {
+        format!("{logout_count} URI(s)")
+    };
 
     let actions = if is_deleted {
         view! { <td class="muted">"-"</td> }.into_any()
@@ -294,6 +305,8 @@ fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
             <td>{c.name}</td>
             <td><span class="code">{c.id.to_string()}</span></td>
             <td>{kind}</td>
+            <td><span class="code">{scopes_display}</span></td>
+            <td class="muted">{logout_display}</td>
             <td>{status}</td>
             {actions}
         </tr>
@@ -334,6 +347,10 @@ pub fn render_clients(
                     <input id="c-name" name="name" type="text" required=true />
                     <label for="c-uris">"Redirect URIs (one per line; https or http loopback)"</label>
                     <textarea id="c-uris" name="redirect_uris" required=true rows="3"></textarea>
+                    <label for="c-scopes">"Allowed scopes (space-separated; default: openid profile)"</label>
+                    <input id="c-scopes" name="allowed_scopes" type="text" value="openid profile" />
+                    <label for="c-logout">"Post-logout redirect URIs (one per line; optional)"</label>
+                    <textarea id="c-logout" name="post_logout_redirect_uris" rows="2"></textarea>
                     <label>
                         <input name="confidential" type="checkbox" value="true" checked=true />
                         " Confidential client (will receive a client secret)"
@@ -344,7 +361,15 @@ pub fn render_clients(
                 <h3>"Registered clients"</h3>
                 <table>
                     <thead>
-                        <tr><th>"Name"</th><th>"Client id"</th><th>"Type"</th><th>"Status"</th><th></th></tr>
+                        <tr>
+                            <th>"Name"</th>
+                            <th>"Client id"</th>
+                            <th>"Type"</th>
+                            <th>"Allowed scopes"</th>
+                            <th>"Logout URIs"</th>
+                            <th>"Status"</th>
+                            <th></th>
+                        </tr>
                     </thead>
                     <tbody>{rows}</tbody>
                 </table>
