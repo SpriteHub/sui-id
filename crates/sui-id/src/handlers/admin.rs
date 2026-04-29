@@ -5,7 +5,9 @@
 
 use crate::errors::HttpError;
 use crate::handlers::{
-    clear_session_cookie, session_cookie, AppStateExt, CurrentAdmin, CurrentUser, SESSION_COOKIE,
+    clear_pending_mfa_cookie, clear_pending_mfa_next_cookie, clear_session_cookie,
+    pending_mfa_cookie, pending_mfa_next_cookie, session_cookie, AppStateExt, CurrentAdmin,
+    CurrentUser, PENDING_MFA_COOKIE, PENDING_MFA_NEXT_COOKIE, SESSION_COOKIE,
 };
 use crate::state::AppState;
 use axum::extract::{Path, State};
@@ -74,8 +76,8 @@ pub async fn login_post(
         ip,
         crate::handlers::ErrorAs::Html,
     )?;
-    match session::login(&app.db, &app.clock, form.username.trim(), &form.password) {
-        Ok(row) => {
+    match session::login_with_mfa(&app.db, &app.clock, form.username.trim(), &form.password) {
+        Ok(session::LoginOutcome::SessionEstablished(row)) => {
             let cookie = session_cookie(row.id.to_string(), app.config.server.cookie_secure);
             let jar = jar.add(cookie);
             let target = if form.next.starts_with('/') {
@@ -84,6 +86,28 @@ pub async fn login_post(
                 "/admin".into()
             };
             Ok((jar, Redirect::to(&target)).into_response())
+        }
+        Ok(session::LoginOutcome::MfaRequired { pending }) => {
+            // Drop the user a short-lived cookie pointing at the
+            // pending row, and bounce them into the MFA challenge page.
+            let cookie = pending_mfa_cookie(
+                pending.id.to_string(),
+                app.config.server.cookie_secure,
+            );
+            let next_cookie = if !form.next.is_empty() {
+                Some(pending_mfa_next_cookie(
+                    form.next.clone(),
+                    app.config.server.cookie_secure,
+                ))
+            } else {
+                None
+            };
+            let jar = jar.add(cookie);
+            let jar = match next_cookie {
+                Some(c) => jar.add(c),
+                None => jar,
+            };
+            Ok((jar, Redirect::to("/admin/login/mfa")).into_response())
         }
         Err(_) => {
             let flash = Flash {
@@ -99,6 +123,109 @@ pub async fn login_post(
                 (StatusCode::UNAUTHORIZED, Html(render_login(Some(flash), next)))
                     .into_response(),
             )
+        }
+    }
+}
+
+pub async fn mfa_challenge_get(
+    state_ext: AppStateExt,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    // Caller must already have a pending-mfa cookie. We don't insist on
+    // validating the row here — the POST will reject if it's missing or
+    // expired — so a stale visit just shows a generic challenge form.
+    let _ = &app;
+    let token = crate::csrf::ensure_token(&jar);
+    let resp = Html(sui_id_web::render_mfa_challenge(None, token.clone())).into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MfaChallengeForm {
+    pub code: String,
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+}
+
+pub async fn mfa_challenge_post(
+    state_ext: AppStateExt,
+    crate::handlers::ClientIp(ip): crate::handlers::ClientIp,
+    jar: CookieJar,
+    Form(form): Form<MfaChallengeForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    // Same rate-limit bucket as password attempts: a user who is past
+    // the password step still uses a single login budget.
+    crate::handlers::enforce_rate_limit(
+        &app.limiters,
+        &app.clock,
+        crate::handlers::RateLimitKey::Login,
+        ip,
+        crate::handlers::ErrorAs::Html,
+    )?;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let pending_value = match jar.get(PENDING_MFA_COOKIE) {
+        Some(c) => c.value().to_owned(),
+        None => {
+            return Ok(Redirect::to("/admin/login").into_response());
+        }
+    };
+    let pending_id = match pending_value.parse::<sui_id_shared::ids::PendingMfaId>() {
+        Ok(id) => id,
+        Err(_) => return Ok(Redirect::to("/admin/login").into_response()),
+    };
+    match sui_id_core::mfa::verify_pending(&app.db, &app.clock, pending_id, &form.code) {
+        Ok(session) => {
+            let cookie =
+                session_cookie(session.id.to_string(), app.config.server.cookie_secure);
+            // Compose the redirect target from the optional next cookie.
+            let next_target = jar
+                .get(PENDING_MFA_NEXT_COOKIE)
+                .map(|c| c.value().to_owned())
+                .filter(|s| s.starts_with('/'))
+                .unwrap_or_else(|| "/admin".into());
+            // Audit the MFA success.
+            let _ = sui_id_store::repos::audit::append(
+                &app.db,
+                &sui_id_store::models::AuditLogRow {
+                    at: app.clock.now(),
+                    actor: Some(session.user_id),
+                    action: "auth.mfa.success".into(),
+                    target: Some(session.user_id.to_string()),
+                    result: "ok".into(),
+                    note: None,
+                },
+            );
+            let jar = jar
+                .add(cookie)
+                .add(clear_pending_mfa_cookie(app.config.server.cookie_secure))
+                .add(clear_pending_mfa_next_cookie(app.config.server.cookie_secure));
+            Ok((jar, Redirect::to(&next_target)).into_response())
+        }
+        Err(_) => {
+            let flash = Flash {
+                kind: FlashKind::Error,
+                text: "Verification failed. Try again, or use a recovery code.".into(),
+            };
+            let _ = sui_id_store::repos::audit::append(
+                &app.db,
+                &sui_id_store::models::AuditLogRow {
+                    at: app.clock.now(),
+                    actor: None,
+                    action: "auth.mfa.failure".into(),
+                    target: None,
+                    result: "denied".into(),
+                    note: None,
+                },
+            );
+            let token = crate::csrf::ensure_token(&jar);
+            let resp = (
+                StatusCode::UNAUTHORIZED,
+                Html(sui_id_web::render_mfa_challenge(Some(flash), token.clone())),
+            )
+                .into_response();
+            Ok(with_csrf_cookie(resp, &app, &token))
         }
     }
 }
@@ -484,7 +611,197 @@ pub async fn signing_keys_delete(
     Ok(Redirect::to("/admin/signing-keys").into_response())
 }
 
-// ---------- silence dead-code warnings for unused imports ----------
+// ---------- profile / MFA enrolment ----------
+
+pub async fn profile_get(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let mfa_enabled = sui_id_core::mfa::is_mfa_enabled(&app.db, user_id).map_err(HttpError::html)?;
+    let token = crate::csrf::ensure_token(&jar);
+    let resp = Html(sui_id_web::render_profile(
+        sui_id_web::ProfileData {
+            username: user.username,
+            mfa_enabled,
+            fresh_recovery_codes: None,
+        },
+        None,
+        token.clone(),
+    ))
+    .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+pub async fn profile_mfa_enroll_start(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Form(form): Form<crate::handlers::admin::CsrfOnlyForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let ticket = sui_id_core::mfa::start_enrollment(
+        &app.db,
+        app.issuer(),
+        user_id,
+        &user.username,
+    )
+    .map_err(HttpError::html)?;
+
+    // Render QR as SVG via the qrcode crate.
+    let qr_svg = render_qr_svg(&ticket.otpauth_uri);
+    let secret_b32 = sui_id_core::totp::base32_encode(&ticket.secret);
+    let otpauth_uri = ticket.otpauth_uri;
+    // The raw secret bytes drop with `ticket` here. sui_id_core::mfa::
+    // start_enrollment keeps no caller-visible copy beyond what it
+    // returns in the ticket.
+    drop(ticket.secret);
+
+    let token = crate::csrf::ensure_token(&jar);
+    let resp = Html(sui_id_web::render_mfa_setup(
+        sui_id_web::MfaSetupData {
+            otpauth_uri,
+            qr_svg,
+            secret_b32,
+        },
+        None,
+        token.clone(),
+    ))
+    .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MfaConfirmForm {
+    pub code: String,
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+}
+
+pub async fn profile_mfa_enroll_confirm(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Form(form): Form<MfaConfirmForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let code: u32 = form
+        .code
+        .trim()
+        .parse()
+        .map_err(|_| HttpError::html(CoreError::BadRequest("verification code must be 6 digits".into())))?;
+    let codes = sui_id_core::mfa::confirm_enrollment(&app.db, &app.clock, user_id, code)
+        .map_err(HttpError::html)?;
+    let _ = sui_id_store::repos::audit::append(
+        &app.db,
+        &sui_id_store::models::AuditLogRow {
+            at: app.clock.now(),
+            actor: Some(user_id),
+            action: "mfa.enable".into(),
+            target: Some(user_id.to_string()),
+            result: "ok".into(),
+            note: None,
+        },
+    );
+    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let token = crate::csrf::ensure_token(&jar);
+    let resp = Html(sui_id_web::render_profile(
+        sui_id_web::ProfileData {
+            username: user.username,
+            mfa_enabled: true,
+            fresh_recovery_codes: Some(codes),
+        },
+        Some(Flash {
+            kind: FlashKind::Info,
+            text: "Two-factor authentication is now enabled.".into(),
+        }),
+        token.clone(),
+    ))
+    .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+pub async fn profile_mfa_disable(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Form(form): Form<crate::handlers::admin::CsrfOnlyForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    sui_id_core::mfa::disable(&app.db, user_id).map_err(HttpError::html)?;
+    let _ = sui_id_store::repos::audit::append(
+        &app.db,
+        &sui_id_store::models::AuditLogRow {
+            at: app.clock.now(),
+            actor: Some(user_id),
+            action: "mfa.disable".into(),
+            target: Some(user_id.to_string()),
+            result: "ok".into(),
+            note: None,
+        },
+    );
+    Ok(Redirect::to("/admin/profile").into_response())
+}
+
+pub async fn profile_mfa_regenerate_recovery(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Form(form): Form<crate::handlers::admin::CsrfOnlyForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let codes = sui_id_core::mfa::regenerate_recovery_codes(&app.db, user_id)
+        .map_err(HttpError::html)?;
+    let _ = sui_id_store::repos::audit::append(
+        &app.db,
+        &sui_id_store::models::AuditLogRow {
+            at: app.clock.now(),
+            actor: Some(user_id),
+            action: "mfa.recovery_codes_regenerate".into(),
+            target: Some(user_id.to_string()),
+            result: "ok".into(),
+            note: None,
+        },
+    );
+    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let token = crate::csrf::ensure_token(&jar);
+    let resp = Html(sui_id_web::render_profile(
+        sui_id_web::ProfileData {
+            username: user.username,
+            mfa_enabled: true,
+            fresh_recovery_codes: Some(codes),
+        },
+        Some(Flash {
+            kind: FlashKind::Info,
+            text: "Recovery codes regenerated. Save the new ones - the old ones no longer work.".into(),
+        }),
+        token.clone(),
+    ))
+    .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+fn render_qr_svg(uri: &str) -> String {
+    use qrcode::render::svg;
+    use qrcode::QrCode;
+    match QrCode::new(uri.as_bytes()) {
+        Ok(code) => code
+            .render::<svg::Color>()
+            .min_dimensions(220, 220)
+            .quiet_zone(true)
+            .build(),
+        Err(_) => format!(
+            "<p class=\"muted\">QR rendering failed; use the secret key below instead.</p>"
+        ),
+    }
+}
 
 #[allow(dead_code)]
 fn _silence_state(_: &CurrentUser) {}

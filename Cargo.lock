@@ -1797,6 +1797,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+
+[[package]]
 name = "quote"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2205,6 +2211,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2310,7 +2327,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "sui-id"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2324,6 +2341,7 @@ dependencies = [
  "hyper",
  "include_dir",
  "percent-encoding",
+ "qrcode",
  "rand",
  "rand_core",
  "rusqlite",
@@ -2351,7 +2369,7 @@ dependencies = [
 
 [[package]]
 name = "sui-id-core"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "argon2",
  "base64ct",
@@ -2363,6 +2381,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "sha1",
  "sha2",
  "subtle",
  "sui-id-shared",
@@ -2377,7 +2396,7 @@ dependencies = [
 
 [[package]]
 name = "sui-id-shared"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "serde",
@@ -2388,7 +2407,7 @@ dependencies = [
 
 [[package]]
 name = "sui-id-store"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "base64ct",
  "chacha20poly1305",
@@ -2410,7 +2429,7 @@ dependencies = [
 
 [[package]]
 name = "sui-id-web"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "leptos",

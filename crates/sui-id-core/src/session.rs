@@ -49,11 +49,40 @@ fn record_login_success(db: &Database, clock: &SharedClock, user_id: UserId) {
 }
 
 pub fn login(db: &Database, clock: &SharedClock, username: &str, password: &str) -> CoreResult<SessionRow> {
+    match login_with_mfa(db, clock, username, password)? {
+        LoginOutcome::SessionEstablished(row) => Ok(row),
+        LoginOutcome::MfaRequired { .. } => Err(CoreError::Unauthenticated),
+    }
+}
+
+/// Outcome of a password-only login attempt.
+///
+/// `SessionEstablished` is the normal path: password OK and the user does
+/// not have MFA enrolled, so a session is issued immediately.
+///
+/// `MfaRequired` is returned when the user has TOTP enabled. The bin
+/// layer is expected to set a short-lived cookie pointing at the
+/// `pending` row and redirect to the MFA challenge page; only after the
+/// user submits a valid code does a real session get created (via
+/// `crate::mfa::verify_pending`).
+pub enum LoginOutcome {
+    SessionEstablished(SessionRow),
+    MfaRequired {
+        pending: sui_id_store::models::LoginPendingMfaRow,
+    },
+}
+
+/// Password authentication that respects per-user MFA enrolment.
+pub fn login_with_mfa(
+    db: &Database,
+    clock: &SharedClock,
+    username: &str,
+    password: &str,
+) -> CoreResult<LoginOutcome> {
     let user = match users::find_by_username(db, username) {
         Ok(u) => u,
         Err(sui_id_store::StoreError::NotFound) => {
-            // Run a dummy verify to keep response time roughly constant
-            // regardless of whether the username existed.
+            // Constant-time-ish dummy verify regardless of branch.
             let _ = verify_password(
                 password,
                 "$argon2id$v=19$m=65536,t=2,p=1$c2FsdHNhbHRzYWx0$ZHVtbXloYXNoZHVtbXloYXNoZHVtbXloYXNoZHVtbQ",
@@ -79,6 +108,25 @@ pub fn login(db: &Database, clock: &SharedClock, username: &str, password: &str)
         return Err(e);
     }
 
+    // Password OK. Branch on MFA enrolment.
+    if crate::mfa::is_mfa_enabled(db, user.id)? {
+        let pending = crate::mfa::issue_pending_mfa(db, clock, user.id)?;
+        // Audit success of the *password* step. The MFA step issues its
+        // own audit entry on completion.
+        let _ = audit::append(
+            db,
+            &AuditLogRow {
+                at: clock.now(),
+                actor: Some(user.id),
+                action: "auth.login.password_ok_mfa_required".into(),
+                target: Some(user.id.to_string()),
+                result: "ok".into(),
+                note: None,
+            },
+        );
+        return Ok(LoginOutcome::MfaRequired { pending });
+    }
+
     let now = clock.now();
     let row = SessionRow {
         id: SessionId::new(),
@@ -89,7 +137,7 @@ pub fn login(db: &Database, clock: &SharedClock, username: &str, password: &str)
     };
     sessions::insert(db, &row)?;
     record_login_success(db, clock, user.id);
-    Ok(row)
+    Ok(LoginOutcome::SessionEstablished(row))
 }
 
 /// Resolve a session id to its user, if the session is still active.

@@ -17,7 +17,25 @@ pub fn build_router(app: AppState) -> Router {
         .route("/oauth2/userinfo", get(oidc::userinfo).post(oidc::userinfo))
         .route("/oauth2/logout", get(oidc::logout))
         .route("/admin/login", get(admin::login_get).post(admin::login_post))
+        .route(
+            "/admin/login/mfa",
+            get(admin::mfa_challenge_get).post(admin::mfa_challenge_post),
+        )
         .route("/admin/logout", post(admin::logout).get(admin::logout))
+        .route("/admin/profile", get(admin::profile_get))
+        .route(
+            "/admin/profile/mfa/enroll/start",
+            post(admin::profile_mfa_enroll_start),
+        )
+        .route(
+            "/admin/profile/mfa/enroll/confirm",
+            post(admin::profile_mfa_enroll_confirm),
+        )
+        .route("/admin/profile/mfa/disable", post(admin::profile_mfa_disable))
+        .route(
+            "/admin/profile/mfa/recovery-codes/regenerate",
+            post(admin::profile_mfa_regenerate_recovery),
+        )
         .route("/admin", get(admin::dashboard))
         .route("/admin/users", get(admin::users_get).post(admin::users_create))
         .route("/admin/users/{id}/disabled", post(admin::users_set_disabled))

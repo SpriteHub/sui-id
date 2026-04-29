@@ -113,6 +113,143 @@ pub fn render_login(flash: Option<Flash>, next: Option<String>) -> String {
     })
 }
 
+// ---------- MFA challenge ----------
+
+pub fn render_mfa_challenge(flash: Option<Flash>, csrf_token: String) -> String {
+    render(move || {
+        view! {
+            <Shell title="Verification required".to_string() show_nav=false current=None>
+                <h2>"Verification code"</h2>
+                {flash_banner(flash)}
+                <p class="muted">
+                    "Enter the 6-digit code from your authenticator app, or one of \
+                     your single-use recovery codes."
+                </p>
+                <form method="post" action="/admin/login/mfa">
+                    <input type="hidden" name="_csrf" value=csrf_token />
+                    <label for="code">"Code"</label>
+                    <input id="code" name="code" type="text" required=true
+                           autocomplete="one-time-code" inputmode="text" autofocus=true />
+                    <button type="submit">"Verify"</button>
+                </form>
+            </Shell>
+        }
+    })
+}
+
+// ---------- profile (MFA settings) ----------
+
+pub struct ProfileData {
+    pub username: String,
+    pub mfa_enabled: bool,
+    /// Set when the user has just enrolled or regenerated codes.
+    /// Displayed exactly once.
+    pub fresh_recovery_codes: Option<Vec<String>>,
+}
+
+pub fn render_profile(data: ProfileData, flash: Option<Flash>, csrf_token: String) -> String {
+    render(move || {
+        let ProfileData { username, mfa_enabled, fresh_recovery_codes } = data;
+        let csrf_for_disable = csrf_token.clone();
+        let csrf_for_regen = csrf_token.clone();
+        let csrf_for_enroll = csrf_token.clone();
+        let recovery_block = fresh_recovery_codes.map(|codes| {
+            let lis: Vec<_> = codes
+                .into_iter()
+                .map(|c| view! { <li><span class="code">{c}</span></li> })
+                .collect();
+            view! {
+                <div class="flash warn" role="status">
+                    <strong>"Save these recovery codes now - they will not be shown again."</strong>
+                    <p class="muted">
+                        "Each code is single-use. Store them somewhere safe. \
+                         If you lose access to your authenticator app you can sign in by typing one in place of the 6-digit code."
+                    </p>
+                    <ol>{lis}</ol>
+                </div>
+            }
+        });
+        let mfa_section = if mfa_enabled {
+            view! {
+                <p>"Two-factor authentication is "<strong>"enabled"</strong>" for this account."</p>
+                <form method="post" action="/admin/profile/mfa/recovery-codes/regenerate" style="display:inline">
+                    <input type="hidden" name="_csrf" value=csrf_for_regen />
+                    <button type="submit" class="secondary">"Regenerate recovery codes"</button>
+                </form>
+                " "
+                <form method="post" action="/admin/profile/mfa/disable" style="display:inline"
+                      onsubmit="return confirm('Disable two-factor authentication?');">
+                    <input type="hidden" name="_csrf" value=csrf_for_disable />
+                    <button type="submit" class="danger">"Disable MFA"</button>
+                </form>
+            }
+            .into_any()
+        } else {
+            view! {
+                <p>"Two-factor authentication is "<strong>"not configured"</strong>" for this account."</p>
+                <p class="muted">
+                    "When enabled, sui-id will ask for a 6-digit code from your authenticator app each time you sign in. \
+                     You can use any standards-compliant TOTP app (Aegis, FreeOTP, Google Authenticator, 1Password, etc)."
+                </p>
+                <form method="post" action="/admin/profile/mfa/enroll/start">
+                    <input type="hidden" name="_csrf" value=csrf_for_enroll />
+                    <button type="submit">"Set up MFA"</button>
+                </form>
+            }
+            .into_any()
+        };
+        view! {
+            <Shell title="Profile".to_string() show_nav=true current=Some("profile".to_string())>
+                <h2>{format!("Profile - {username}")}</h2>
+                {flash_banner(flash)}
+                {recovery_block}
+                <h3>"Two-factor authentication"</h3>
+                {mfa_section}
+            </Shell>
+        }
+    })
+}
+
+pub struct MfaSetupData {
+    /// otpauth:// URI for the QR code
+    pub otpauth_uri: String,
+    /// Pre-rendered SVG of the QR code (full <svg>...</svg> string).
+    pub qr_svg: String,
+    /// Base32-encoded secret string for users who would rather type it
+    /// in than scan the QR code.
+    pub secret_b32: String,
+}
+
+pub fn render_mfa_setup(data: MfaSetupData, flash: Option<Flash>, csrf_token: String) -> String {
+    render(move || {
+        let MfaSetupData { otpauth_uri, qr_svg, secret_b32 } = data;
+        view! {
+            <Shell title="Set up MFA".to_string() show_nav=true current=Some("profile".to_string())>
+                <h2>"Set up two-factor authentication"</h2>
+                {flash_banner(flash)}
+                <ol>
+                    <li>"Open your authenticator app and scan the QR code below, or paste the secret key by hand."</li>
+                    <li>"Type the 6-digit code your app shows for sui-id into the form to confirm."</li>
+                    <li>"You will receive 8 single-use recovery codes. Save them somewhere safe."</li>
+                </ol>
+                <div inner_html=qr_svg style="max-width:240px"></div>
+                <p>"Secret key: "<span class="code">{secret_b32}</span></p>
+                <details>
+                    <summary class="muted">"otpauth URI (advanced)"</summary>
+                    <p><span class="code">{otpauth_uri}</span></p>
+                </details>
+                <form method="post" action="/admin/profile/mfa/enroll/confirm">
+                    <input type="hidden" name="_csrf" value=csrf_token />
+                    <label for="code">"Verification code"</label>
+                    <input id="code" name="code" type="text" required=true
+                           autocomplete="one-time-code" inputmode="text" autofocus=true />
+                    <button type="submit">"Confirm and enable"</button>
+                </form>
+            </Shell>
+        }
+    })
+}
+
 // ---------- dashboard ----------
 
 pub struct DashboardData {

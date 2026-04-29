@@ -22,6 +22,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: include_str!("./migrations/0002_client_scope_and_logout_uris.sql"),
     },
+    Migration {
+        version: 3,
+        sql: include_str!("./migrations/0003_totp_mfa.sql"),
+    },
 ];
 
 const META_KEY_SCHEMA_VERSION: &str = "schema_version";

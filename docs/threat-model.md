@@ -233,6 +233,40 @@ What we do **not** do:
   what we do. Operators who require immediate revocation should
   configure a smaller `tokens.access_lifetime_secs`.
 
+### A11. Compromise of a single password
+
+What we do:
+
+- The `/admin/profile` page lets every account opt in to TOTP MFA
+  (RFC 6238, HMAC-SHA1, 30-second window, 6 digits). Once enabled,
+  password authentication alone never produces a session — the user
+  must also provide a 6-digit code from an authenticator app, or one
+  of 8 single-use recovery codes generated at enrolment time.
+- Recovery codes are stored as Argon2id hashes sealed under the
+  master key, so a stolen database does not yield usable codes.
+- Used recovery codes are removed from the stored list immediately,
+  so they really are single-use.
+- A `last_used_step` cursor stops a successful 6-digit code from
+  being replayed within its 30-second window.
+- The TOTP secret is sealed under the master key in storage; the
+  plaintext exists only at enrolment time (briefly, to render the
+  QR) and at verification time (briefly, to compute the expected
+  code). It is zeroed in between.
+
+What we do **not** do:
+
+- Force MFA on every account. The operator chooses, and so does each
+  user. A future release may add an "all admins must have MFA"
+  policy switch.
+- Have a way to recover an account when the user has lost both the
+  authenticator app and all eight recovery codes, except for an
+  operator manually deleting the `user_totp` row at the database
+  level. An admin-driven reset path is on the roadmap.
+- Implement WebAuthn yet. A roaming-authenticator option (TOTP) is in
+  place and is interoperable with every authenticator app on the
+  market; WebAuthn / passkeys is on the roadmap as a second factor
+  for users who would rather have one.
+
 ## Adversaries we do not plan for
 
 These are out of scope. Either the threat is genuinely better handled

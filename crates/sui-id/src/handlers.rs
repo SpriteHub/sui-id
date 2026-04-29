@@ -22,6 +22,16 @@ pub mod setup;
 /// Cookie name for the admin / user session id.
 pub const SESSION_COOKIE: &str = "sui_id_session";
 
+/// Cookie name for the short-lived "password OK, awaiting MFA" handle.
+/// Set when login_post issues a `LoginOutcome::MfaRequired`; cleared when
+/// the MFA challenge succeeds, fails terminally, or expires.
+pub const PENDING_MFA_COOKIE: &str = "sui_id_pending_mfa";
+
+/// Cookie name for the post-MFA redirect target. Carries the `next`
+/// parameter the user supplied to the original login page across the
+/// password → MFA challenge gap.
+pub const PENDING_MFA_NEXT_COOKIE: &str = "sui_id_pending_mfa_next";
+
 /// Build a session cookie. `secure` is configured by the operator.
 pub fn session_cookie<'a>(value: String, secure: bool) -> Cookie<'a> {
     let mut c = Cookie::new(SESSION_COOKIE, value);
@@ -34,6 +44,49 @@ pub fn session_cookie<'a>(value: String, secure: bool) -> Cookie<'a> {
 
 pub fn clear_session_cookie<'a>(secure: bool) -> Cookie<'a> {
     let mut c = Cookie::new(SESSION_COOKIE, "");
+    c.set_path("/");
+    c.set_http_only(true);
+    c.set_same_site(SameSite::Lax);
+    c.set_secure(secure);
+    c.set_max_age(cookie_time::Duration::seconds(0));
+    c
+}
+
+/// Build the pending-MFA cookie. HttpOnly because, like the session
+/// cookie, the page never needs to read it from JavaScript.
+pub fn pending_mfa_cookie<'a>(value: String, secure: bool) -> Cookie<'a> {
+    let mut c = Cookie::new(PENDING_MFA_COOKIE, value);
+    c.set_path("/");
+    c.set_http_only(true);
+    c.set_same_site(SameSite::Lax);
+    c.set_secure(secure);
+    // Same TTL as the underlying pending-mfa row.
+    c.set_max_age(cookie_time::Duration::minutes(5));
+    c
+}
+
+pub fn clear_pending_mfa_cookie<'a>(secure: bool) -> Cookie<'a> {
+    let mut c = Cookie::new(PENDING_MFA_COOKIE, "");
+    c.set_path("/");
+    c.set_http_only(true);
+    c.set_same_site(SameSite::Lax);
+    c.set_secure(secure);
+    c.set_max_age(cookie_time::Duration::seconds(0));
+    c
+}
+
+pub fn pending_mfa_next_cookie<'a>(value: String, secure: bool) -> Cookie<'a> {
+    let mut c = Cookie::new(PENDING_MFA_NEXT_COOKIE, value);
+    c.set_path("/");
+    c.set_http_only(true);
+    c.set_same_site(SameSite::Lax);
+    c.set_secure(secure);
+    c.set_max_age(cookie_time::Duration::minutes(5));
+    c
+}
+
+pub fn clear_pending_mfa_next_cookie<'a>(secure: bool) -> Cookie<'a> {
+    let mut c = Cookie::new(PENDING_MFA_NEXT_COOKIE, "");
     c.set_path("/");
     c.set_http_only(true);
     c.set_same_site(SameSite::Lax);

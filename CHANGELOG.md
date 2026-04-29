@@ -5,6 +5,95 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-04-26
+
+### Added — schema migration 0003
+
+Two new tables:
+
+- `user_totp` — one row per user that has TOTP either configured
+  (`enabled = 0`) or activated (`enabled = 1`). Holds the 20-byte
+  RFC 6238 secret sealed with the master key, plus a JSON array of
+  Argon2id-hashed recovery codes (also sealed) and the
+  `last_used_step` cursor used for replay defence.
+- `login_pending_mfa` — short-lived "password verified, MFA pending"
+  rows. Inserted right after a successful password check when the user
+  has TOTP enabled. The HTTP layer hands the user a cookie pointing
+  here; the row carries no authority on its own — promotion to a real
+  session requires a valid TOTP code or recovery code.
+
+### Added — TOTP MFA
+
+- **RFC 6238 TOTP** (HMAC-SHA1, 30-second window, 6 digits) with a
+  ±1 step drift window and `last_used_step`-based replay defence.
+  Implemented in-house in `sui_id_core::totp`; covered by all six
+  RFC 6238 Appendix B test vectors.
+- **MFA enrolment flow** at `/admin/profile`:
+  1. The user clicks "Set up MFA" → sui-id allocates a fresh secret
+     and persists it as unconfirmed.
+  2. The setup page renders an SVG QR code for the `otpauth://totp/...`
+     URI (via the `qrcode` crate) and the Base32-encoded secret as a
+     fall-back for manual entry.
+  3. The user types the 6-digit code from their authenticator. On
+     success, sui-id generates 8 single-use recovery codes
+     (Argon2id-hashed in storage), flips the row to `enabled = 1`,
+     and shows the plaintext codes **once**.
+- **Login flow**: password OK + MFA disabled = session as before.
+  Password OK + MFA enabled = `login_pending_mfa` row + redirect to
+  `/admin/login/mfa`. The challenge page accepts either a 6-digit
+  TOTP code or a single-use recovery code; on success it creates the
+  session and consumes the recovery code if used.
+- **Recovery code regeneration** (`/admin/profile/mfa/recovery-codes/regenerate`)
+  invalidates all previous codes and returns 8 new ones.
+- **MFA disable** (`/admin/profile/mfa/disable`) deletes the
+  `user_totp` row entirely.
+- New audit-log actions: `auth.login.password_ok_mfa_required`,
+  `auth.mfa.success`, `auth.mfa.failure`, `mfa.enable`,
+  `mfa.disable`, `mfa.recovery_codes_regenerate`.
+- New Profile tab in the admin nav.
+- The GC task now also purges expired `login_pending_mfa` rows.
+
+### Added — APIs
+
+- `sui_id_core::totp` module: `code_for_step`, `verify`, `base32_encode`,
+  `otpauth_uri`.
+- `sui_id_core::mfa` module: `is_mfa_enabled`, `start_enrollment`,
+  `confirm_enrollment`, `disable`, `regenerate_recovery_codes`,
+  `issue_pending_mfa`, `verify_pending`.
+- `sui_id_core::session::LoginOutcome` enum and `login_with_mfa`
+  function (the original `login` is preserved for callers that don't
+  need the MFA branch).
+- `sui_id_shared::ids::PendingMfaId` typed identifier.
+
+### Added — dependencies
+
+- `sha1 = "0.10"` (HMAC-SHA1 for TOTP).
+- `qrcode = "0.14"` with `default-features = false, features = ["svg"]`.
+
+### Added — tests
+
+- 9 new unit tests in `sui_id_core::totp` (RFC 6238 vectors, replay,
+  Base32, otpauth URI).
+- 1 new unit test in `sui_id_core::mfa` (recovery code format).
+- 3 new integration tests in `sui_id_core::mfa::integration_tests`
+  (enrol → confirm → 8 recovery codes; wrong code rejected;
+  disable + re-enrol).
+- 4 new end-to-end tests:
+  - `mfa_enroll_then_login_with_totp_succeeds`
+  - `mfa_login_with_wrong_code_returns_401`
+  - `mfa_login_with_recovery_code_succeeds_and_consumes_code`
+  - `mfa_disable_lets_user_log_in_with_password_only`
+
+Total: **102 tests passing** (was 95).
+
+### Threat model
+
+A11 (password-only authentication) is mitigated for accounts that opt
+in to MFA. Recovery codes are the only persistent secret stored
+plaintext-derivable from the database, but each code is Argon2id-
+hashed and sealed under the master key — i.e. equivalent in difficulty
+to brute-forcing a regular password.
+
 ## [0.6.1] - 2026-04-26
 
 Internal cleanup. No functional changes.

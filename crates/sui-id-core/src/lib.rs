@@ -20,5 +20,7 @@ pub mod session;
 pub mod setup;
 pub mod admin;
 pub mod time;
+pub mod totp;
+pub mod mfa;
 
 pub use errors::{CoreError, CoreResult};

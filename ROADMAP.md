@@ -10,8 +10,9 @@ draws from medium-term.)
 
 ## Medium term
 
-- **MFA.** TOTP first; WebAuthn second. Both are big enough to be their own
-  releases.
+- **WebAuthn / passkeys.** A second-factor option that doesn't require an
+  authenticator app, using the W3C WebAuthn API. Larger surface than TOTP
+  (CBOR, attestation, multiple credentials per user) so its own release.
 - **Editing existing clients.** v0.6.0 added scope-policy and
   post-logout-URI fields at *create* time but not yet a UI for editing
   them on existing clients. The use-case helpers
@@ -25,11 +26,16 @@ draws from medium-term.)
 - **Pluggable user backends.** A read-only LDAP shim, perhaps. The current
   storage layer assumes sui-id owns the user table.
 - **Metrics.** A Prometheus endpoint behind admin auth.
+- **Admin-initiated MFA reset.** Letting an administrator delete
+  another user's TOTP enrolment when the user has lost both their
+  authenticator app and their recovery codes. Today the only path is
+  to manually delete the user_totp row.
 
 ## Done
 
 - Per-IP rate limiting on `/admin/login`, `/oauth2/token`, `/setup`.
-- Background GC of expired authorization codes, sessions, and refresh tokens.
+- Background GC of expired authorization codes, sessions, refresh
+  tokens, and pending-MFA rows.
 - Audit logging of authentication outcomes (success/failure).
 - `/healthz` endpoint suitable for liveness/readiness probes.
 - crates.io publication metadata; binary distributable via
@@ -43,6 +49,7 @@ draws from medium-term.)
 - CSRF tokens on every admin form (synchronizer-token + double-submit cookie).
 - Per-client scope policy enforced at `/oauth2/authorize`.
 - Per-client `post_logout_redirect_uris` (separate from `redirect_uris`).
+- TOTP MFA (RFC 6238) with single-use recovery codes.
 
 ## Explicitly **not** on the roadmap
 

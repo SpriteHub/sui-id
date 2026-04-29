@@ -10,7 +10,7 @@
 
 use crate::AppState;
 use std::time::Duration;
-use sui_id_store::repos::{auth_codes, refresh_tokens, sessions};
+use sui_id_store::repos::{auth_codes, login_pending_mfa, refresh_tokens, sessions};
 
 const GC_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
@@ -44,5 +44,10 @@ pub fn run_once(state: &AppState) {
         Ok(n) if n > 0 => tracing::info!(deleted = n, "gc: removed expired refresh tokens"),
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "gc: refresh_tokens purge failed"),
+    }
+    match login_pending_mfa::purge_expired(db) {
+        Ok(n) if n > 0 => tracing::info!(deleted = n, "gc: removed expired pending-MFA rows"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "gc: login_pending_mfa purge failed"),
     }
 }

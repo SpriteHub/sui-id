@@ -1216,5 +1216,327 @@ async fn logout_falls_back_to_redirect_uris_when_post_logout_list_empty() {
     assert!(loc.starts_with("https://rp.test/cb"));
 }
 
+// ---------- MFA / TOTP (v0.7.0) ----------
+
+/// Helper: log in via password and follow the LoginOutcome::MfaRequired
+/// branch by hand. Returns (pending_mfa cookie value, session cookie
+/// once promoted via TOTP).
+async fn enroll_mfa_for(state: &AppState, session: &str) -> (String, Vec<String>) {
+    use sui_id_core::totp;
+
+    // Start enrolment.
+    let csrf = fetch_csrf(state, session).await;
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/profile/mfa/enroll/start")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(
+            header::COOKIE,
+            format!("sui_id_session={session}; sui_id_csrf={csrf}"),
+        )
+        .body(Body::from(format!("_csrf={csrf}")))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("enroll start");
+    assert_eq!(resp.status(), StatusCode::OK, "enroll start failed");
+    let body = read_body(resp.into_body()).await;
+    let html = String::from_utf8_lossy(&body).to_string();
+    // Pull the Base32 secret out of the page.
+    let secret_b32 = {
+        let needle = "Secret key: <span class=\"code\">";
+        let start = html.find(needle).expect("secret rendered");
+        let rest = &html[start + needle.len()..];
+        let end = rest.find("</span>").expect("secret end");
+        rest[..end].to_owned()
+    };
+    let secret = decode_b32(&secret_b32);
+    let now = chrono::Utc::now().timestamp();
+    let step = now / 30;
+    let code = totp::code_for_step(&secret, step);
+
+    // Confirm.
+    let csrf = fetch_csrf(state, session).await;
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/profile/mfa/enroll/confirm")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(
+            header::COOKIE,
+            format!("sui_id_session={session}; sui_id_csrf={csrf}"),
+        )
+        .body(Body::from(format!("code={code:06}&_csrf={csrf}")))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("enroll confirm");
+    assert_eq!(resp.status(), StatusCode::OK, "enroll confirm failed");
+    let body = read_body(resp.into_body()).await;
+    let html = String::from_utf8_lossy(&body).to_string();
+    // Pull the recovery codes out of the rendered page (each in <span class="code">).
+    let mut codes = Vec::new();
+    let mut rest = html.as_str();
+    while let Some(start) = rest.find("<li><span class=\"code\">") {
+        rest = &rest[start + "<li><span class=\"code\">".len()..];
+        if let Some(end) = rest.find("</span>") {
+            codes.push(rest[..end].to_owned());
+            rest = &rest[end..];
+        } else {
+            break;
+        }
+    }
+    assert_eq!(codes.len(), 8, "expected 8 recovery codes, got {}: {codes:?}", codes.len());
+    (secret_b32, codes)
+}
+
+fn decode_b32(s: &str) -> Vec<u8> {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let mut out: Vec<u8> = Vec::new();
+    let mut buf: u32 = 0;
+    let mut bits: u32 = 0;
+    for c in s.chars() {
+        let c = c.to_ascii_uppercase();
+        let idx = ALPHABET.iter().position(|&a| a as char == c);
+        let v = match idx {
+            Some(v) => v as u32,
+            None => continue,
+        };
+        buf = (buf << 5) | v;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(((buf >> bits) & 0xff) as u8);
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn mfa_enroll_then_login_with_totp_succeeds() {
+    use sui_id_core::totp;
+    let state = test_app();
+    let session = complete_setup_and_login(&state).await;
+
+    // Enrol.
+    let (secret_b32, _codes) = enroll_mfa_for(&state, &session).await;
+    let secret = decode_b32(&secret_b32);
+
+    // Now: a fresh password login should *NOT* yield a session cookie
+    // — instead it should set sui_id_pending_mfa and redirect.
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("username=alice&password=alice-the-tester-password"))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("login");
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER, "expected redirect to MFA");
+    let loc = resp.headers().get(header::LOCATION).and_then(|v| v.to_str().ok()).unwrap_or("");
+    assert!(loc.ends_with("/admin/login/mfa"), "got: {loc}");
+    let pending = extract_set_cookie(resp.headers(), "sui_id_pending_mfa")
+        .expect("pending_mfa cookie set");
+    let session_cookie = extract_set_cookie(resp.headers(), "sui_id_session");
+    assert!(session_cookie.is_none(), "session cookie must not be set before MFA");
+
+    // Submit a fresh TOTP code.
+    let now = chrono::Utc::now().timestamp();
+    // Use step+1 to avoid the replay-defence cursor we set at enrolment time.
+    let step = now / 30 + 1;
+    let code = totp::code_for_step(&secret, step);
+
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/admin/login/mfa")
+        .header(header::COOKIE, format!("sui_id_pending_mfa={pending}"))
+        .body(Body::empty())
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("mfa GET");
+    let csrf = extract_set_cookie(resp.headers(), "sui_id_csrf").expect("csrf cookie");
+
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login/mfa")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(
+            header::COOKIE,
+            format!("sui_id_pending_mfa={pending}; sui_id_csrf={csrf}"),
+        )
+        .body(Body::from(format!("code={code:06}&_csrf={csrf}")))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("mfa POST");
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER, "expected redirect to /admin");
+    let session_cookie = extract_set_cookie(resp.headers(), "sui_id_session")
+        .expect("session cookie issued after MFA success");
+    assert!(!session_cookie.is_empty());
+}
+
+#[tokio::test]
+async fn mfa_login_with_wrong_code_returns_401() {
+    let state = test_app();
+    let session = complete_setup_and_login(&state).await;
+    let _ = enroll_mfa_for(&state, &session).await;
+
+    // Password login → pending.
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("username=alice&password=alice-the-tester-password"))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("login");
+    let pending = extract_set_cookie(resp.headers(), "sui_id_pending_mfa").expect("pending");
+
+    // Wrong code.
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/admin/login/mfa")
+        .header(header::COOKIE, format!("sui_id_pending_mfa={pending}"))
+        .body(Body::empty())
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("mfa GET");
+    let csrf = extract_set_cookie(resp.headers(), "sui_id_csrf").expect("csrf");
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login/mfa")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(
+            header::COOKIE,
+            format!("sui_id_pending_mfa={pending}; sui_id_csrf={csrf}"),
+        )
+        .body(Body::from(format!("code=000000&_csrf={csrf}")))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("mfa POST");
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert!(extract_set_cookie(resp.headers(), "sui_id_session").is_none());
+}
+
+#[tokio::test]
+async fn mfa_login_with_recovery_code_succeeds_and_consumes_code() {
+    let state = test_app();
+    let session = complete_setup_and_login(&state).await;
+    let (_secret_b32, codes) = enroll_mfa_for(&state, &session).await;
+    let one_code = codes[0].clone();
+
+    // Password login → pending.
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("username=alice&password=alice-the-tester-password"))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("login");
+    let pending = extract_set_cookie(resp.headers(), "sui_id_pending_mfa").expect("pending");
+
+    // Submit recovery code.
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/admin/login/mfa")
+        .header(header::COOKIE, format!("sui_id_pending_mfa={pending}"))
+        .body(Body::empty())
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("mfa GET");
+    let csrf = extract_set_cookie(resp.headers(), "sui_id_csrf").expect("csrf");
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login/mfa")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(
+            header::COOKIE,
+            format!("sui_id_pending_mfa={pending}; sui_id_csrf={csrf}"),
+        )
+        .body(Body::from(format!(
+            "code={}&_csrf={csrf}",
+            utf8_encode(&one_code)
+        )))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("mfa POST");
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER, "recovery code should accept");
+    assert!(extract_set_cookie(resp.headers(), "sui_id_session").is_some());
+
+    // Reusing the same recovery code must fail. We need a new pending row.
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("username=alice&password=alice-the-tester-password"))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("login 2");
+    let pending2 = extract_set_cookie(resp.headers(), "sui_id_pending_mfa").expect("pending2");
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/admin/login/mfa")
+        .header(header::COOKIE, format!("sui_id_pending_mfa={pending2}"))
+        .body(Body::empty())
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("mfa GET 2");
+    let csrf2 = extract_set_cookie(resp.headers(), "sui_id_csrf").expect("csrf2");
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login/mfa")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(
+            header::COOKIE,
+            format!("sui_id_pending_mfa={pending2}; sui_id_csrf={csrf2}"),
+        )
+        .body(Body::from(format!(
+            "code={}&_csrf={csrf2}",
+            utf8_encode(&one_code)
+        )))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("mfa POST replay");
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "recovery code must be single-use"
+    );
+}
+
+#[tokio::test]
+async fn mfa_disable_lets_user_log_in_with_password_only() {
+    let state = test_app();
+    let session = complete_setup_and_login(&state).await;
+    let _ = enroll_mfa_for(&state, &session).await;
+
+    // Disable MFA.
+    let csrf = fetch_csrf(&state, &session).await;
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/profile/mfa/disable")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(
+            header::COOKIE,
+            format!("sui_id_session={session}; sui_id_csrf={csrf}"),
+        )
+        .body(Body::from(format!("_csrf={csrf}")))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("disable");
+    assert!(resp.status().is_redirection());
+
+    // Password login should now go straight to a session.
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("username=alice&password=alice-the-tester-password"))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("login post-disable");
+    assert!(resp.status().is_redirection());
+    let loc = resp.headers().get(header::LOCATION).and_then(|v| v.to_str().ok()).unwrap_or("");
+    assert!(!loc.ends_with("/admin/login/mfa"));
+    assert!(extract_set_cookie(resp.headers(), "sui_id_session").is_some());
+}
+
 // `http` is brought in transitively by axum; we only need its HeaderMap.
 use axum::http;

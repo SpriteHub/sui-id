@@ -107,3 +107,28 @@ pub struct AuditLogRow {
     pub result: String,
     pub note: Option<String>,
 }
+
+#[derive(Debug, Clone)]
+pub struct UserTotpRow {
+    pub user_id: UserId,
+    /// Sealed TOTP secret bytes (20 bytes when decrypted).
+    pub secret_enc: Vec<u8>,
+    pub enabled: bool,
+    /// Sealed JSON array of Argon2id hashes (one per single-use recovery
+    /// code). `None` if the user never generated recovery codes — which is
+    /// a temporary state during initial enrolment.
+    pub recovery_codes_enc: Option<Vec<u8>>,
+    /// Most recently accepted RFC 6238 time step. Used to reject replays
+    /// of the same 6-digit code within its 30-second window.
+    pub last_used_step: i64,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub confirmed_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoginPendingMfaRow {
+    pub id: sui_id_shared::ids::PendingMfaId,
+    pub user_id: UserId,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
