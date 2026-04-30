@@ -5,6 +5,110 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-04-28
+
+Self-service security overview at `/me/security`. Every signed-in
+user — admin or not — gets a per-account view of their active
+sessions and recent authentication events, plus the tools to
+revoke individual sessions or sweep every session except the
+current one.
+
+### Added
+
+#### `/me/security` page
+
+A new authenticated route that does *not* require admin
+privilege. Shows three sections:
+
+- **Two-factor summary.** Whether TOTP is enrolled, how many
+  passkeys are registered, with a button that deep-links to
+  `/admin/profile` (the existing MFA enrollment page already
+  worked for non-admin users; we just point at it).
+- **Sessions table.** Every active session belonging to this
+  user, newest-first. The session that issued the current
+  request is labelled `current session`; every other row has a
+  Revoke button. Below the table, "Sign out everywhere else"
+  sweeps every session except the current one in a single click.
+- **Recent activity.** Up to 30 audit rows where this user is
+  either the actor or the target — covers
+  `auth.login.success/failure/locked`,
+  `auth.refresh.theft_detected` (when relevant),
+  `mfa.admin_reset`, etc. The page tells the user plainly: if
+  you see something you didn't do, rotate your password and
+  sign out other sessions.
+
+#### Ownership enforcement
+
+Server-side ownership check on revoke: `revoke_one` looks up the
+target session and refuses (silently — same redirect as for an
+unknown id) if the session's `user_id` doesn't match the caller.
+There is no oracle for guessing other users' session ids. The
+e2e suite includes a regression test
+(`me_security_cannot_revoke_someone_elses_session`) that pins
+this.
+
+#### Storage helpers
+
+- `sessions::list_active_for_user(user_id)` — newest-first list
+  of unrevoked, unexpired sessions for one user.
+- `sessions::revoke_all_for_user_except(user_id, keep)` — bulk
+  revoke matching the "Sign out everywhere else" semantic. The
+  current session is determined from the cookie, not the form
+  field, so a tampered hidden field cannot make the user revoke
+  the "wrong" current session.
+- `audit::recent_for_user(user_id, limit)` — newest-first audit
+  rows where the user is either `actor` or `target`. Used to
+  drive the activity table.
+
+#### Routes
+
+- `GET  /me/security`
+- `POST /me/security/sessions/{id}/revoke`
+- `POST /me/security/sessions/revoke-all-others`
+
+CSRF tokens enforced on every POST. The bulk revoke emits a new
+`auth.sessions.bulk_revoke_self` audit event recording how many
+sessions were swept.
+
+#### Tests
+
+- 5 new e2e tests in `sui-id`:
+  - `me_security_page_renders_for_authenticated_user`
+  - `me_security_redirects_when_not_signed_in`
+  - `me_security_revoke_one_signs_target_session_out`
+  - `me_security_revoke_all_others_keeps_current_session`
+  - `me_security_cannot_revoke_someone_elses_session`
+
+Workspace lib totals unchanged from v0.17.0 (no logic added to
+the lib layer that needed direct unit coverage). Lib still 129;
+e2e suite +5.
+
+### Changed
+
+- `with_csrf_cookie` helper in `handlers::admin` is now
+  `pub(crate)` so it can be reused from `handlers::me_security`.
+  Behaviour unchanged.
+
+### Documentation
+
+- `docs/operators.md` — new "Self-service security
+  (`/me/security`)" section describing the page, its scope, the
+  ownership enforcement, and the things it deliberately does
+  *not* do (no in-place password change, no HIBP, no IP/UA
+  metadata since the session table doesn't record those today).
+  Audit event table updated with `auth.sessions.bulk_revoke_self`.
+
+### Items deferred to v0.19.0+
+
+- Self-serve password change (currently admin-only).
+- Recording IP and User-Agent on session creation, so the
+  `/me/security` rows can show "MacBook · 192.0.2.10 · 3 hours
+  ago" instead of just "started 2026-04-26 14:01 UTC".
+- HIBP password breach check (opt-in).
+- Idle session timeout, concurrent session cap, suspicious
+  activity heuristics.
+- Master-key rotation command.
+
 ## [0.17.0] - 2026-04-28
 
 Security strengthening pass. Five reinforcements that close

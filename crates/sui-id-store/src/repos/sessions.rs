@@ -93,3 +93,48 @@ pub fn purge_expired(db: &Database) -> StoreResult<usize> {
         Ok(n)
     })
 }
+
+/// List every currently-active session belonging to a given user, newest first.
+///
+/// "Active" here matches `session::resolve` exactly: not revoked and not
+/// past expiry. The `/me/security` UI uses this to show the user every
+/// place they're signed in.
+pub fn list_active_for_user(
+    db: &Database,
+    user_id: UserId,
+) -> StoreResult<Vec<SessionRow>> {
+    let now = Utc::now();
+    db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, expires_at, created_at, revoked_at, auth_methods \
+             FROM sessions \
+             WHERE user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2 \
+             ORDER BY created_at DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![user_id.to_string(), now], map)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    })
+}
+
+/// Revoke every active session for the user *except* the supplied id.
+///
+/// Returns the number of rows updated. Used by the "sign out everywhere
+/// else" button on `/me/security` — keeping the current session alive
+/// is the expected UX, otherwise the user would be logged out
+/// immediately and might think the action failed.
+pub fn revoke_all_for_user_except(
+    db: &Database,
+    user_id: UserId,
+    keep: SessionId,
+) -> StoreResult<usize> {
+    db.with_conn(|conn| {
+        let n = conn.execute(
+            "UPDATE sessions SET revoked_at = ?1 \
+             WHERE user_id = ?2 AND id != ?3 AND revoked_at IS NULL",
+            params![Utc::now(), user_id.to_string(), keep.to_string()],
+        )?;
+        Ok(n)
+    })
+}

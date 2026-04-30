@@ -336,3 +336,31 @@ mod tests {
         assert_ne!(canonical_bytes(&r1), canonical_bytes(&r2));
     }
 }
+
+/// Most recent audit rows where the given user is either the actor
+/// or the target. Newest-first. Used by `/me/security` to surface a
+/// user-scoped activity timeline without exposing other users' rows.
+///
+/// `target` matches by string equality on the `target` column —
+/// most events that concern a user record the user's UUID there
+/// (lockout, MFA reset, theft detection, …). `actor` matches the
+/// `actor` UUID column. The OR of the two captures both
+/// "things this user did" and "things done to this user".
+pub fn recent_for_user(
+    db: &Database,
+    user_id: sui_id_shared::ids::UserId,
+    limit: i64,
+) -> StoreResult<Vec<AuditLogRow>> {
+    let uid = user_id.to_string();
+    db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT at, actor, action, target, result, note FROM audit_log \
+             WHERE actor = ?1 OR target = ?1 \
+             ORDER BY seq DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![uid, limit], map)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    })
+}

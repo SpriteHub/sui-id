@@ -31,7 +31,7 @@ use sui_id_web::{
 };
 
 /// Attach a `Set-Cookie` header for the CSRF token to a response.
-fn with_csrf_cookie(mut resp: Response, app: &AppState, token: &str) -> Response {
+pub(crate) fn with_csrf_cookie(mut resp: Response, app: &AppState, token: &str) -> Response {
     let cookie = crate::csrf::csrf_cookie(token.to_owned(), app.config.server.cookie_secure);
     if let Ok(v) = HeaderValue::from_str(&cookie.to_string()) {
         resp.headers_mut().append(header::SET_COOKIE, v);

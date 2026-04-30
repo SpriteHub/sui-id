@@ -116,6 +116,17 @@ v0.10.1 / v0.10.2.
   startup-time tail verification to detect DB-level tampering.
   Defense-in-depth removal of the dead `plain` branch in
   `verify_pkce`.
+- Self-service security at `/me/security` (v0.18.0). Every
+  signed-in user — admin or not — gets a per-account view of
+  their active sessions, recent auth events touching their
+  account (login success/failure/locked, MFA admin reset,
+  refresh-token theft detection, …), and one-click revoke for
+  individual sessions or "sign out everywhere else". Server-side
+  ownership check refuses cross-account revoke without leaking
+  whether the target id exists. New audit event
+  `auth.sessions.bulk_revoke_self` records the bulk-revoke
+  action. MFA enrollment itself stays on `/admin/profile`
+  (unchanged); `/me/security` deep-links to it.
 
 ## Explicitly **not** on the roadmap
 

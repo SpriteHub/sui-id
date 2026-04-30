@@ -396,6 +396,7 @@ expect them to be renamed without a deprecation cycle):
 | `auth.logout` | RP-initiated logout completed. |
 | `auth.login.locked` | A failed sign-in that just triggered or extended an account lockout. **Alert on bursts of this.** |
 | `auth.refresh.theft_detected` | A revoked refresh token was replayed at the token endpoint. The whole rotation family was revoked. **Alert on this.** |
+| `auth.sessions.bulk_revoke_self` | A user used "Sign out everywhere else" on `/me/security`. Note records how many sessions were swept. |
 | `mfa.admin_reset` | An administrator forcibly removed every MFA factor for a user. **Alert on this.** |
 | `admin.user.unlock` | An admin cleared an account lockout via `sui-id admin unlock-user`. |
 | `oauth.authorize.issued` | `/oauth2/authorize` issued an authorization code. |
@@ -732,6 +733,69 @@ the "user doesn't exist" and "user is locked" branches it's run
 against a fixed dummy PHC string that never matches anything,
 purely to keep timing equal to the real-verify path. A remote
 observer cannot tell the cases apart.
+
+## Self-service security (`/me/security`)
+
+Every signed-in user — admin or not — has access to a self-service
+security overview at `/me/security`. The page is intentionally
+narrow in scope: it doesn't expose anything an admin couldn't
+also see in `/admin/audit` or `/admin/users`, but it gives a user
+the tools to notice unusual activity on their own account
+without an operator having to be involved.
+
+The page shows three sections:
+
+- **Two-factor authentication summary.** Whether TOTP is on, how
+  many passkeys are registered. Has a "Manage authenticators"
+  button that goes to `/admin/profile`, where the actual
+  enrollment / removal lives. (`/admin/profile` doesn't require
+  admin privilege; a non-admin user reaches the same page from
+  here.)
+- **Where you're signed in.** Every active session for this user,
+  newest first, with the session that issued the request marked
+  as "current". Every other row gets a "Revoke" button. Below
+  the table, "Sign out everywhere else" sweeps every session
+  except the current one.
+- **Recent activity.** Up to 30 most recent audit events that
+  either name this user as the actor (e.g. `auth.login.success`)
+  or as the target (e.g. `mfa.admin_reset`, `auth.login.locked`,
+  `auth.refresh.theft_detected`). The user is told plainly: if
+  you see something here you didn't do, change your password
+  and sign out other sessions immediately.
+
+### What ownership means here
+
+The handler enforces ownership server-side: a user can only see
+and revoke their *own* sessions. Attempting to revoke another
+user's session — by guessing or scraping a session id — produces
+the same redirect as revoking an unknown id, so there's no
+oracle for distinguishing "session exists" from "session exists
+but belongs to someone else". The e2e suite includes a regression
+test (`me_security_cannot_revoke_someone_elses_session`) that
+pins this behaviour.
+
+### Audit trail
+
+The bulk-revoke action emits a `auth.sessions.bulk_revoke_self`
+audit event recording how many sessions were swept. Single-row
+revokes do not emit a dedicated event today; the `revoked_at`
+column on the row is itself the durable record. If you need
+finer-grained accounting, ship the `sessions` table to your SIEM
+periodically alongside the audit log.
+
+### What `/me/security` deliberately does **not** do
+
+- Password change. There's no UI for it on this page; an admin
+  resets a forgotten password through `/admin/users`. Self-serve
+  password change can be added later as a focused follow-up.
+- HIBP breach check on password reuse.
+- Long-form session metadata (browser fingerprint, IP, user
+  agent). The session table does not record IP or User-Agent
+  today; we'd add it deliberately rather than as a side effect
+  of building this page.
+- Cross-account view. Admins do *not* get extra rows here — they
+  see only their own sessions, like everyone else. The `/admin/`
+  pages are the place for cross-account work.
 
 ## Per-client scope policy
 

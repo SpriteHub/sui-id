@@ -849,3 +849,243 @@ pub fn render_error(title: String, message: String, request_id: String) -> Strin
         }
     })
 }
+
+// ---------- /me/security ----------
+//
+// Self-service security overview for the signed-in user. Shows where
+// they are signed in, lets them revoke individual sessions or sign out
+// everywhere else, and surfaces a user-scoped activity timeline so
+// they have a chance to notice unusual events on their own account
+// without an operator having to escalate.
+//
+// MFA management itself stays on `/admin/profile` (which is
+// misleadingly named — it's "user profile", and a non-admin user can
+// reach it the same way; the page does not require admin). We link
+// to it from here rather than re-implement.
+
+pub struct MeSecurityData {
+    pub username: String,
+    pub is_admin: bool,
+    /// Whether the user has TOTP enrolled.
+    pub totp_enabled: bool,
+    /// Number of active WebAuthn passkeys.
+    pub passkey_count: usize,
+    /// Identifier of the session that issued the current request.
+    /// Used to mark "this is you" in the session list and to keep it
+    /// alive when the user clicks "sign out everywhere else".
+    pub current_session_id: String,
+    pub sessions: Vec<MeSessionDescriptor>,
+    pub recent_events: Vec<MeAuditEntry>,
+}
+
+pub struct MeSessionDescriptor {
+    pub id: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    /// Comma-separated human display: "password", "password + TOTP", etc.
+    pub auth_methods: String,
+    pub is_current: bool,
+}
+
+pub struct MeAuditEntry {
+    pub at: chrono::DateTime<chrono::Utc>,
+    pub action: String,
+    pub result: String,
+    pub note: Option<String>,
+}
+
+pub fn render_me_security(
+    data: MeSecurityData,
+    flash: Option<Flash>,
+    csrf_token: String,
+) -> String {
+    render(move || {
+        let MeSecurityData {
+            username,
+            is_admin,
+            totp_enabled,
+            passkey_count,
+            current_session_id,
+            sessions,
+            recent_events,
+        } = data;
+
+        let csrf_for_revoke_others = csrf_token.clone();
+
+        // Session table rows. Each non-current row gets its own
+        // mini-form so a user can revoke that specific entry.
+        let session_rows: Vec<_> = sessions
+            .into_iter()
+            .map(|s| {
+                let MeSessionDescriptor {
+                    id,
+                    created_at,
+                    expires_at,
+                    auth_methods,
+                    is_current,
+                } = s;
+                let when = created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+                let until = expires_at.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+                let action_cell = if is_current {
+                    view! {
+                        <td><span class="muted">"current session"</span></td>
+                    }
+                    .into_any()
+                } else {
+                    let csrf_for_row = csrf_token.clone();
+                    let post_url = format!("/me/security/sessions/{id}/revoke");
+                    view! {
+                        <td>
+                            <form method="post" action=post_url style="display:inline"
+                                  onsubmit="return confirm('Sign this session out?');">
+                                <input type="hidden" name="_csrf" value=csrf_for_row />
+                                <button type="submit" class="secondary">"Revoke"</button>
+                            </form>
+                        </td>
+                    }
+                    .into_any()
+                };
+                view! {
+                    <tr>
+                        <td>{when}</td>
+                        <td>{until}</td>
+                        <td>{auth_methods}</td>
+                        {action_cell}
+                    </tr>
+                }
+            })
+            .collect();
+
+        // Activity timeline.
+        let event_rows: Vec<_> = recent_events
+            .into_iter()
+            .map(|e| {
+                let MeAuditEntry {
+                    at,
+                    action,
+                    result,
+                    note,
+                } = e;
+                let when = at.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+                let note_str = note.unwrap_or_default();
+                view! {
+                    <tr>
+                        <td>{when}</td>
+                        <td><span class="code">{action}</span></td>
+                        <td>{result}</td>
+                        <td class="muted">{note_str}</td>
+                    </tr>
+                }
+            })
+            .collect();
+
+        let admin_link = is_admin.then(|| {
+            view! {
+                <p class="muted">
+                    <a href="/admin">"Open admin dashboard"</a>
+                </p>
+            }
+        });
+
+        let mfa_summary = if totp_enabled || passkey_count > 0 {
+            let parts = {
+                let mut v = Vec::<String>::new();
+                if totp_enabled {
+                    v.push("authenticator app".into());
+                }
+                if passkey_count > 0 {
+                    v.push(format!(
+                        "{passkey_count} passkey{}",
+                        if passkey_count == 1 { "" } else { "s" }
+                    ));
+                }
+                v.join(", ")
+            };
+            view! {
+                <p>
+                    "Two-factor authentication is "<strong>"on"</strong>" — "{parts}"."
+                </p>
+            }
+            .into_any()
+        } else {
+            view! {
+                <p class="flash warn" role="status">
+                    "Two-factor authentication is "<strong>"off"</strong>". \
+                     A password alone protects this account today. \
+                     We recommend enrolling a passkey or an authenticator app."
+                </p>
+            }
+            .into_any()
+        };
+
+        view! {
+            <Shell title="Security".to_owned() show_nav=false current=None>
+                <h2>"Account security"</h2>
+                {flash_banner(flash)}
+                <p class="muted">
+                    "Signed in as "<strong>{username}</strong>"."
+                </p>
+                {admin_link}
+
+                <section>
+                    <h3>"Two-factor authentication"</h3>
+                    {mfa_summary}
+                    <p>
+                        <a href="/admin/profile" class="button secondary">
+                            "Manage authenticators"
+                        </a>
+                    </p>
+                </section>
+
+                <section>
+                    <h3>"Where you're signed in"</h3>
+                    <p class="muted">
+                        "Each row is a browser session. \
+                         Revoking a session signs that browser out immediately. \
+                         The current session is the one you're using now."
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>"Started"</th>
+                                <th>"Expires"</th>
+                                <th>"Factors"</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>{session_rows}</tbody>
+                    </table>
+                    <form method="post" action="/me/security/sessions/revoke-all-others"
+                          style="margin-top:1rem"
+                          onsubmit="return confirm('Sign out every other browser?');">
+                        <input type="hidden" name="_csrf" value=csrf_for_revoke_others />
+                        <input type="hidden" name="current_session" value=current_session_id />
+                        <button type="submit" class="secondary">
+                            "Sign out everywhere else"
+                        </button>
+                    </form>
+                </section>
+
+                <section>
+                    <h3>"Recent activity"</h3>
+                    <p class="muted">
+                        "Authentication and account-management events affecting your account. \
+                         If you see something here you didn't do, change your password and \
+                         sign out other sessions immediately."
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>"When"</th>
+                                <th>"Event"</th>
+                                <th>"Result"</th>
+                                <th>"Note"</th>
+                            </tr>
+                        </thead>
+                        <tbody>{event_rows}</tbody>
+                    </table>
+                </section>
+            </Shell>
+        }
+    })
+}

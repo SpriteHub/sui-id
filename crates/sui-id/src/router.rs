@@ -110,6 +110,20 @@ pub fn build_router(app: AppState) -> Router {
             post(admin::signing_keys_delete),
         )
         .route("/admin/audit", get(admin::audit_get))
+        // ---------- self-service security (since v0.18.0) ----------
+        // These routes require an authenticated session but do *not*
+        // require admin privilege; they're for any signed-in user.
+        // The handler enforces ownership: a user can only see and
+        // revoke their own sessions.
+        .route("/me/security", get(crate::handlers::me_security::page_get))
+        .route(
+            "/me/security/sessions/{id}/revoke",
+            post(crate::handlers::me_security::revoke_one),
+        )
+        .route(
+            "/me/security/sessions/revoke-all-others",
+            post(crate::handlers::me_security::revoke_all_others),
+        )
         .route("/static/{*path}", get(crate::assets::serve))
         .with_state(app)
         // Security-headers middleware applies to *every* response,
