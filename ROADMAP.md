@@ -137,6 +137,17 @@ v0.10.1 / v0.10.2.
   account lockout because the user is already authenticated
   by their session. Audit event `auth.password.changed_self`
   records sweep counts.
+- Design language overhaul (v0.20.0). Lavender-Jade palette,
+  light/dark themes (manual toggle + system follow), 4px
+  spacing scale, 5-step typography scale, full component
+  vocabulary (cards, badges, page headers, stats, table-wrap,
+  flash, theme toggle). Core path of the UI rebuilt on the
+  new tokens: login, admin nav, dashboard, users, clients.
+  Other screens inherit colours and typography automatically
+  and get their per-screen rework in v0.20.1. Multilingual font
+  strategy locked in: system-ui only, no web fonts shipped, CJK
+  via Unicode font fallback to OS-native fonts — distributed
+  binary size unchanged.
 
 ## Explicitly **not** on the roadmap
 

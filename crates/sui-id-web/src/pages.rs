@@ -97,18 +97,25 @@ pub fn render_login(flash: Option<Flash>, next: Option<String>) -> String {
     render(move || {
         let next_value = next.clone().unwrap_or_default();
         view! {
-            <Shell title="Sign in".to_string() show_nav=false current=None>
-                <h2>"Sign in"</h2>
+            <crate::layout::AuthShell title="Sign in".to_string()>
+                <h1>"sui-id にログイン"</h1>
                 {flash_banner(flash)}
-                <form method="post" action="/admin/login">
+                <form method="post" action="/admin/login" class="stack">
                     <input type="hidden" name="next" value=next_value />
-                    <label for="username">"Username"</label>
-                    <input id="username" name="username" type="text" required=true autocomplete="username" />
-                    <label for="password">"Password"</label>
-                    <input id="password" name="password" type="password" required=true autocomplete="current-password" />
-                    <button type="submit">"Sign in"</button>
+                    <div class="field">
+                        <label for="username" class="field__label">"ユーザー名またはメールアドレス"</label>
+                        <input id="username" name="username" type="text"
+                               required=true autocomplete="username"
+                               autofocus=true />
+                    </div>
+                    <div class="field">
+                        <label for="password" class="field__label">"パスワード"</label>
+                        <input id="password" name="password" type="password"
+                               required=true autocomplete="current-password" />
+                    </div>
+                    <button type="submit">"ログイン"</button>
                 </form>
-            </Shell>
+            </crate::layout::AuthShell>
         }
     })
 }
@@ -358,18 +365,60 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>) -> String {
         let DashboardData { admin_username, user_count, client_count, issuer } = data;
         view! {
             <Shell title="Dashboard".to_string() show_nav=true current=Some("dashboard".to_string())>
-                <h2>{format!("Hello, {admin_username}.")}</h2>
+                <header class="page-header">
+                    <div>
+                        <h1 class="page-header__title">"ダッシュボード"</h1>
+                        <p class="page-header__lede">
+                            {format!("Hello, {admin_username}. システムの概要と統計情報。")}
+                        </p>
+                    </div>
+                </header>
                 {flash_banner(flash)}
-                <p class="muted">"sui-id is running. Service overview below."</p>
-                <table>
-                    <tbody>
-                        <tr><th>"Issuer"</th><td><span class="code">{issuer}</span></td></tr>
-                        <tr><th>"Users"</th><td>{user_count.to_string()}</td></tr>
-                        <tr><th>"Clients"</th><td>{client_count.to_string()}</td></tr>
-                        <tr><th>"OIDC Discovery"</th><td><a href="/.well-known/openid-configuration">"/.well-known/openid-configuration"</a></td></tr>
-                        <tr><th>"JWKS"</th><td><a href="/.well-known/jwks.json">"/.well-known/jwks.json"</a></td></tr>
-                    </tbody>
-                </table>
+
+                <section class="grid-cards" aria-label="統計サマリ">
+                    <div class="card">
+                        <div class="stat">
+                            <span class="stat__value">{user_count.to_string()}</span>
+                            <span class="stat__label">"ユーザー"</span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="stat">
+                            <span class="stat__value">{client_count.to_string()}</span>
+                            <span class="stat__label">"クライアント"</span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="stat">
+                            <span class="stat__value">
+                                <span class="badge badge--ok">"稼働中"</span>
+                            </span>
+                            <span class="stat__label">"サービス状態"</span>
+                        </div>
+                    </div>
+                </section>
+
+                <section>
+                    <h2>"OIDC エンドポイント"</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">"Issuer"</th>
+                                    <td><span class="code">{issuer}</span></td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">"Discovery"</th>
+                                    <td><a href="/.well-known/openid-configuration"><span class="code">"/.well-known/openid-configuration"</span></a></td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">"JWKS"</th>
+                                    <td><a href="/.well-known/jwks.json"><span class="code">"/.well-known/jwks.json"</span></a></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
             </Shell>
         }
     })
@@ -378,20 +427,12 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>) -> String {
 // ---------- users ----------
 
 fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl IntoView {
-    let status = if u.is_deleted {
-        "deleted"
-    } else if u.is_disabled {
-        "disabled"
-    } else if u.is_admin {
-        "admin"
-    } else {
-        "active"
-    };
     let display = u.display_name.clone().unwrap_or_default();
     let id_str = u.id.to_string();
     let is_self = u.username == current_user;
     let is_disabled = u.is_disabled;
     let is_deleted = u.is_deleted;
+    let is_admin = u.is_admin;
     let mfa_enabled = u.mfa_enabled;
     let action_label = if is_disabled { "Enable" } else { "Disable" };
     let action_target = if is_disabled { "false" } else { "true" };
@@ -402,16 +443,26 @@ fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl Int
     let csrf_delete = csrf.clone();
     let csrf_reset = csrf.clone();
 
-    let mfa_cell = if mfa_enabled {
-        view! { <td>"on"</td> }.into_any()
+    let status_badge = if is_deleted {
+        view! { <span class="badge badge--danger">"deleted"</span> }.into_any()
+    } else if is_disabled {
+        view! { <span class="badge badge--warn">"disabled"</span> }.into_any()
+    } else if is_admin {
+        view! { <span class="badge badge--accent">"admin"</span> }.into_any()
     } else {
-        view! { <td class="muted">"off"</td> }.into_any()
+        view! { <span class="badge badge--ok">"active"</span> }.into_any()
+    };
+
+    let mfa_cell = if mfa_enabled {
+        view! { <td><span class="badge badge--ok">"on"</span></td> }.into_any()
+    } else {
+        view! { <td><span class="muted">"off"</span></td> }.into_any()
     };
 
     let actions = if is_self {
-        view! { <td class="muted">"(you)"</td> }.into_any()
+        view! { <td><span class="muted">"(you)"</span></td> }.into_any()
     } else if is_deleted {
-        view! { <td class="muted">"-"</td> }.into_any()
+        view! { <td><span class="muted">"-"</span></td> }.into_any()
     } else {
         let reset_form = if mfa_enabled {
             view! {
@@ -428,18 +479,19 @@ fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl Int
         };
         view! {
             <td>
-                {reset_form}
-                <form method="post" action=disabled_url style="display:inline">
-                    <input type="hidden" name="_csrf" value=csrf_disable />
-                    <input type="hidden" name="disabled" value=action_target />
-                    <button type="submit" class="secondary">{action_label}</button>
-                </form>
-                " "
-                <form method="post" action=delete_url style="display:inline"
-                      onsubmit="return confirm('Permanently delete this user?');">
-                    <input type="hidden" name="_csrf" value=csrf_delete />
-                    <button type="submit" class="danger">"Delete"</button>
-                </form>
+                <div class="row" style="gap:var(--space-1)">
+                    {reset_form}
+                    <form method="post" action=disabled_url style="display:inline">
+                        <input type="hidden" name="_csrf" value=csrf_disable />
+                        <input type="hidden" name="disabled" value=action_target />
+                        <button type="submit" class="secondary">{action_label}</button>
+                    </form>
+                    <form method="post" action=delete_url style="display:inline"
+                          onsubmit="return confirm('Permanently delete this user?');">
+                        <input type="hidden" name="_csrf" value=csrf_delete />
+                        <button type="submit" class="danger">"Delete"</button>
+                    </form>
+                </div>
             </td>
         }
         .into_any()
@@ -449,9 +501,9 @@ fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl Int
         <tr>
             <td><span class="code">{u.username}</span></td>
             <td>{display}</td>
-            <td>{status}</td>
+            <td>{status_badge}</td>
             {mfa_cell}
-            <td>{fmt_time(u.created_at)}</td>
+            <td class="muted">{fmt_time(u.created_at)}</td>
             {actions}
         </tr>
     }
@@ -466,37 +518,72 @@ pub fn render_users(
     render(move || {
         let csrf_for_rows = csrf_token.clone();
         let csrf_for_form = csrf_token.clone();
+        let user_count = users.len();
         let rows: Vec<_> = users
             .into_iter()
             .map(|u| user_row_view(u, current_user.clone(), csrf_for_rows.clone()))
             .collect();
         view! {
             <Shell title="Users".to_string() show_nav=true current=Some("users".to_string())>
-                <h2>"Users"</h2>
+                <header class="page-header">
+                    <div>
+                        <h1 class="page-header__title">"ユーザー管理"</h1>
+                        <p class="page-header__lede">
+                            "ユーザーの作成・編集・管理。"
+                            {format!(" 現在 {user_count} 名。")}
+                        </p>
+                    </div>
+                </header>
                 {flash_banner(flash)}
-                <h3>"Add a user"</h3>
-                <form method="post" action="/admin/users">
-                    <input type="hidden" name="_csrf" value=csrf_for_form />
-                    <label for="u-name">"Username"</label>
-                    <input id="u-name" name="username" type="text" required=true autocomplete="off" />
-                    <label for="u-disp">"Display name (optional)"</label>
-                    <input id="u-disp" name="display_name" type="text" autocomplete="off" />
-                    <label for="u-pw">"Password (12 chars or more)"</label>
-                    <input id="u-pw" name="password" type="password" required=true minlength="12" autocomplete="new-password" />
-                    <label>
-                        <input name="is_admin" type="checkbox" value="true" />
-                        " Grant administrator privileges"
-                    </label>
-                    <button type="submit">"Create user"</button>
-                </form>
 
-                <h3>"All users"</h3>
-                <table>
-                    <thead>
-                        <tr><th>"Username"</th><th>"Display"</th><th>"Status"</th><th>"MFA"</th><th>"Created"</th><th></th></tr>
-                    </thead>
-                    <tbody>{rows}</tbody>
-                </table>
+                <section>
+                    <h2>"新しいユーザーを追加"</h2>
+                    <div class="card">
+                        <form method="post" action="/admin/users" class="stack">
+                            <input type="hidden" name="_csrf" value=csrf_for_form />
+                            <div class="field">
+                                <label for="u-name" class="field__label">"ユーザー名"</label>
+                                <input id="u-name" name="username" type="text"
+                                       required=true autocomplete="off" />
+                            </div>
+                            <div class="field">
+                                <label for="u-disp" class="field__label">"表示名(任意)"</label>
+                                <input id="u-disp" name="display_name" type="text" autocomplete="off" />
+                            </div>
+                            <div class="field">
+                                <label for="u-pw" class="field__label">"パスワード(12 文字以上)"</label>
+                                <input id="u-pw" name="password" type="password"
+                                       required=true minlength="12" autocomplete="new-password" />
+                            </div>
+                            <label class="row" style="gap:var(--space-2)">
+                                <input name="is_admin" type="checkbox" value="true" />
+                                <span>"管理者権限を付与する"</span>
+                            </label>
+                            <div>
+                                <button type="submit">"ユーザーを作成"</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+
+                <section>
+                    <h2>"ユーザー一覧"</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>"ユーザー名"</th>
+                                    <th>"表示名"</th>
+                                    <th>"状態"</th>
+                                    <th>"MFA"</th>
+                                    <th>"作成日"</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>{rows}</tbody>
+                        </table>
+                    </div>
+                </section>
             </Shell>
         }
     })
@@ -505,17 +592,10 @@ pub fn render_users(
 // ---------- clients ----------
 
 fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
-    let status = if c.is_deleted {
-        "deleted"
-    } else if c.is_disabled {
-        "disabled"
-    } else {
-        "active"
-    };
-    let kind = if c.confidential { "confidential" } else { "public" };
-    let id_str = c.id.to_string();
     let is_disabled = c.is_disabled;
     let is_deleted = c.is_deleted;
+    let kind = if c.confidential { "confidential" } else { "public" };
+    let id_str = c.id.to_string();
     let action_label = if is_disabled { "Enable" } else { "Disable" };
     let action_target = if is_disabled { "false" } else { "true" };
     let disabled_url = format!("/admin/clients/{id_str}/disabled");
@@ -534,25 +614,33 @@ fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
         format!("{logout_count} URI(s)")
     };
 
+    let status_badge = if is_deleted {
+        view! { <span class="badge badge--danger">"deleted"</span> }.into_any()
+    } else if is_disabled {
+        view! { <span class="badge badge--warn">"disabled"</span> }.into_any()
+    } else {
+        view! { <span class="badge badge--ok">"active"</span> }.into_any()
+    };
+
     let edit_url = format!("/admin/clients/{id_str}/edit");
     let actions = if is_deleted {
-        view! { <td class="muted">"-"</td> }.into_any()
+        view! { <td><span class="muted">"-"</span></td> }.into_any()
     } else {
         view! {
             <td>
-                <a href=edit_url class="button secondary">"Edit"</a>
-                " "
-                <form method="post" action=disabled_url style="display:inline">
-                    <input type="hidden" name="_csrf" value=csrf_disable />
-                    <input type="hidden" name="disabled" value=action_target />
-                    <button type="submit" class="secondary">{action_label}</button>
-                </form>
-                " "
-                <form method="post" action=delete_url style="display:inline"
-                      onsubmit="return confirm('Permanently delete this client and revoke its tokens?');">
-                    <input type="hidden" name="_csrf" value=csrf_delete />
-                    <button type="submit" class="danger">"Delete"</button>
-                </form>
+                <div class="row" style="gap:var(--space-1)">
+                    <a href=edit_url class="button secondary">"Edit"</a>
+                    <form method="post" action=disabled_url style="display:inline">
+                        <input type="hidden" name="_csrf" value=csrf_disable />
+                        <input type="hidden" name="disabled" value=action_target />
+                        <button type="submit" class="secondary">{action_label}</button>
+                    </form>
+                    <form method="post" action=delete_url style="display:inline"
+                          onsubmit="return confirm('Permanently delete this client and revoke its tokens?');">
+                        <input type="hidden" name="_csrf" value=csrf_delete />
+                        <button type="submit" class="danger">"Delete"</button>
+                    </form>
+                </div>
             </td>
         }
         .into_any()
@@ -565,7 +653,7 @@ fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
             <td>{kind}</td>
             <td><span class="code">{scopes_display}</span></td>
             <td class="muted">{logout_display}</td>
-            <td>{status}</td>
+            <td>{status_badge}</td>
             {actions}
         </tr>
     }
@@ -580,12 +668,15 @@ pub fn render_clients(
     render(move || {
         let csrf_for_rows = csrf_token.clone();
         let csrf_for_form = csrf_token.clone();
+        let client_count = clients.len();
         let secret_block = new_secret.map(|(cid, sec)| {
             view! {
                 <div class="flash warn" role="status">
-                    <strong>"Save this client secret now - it will not be shown again."</strong>
-                    <div>"Client id: "<span class="code">{cid}</span></div>
-                    <div>"Client secret: "<span class="code">{sec}</span></div>
+                    <div class="stack-tight">
+                        <strong>"クライアント Secret は今だけ表示されます。安全な場所に保存してください。"</strong>
+                        <div>"Client ID: "<span class="code">{cid}</span></div>
+                        <div>"Client Secret: "<span class="code">{sec}</span></div>
+                    </div>
                 </div>
             }
         });
@@ -595,42 +686,72 @@ pub fn render_clients(
             .collect();
         view! {
             <Shell title="Clients".to_string() show_nav=true current=Some("clients".to_string())>
-                <h2>"Clients"</h2>
+                <header class="page-header">
+                    <div>
+                        <h1 class="page-header__title">"クライアント管理"</h1>
+                        <p class="page-header__lede">
+                            "OIDC クライアントの登録と管理。"
+                            {format!(" 現在 {client_count} 件。")}
+                        </p>
+                    </div>
+                </header>
                 {flash_banner(flash)}
                 {secret_block}
-                <h3>"Register a client"</h3>
-                <form method="post" action="/admin/clients">
-                    <input type="hidden" name="_csrf" value=csrf_for_form />
-                    <label for="c-name">"Application name"</label>
-                    <input id="c-name" name="name" type="text" required=true />
-                    <label for="c-uris">"Redirect URIs (one per line; https or http loopback)"</label>
-                    <textarea id="c-uris" name="redirect_uris" required=true rows="3"></textarea>
-                    <label for="c-scopes">"Allowed scopes (space-separated; default: openid profile)"</label>
-                    <input id="c-scopes" name="allowed_scopes" type="text" value="openid profile" />
-                    <label for="c-logout">"Post-logout redirect URIs (one per line; optional)"</label>
-                    <textarea id="c-logout" name="post_logout_redirect_uris" rows="2"></textarea>
-                    <label>
-                        <input name="confidential" type="checkbox" value="true" checked=true />
-                        " Confidential client (will receive a client secret)"
-                    </label>
-                    <button type="submit">"Register"</button>
-                </form>
 
-                <h3>"Registered clients"</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>"Name"</th>
-                            <th>"Client id"</th>
-                            <th>"Type"</th>
-                            <th>"Allowed scopes"</th>
-                            <th>"Logout URIs"</th>
-                            <th>"Status"</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>{rows}</tbody>
-                </table>
+                <section>
+                    <h2>"新しいクライアントを登録"</h2>
+                    <div class="card">
+                        <form method="post" action="/admin/clients" class="stack">
+                            <input type="hidden" name="_csrf" value=csrf_for_form />
+                            <div class="field">
+                                <label for="c-name" class="field__label">"アプリケーション名"</label>
+                                <input id="c-name" name="name" type="text" required=true />
+                            </div>
+                            <div class="field">
+                                <label for="c-uris" class="field__label">"Redirect URIs"</label>
+                                <textarea id="c-uris" name="redirect_uris" required=true rows="3"></textarea>
+                                <span class="field__hint">"1 行に 1 つ。https またはループバックの http のみ。"</span>
+                            </div>
+                            <div class="field">
+                                <label for="c-scopes" class="field__label">"許可スコープ"</label>
+                                <input id="c-scopes" name="allowed_scopes" type="text" value="openid profile" />
+                                <span class="field__hint">"スペース区切り。デフォルトは openid profile。"</span>
+                            </div>
+                            <div class="field">
+                                <label for="c-logout" class="field__label">"Post-logout redirect URIs(任意)"</label>
+                                <textarea id="c-logout" name="post_logout_redirect_uris" rows="2"></textarea>
+                                <span class="field__hint">"1 行に 1 つ。"</span>
+                            </div>
+                            <label class="row" style="gap:var(--space-2)">
+                                <input name="confidential" type="checkbox" value="true" checked=true />
+                                <span>"Confidential client(client secret を発行する)"</span>
+                            </label>
+                            <div>
+                                <button type="submit">"登録"</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+
+                <section>
+                    <h2>"登録済みクライアント"</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>"名前"</th>
+                                    <th>"Client ID"</th>
+                                    <th>"種別"</th>
+                                    <th>"スコープ"</th>
+                                    <th>"Logout URIs"</th>
+                                    <th>"状態"</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>{rows}</tbody>
+                        </table>
+                    </div>
+                </section>
             </Shell>
         }
     })

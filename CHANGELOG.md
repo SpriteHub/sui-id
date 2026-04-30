@@ -5,6 +5,188 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-04-29
+
+Design language overhaul. The Lavender-Jade palette, an 8/16/24/32
+spacing rhythm on a 4px base, a 5-step typography scale, and a
+proper component vocabulary land together. Light and dark themes
+ship as first-class citizens, with a footer toggle that remembers
+the user's choice across pages without a Cookie round-trip. The
+core path of the UI — login, the admin nav and shell, the
+dashboard, the user list, and the client list — is rebuilt on top
+of the new components. Every other screen still works (no
+behavioural change) and inherits the new tokens automatically;
+those screens get their first pass in v0.20.1.
+
+### Added
+
+#### Design tokens (`sui-id-web::tokens`)
+
+A single CSS file's worth of `:root` variables defines the
+palette and metric scales. Every component reads these — there
+are no more raw hex codes anywhere in the component sheet. The
+tokens are organised as:
+
+- **Surface**: `--surface-default`, `--surface-elevated`,
+  `--surface-subtle`, `--surface-sunken`, `--surface-inverse`.
+  Three z-level steps so cards visibly sit on the page background
+  without a heavy shadow.
+- **Foreground**: `--fg-default` (≈14:1 on default), `--fg-muted`
+  (≈5:1), `--fg-subtle` (≈3:1), `--fg-on-accent`, `--fg-inverse`.
+  All four contrast pairs hit AA or better in both modes per the
+  contrast pairings document.
+- **Accent**: lavender `--accent-default` (#7C6BCF light /
+  #A89BFF dark), `--accent-emphasis` for hover, `--accent-subtle`
+  as a safe text-bearing background.
+- **Semantic**: `--danger-default`, `--warning-default`,
+  `--success-default` (jade-influenced), `--info-default` —
+  separately tuned per mode.
+- **Interaction**: `--state-hover`, `--state-active`,
+  `--state-focus`, `--state-disabled`. The focus token doubles as
+  the global focus-ring colour, applied via `:focus-visible` for
+  keyboard users only.
+- **Spacing**: `--space-1` (4px) through `--space-6` (48px), a
+  4px-based rhythm. The page header→section→card→field cascade
+  uses 32 / 24 / 16 / 8 with the dominance the design memo asks
+  for.
+- **Typography**: 28 / 22 / 18 / 15 / 13 px display / h2 / h3 /
+  body / caption, with line-heights tuned per size (1.3 → 1.6).
+  Weights regular 400 / medium 500 / bold 700. Numbers default
+  to tabular-nums in stat callouts.
+- **Radius**: 6 / 10 / 16 px for sm / md / lg.
+- **Shadow**: three steps tuned per mode (light uses subtle black
+  alphas, dark uses heavier alphas to read on near-black surfaces).
+
+#### Component sheet (`sui-id-web::components`)
+
+A single CSS that defines every primitive in terms of tokens —
+the visual language of the product, in 400 lines. Components:
+
+- `.app-header`, `.app-nav`, `.app-nav__link`, `.app-footer`
+- `.app-main`, `.app-main--narrow`, `.auth-page`, `.auth-card`
+- `.card`, `.card__title`, `.card__body`, `.card__footer`
+- `.stack`, `.stack-tight`, `.row`, `.grid-cards`
+- `.stat`, `.stat__value`, `.stat__label`
+- `.field`, `.field__label`, `.field__hint`
+- Inputs, selects, textareas, checkboxes — focus ring + hover +
+  disabled all consistent
+- Buttons: primary (filled accent), secondary (outlined), danger,
+  ghost, link-button. Min height 36px for touch.
+- `.table-wrap` + `<table>` styling — uppercase caption headers,
+  alternating-row hover, rounded outer container
+- `.badge`, `.badge--ok`, `.badge--warn`, `.badge--danger`,
+  `.badge--accent`
+- `.flash` info / warn / error
+- `.page-header`, `.page-header__title`, `.page-header__lede`,
+  `.page-header__actions`
+- `.theme-toggle`, `.theme-toggle__btn` for the footer toggle
+- `.sr-only` for screen-reader-only content
+
+#### Light / dark theme switching
+
+- The Lavender-Jade dark palette activates either via
+  `[data-theme="dark"]` on `<html>` (explicit user choice) or via
+  `prefers-color-scheme: dark` (when the user hasn't chosen).
+- A footer toggle lets the user pick **Light / Auto / Dark**. The
+  choice is persisted in `localStorage` under `sui_id_theme`
+  (values: `"light"` / `"dark"` / `"system"`).
+- An early inline script in `<head>` reads `localStorage`
+  *synchronously* before first paint and sets `data-theme`. There
+  is no FOUC: the page paints in the chosen theme on the first
+  frame.
+- The `aria-pressed` state on the three toggle buttons reflects
+  the active choice.
+- No Cookie round-trip — the SSR HTML is theme-neutral, the
+  inline script sets the theme client-side. This keeps page
+  caching trivial and the server stateless.
+
+#### Multilingual font strategy
+
+The font stack is system-ui with explicit CJK fallbacks. No web
+fonts are bundled — there is **zero increase in distributed
+binary size** from typography. The browser's Unicode font
+fallback handles each script with the OS-native UI font: SF Pro
+on Apple, Segoe UI on Windows, Hiragino Sans / Yu Gothic UI for
+Japanese, Noto Sans CJK on Linux/Android. When v1 multilingual
+support adds `<html lang="...">` to localised pages, `:lang()`
+rules can pin per-script fonts on top — no asset additions
+required.
+
+`.code` / `.mono` / `<code>` / `<pre>` use `ui-monospace` with
+SF Mono / Cascadia Code / JetBrains Mono / Consolas / Menlo
+fallbacks — important for technical IDs (Client ID, UUID, JWT)
+where `0` vs `O` and `l` vs `1` legibility matters.
+
+#### Footer chrome
+
+The footer carries:
+
+- The product tagline ("🌱 sui-id · 静かで、凛として、やさしい
+  ID 基盤を。")
+- Three accessibility badges (Keyboard / Screen reader / Contrast)
+  per the screen-design figure
+- The theme toggle
+- The version string from `CARGO_PKG_VERSION` so a glance at the
+  footer always reveals what's deployed
+
+### Changed
+
+- `Shell` component (used by every authenticated admin page)
+  rebuilt on the new tokens and component classes. No layout
+  prop API changes — existing call sites work unchanged.
+- New `AuthShell` component for centred narrow layouts (login).
+  The setup page will move onto `AuthShell` in v0.20.0's
+  follow-up rework of the setup wizard (v0.20.x or later).
+- **`render_login`** rebuilt on `AuthShell`, `.auth-card`, and
+  `.field`. Japanese copy ("ユーザー名またはメールアドレス" /
+  "パスワード" / "ログイン") matching the screen-design figure.
+- **`render_dashboard`** rebuilt — `page-header` + three stat
+  cards (users / clients / service status with a status badge) +
+  a dedicated OIDC endpoints table. Removed the
+  five-row "everything in one table" layout.
+- **`render_users`** rebuilt — `page-header`, a `card`-wrapped
+  "新しいユーザーを追加" form using `.field`, a `.table-wrap`-
+  wrapped table with status badges (active / admin / disabled /
+  deleted) and MFA badge. Action buttons grouped in a `.row`.
+- **`render_clients`** rebuilt — same treatment as users. The
+  "Save this client secret now" warning uses the new `.flash.warn`
+  with a `.stack-tight`. Status badges replace plain text
+  status.
+- Admin nav links use `.app-nav__link` with hover + `aria-current`
+  pill styling. The Sign out link auto-pushes to the right.
+
+### Documentation
+
+- Visual design memo: token names + scales, light/dark contrast
+  pairings, font strategy, focus-ring policy. Lives next to
+  `tokens.rs` for now; will graduate to `docs/design-system.md`
+  alongside v0.20.1's screen sweep.
+
+### Items deferred to v0.20.1+
+
+- Per-screen rebuild for the **non-core** pages: `setup`,
+  `signing-keys`, `audit`, `me/security`, `me/security/password`,
+  `authorize` (consent), `mfa-challenge`, `mfa-setup`, `profile`,
+  `client-edit`. They render correctly today and inherit the new
+  tokens for colour and typography automatically; they just don't
+  yet use the new card/badge/page-header vocabulary.
+- Dashboard sparkline ("過去 7 日間のサインイン数"), per the
+  screen-design figure. Needs an audit-log query over a time
+  window — small but separable, comes with the v0.20.x dashboard
+  pass.
+- Settings tabbed structure (基本 / セキュリティ / 認証 / ログ /
+  その他), per screen 9 of the design figure. Comes with the
+  v0.20.x settings pass.
+- Setup multi-step wizard (4 steps: ようこそ → 管理者作成 →
+  暗号化設定 → 完了), per screens 1–4 of the design figure. The
+  setup token + admin creation are currently a single-page form;
+  the wizard split is a UX upgrade, not a security one. Comes
+  with the v0.20.x setup pass.
+- Authorize / consent screen visual rework, per screen 11 of the
+  design figure. Functionally complete today (consent is
+  obtained at `/oauth2/authorize`); the visual rework lands in
+  the v0.20.x consent pass.
+
 ## [0.19.0] - 2026-04-28
 
 Self-service password change at `/me/security/password`. A
