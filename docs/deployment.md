@@ -309,7 +309,11 @@ are how you get back in. Plan the recovery story before you need it.
 `sui-id backup` produces an atomic, hot snapshot of the database and
 master key in a single tar file. Schedule it.
 
-`/etc/cron.d/sui-id-backup`:
+For backups that stay on the same trust boundary as the host (e.g.
+a local backup volume on the same machine, or a same-VPC backup
+host), the plain form is fine:
+
+`/etc/cron.d/sui-id-backup` (local-only retention):
 
 ```
 SHELL=/bin/sh
@@ -322,23 +326,64 @@ PATH=/usr/local/bin:/usr/bin:/bin
 27 3 * * * sui-id find /var/backups/sui-id -name 'sui-id-*.tar' -mtime +30 -delete
 ```
 
-The backup tar file contains the master key. Treat it with the same
-care as any other secret: encrypt at rest, restrict who can read it,
-ship it off-host.
+The plain backup tar file contains the master key. Treat it with the
+same care as any other secret: restrict who can read it, encrypt the
+filesystem under it, restrict the backup host as if it were the
+sui-id host itself.
 
-A trivial off-host shipper:
+For backups that will leave the trust boundary — cloud object
+storage, off-site media, anywhere you wouldn't put the unencrypted
+key file — use `--encrypt`:
+
+```
+# Daily at 03:17. Encrypted with a passphrase from a sealed file.
+17 3 * * * sui-id SUI_ID_BACKUP_PASSPHRASE="$(cat /etc/sui-id/backup.pass)" \
+    /usr/local/bin/sui-id backup \
+    --config /etc/sui-id/sui-id.toml \
+    --to /var/backups/sui-id/sui-id-$(date +\%Y-\%m-\%d).tar.enc \
+    --encrypt
+```
+
+The passphrase file (`/etc/sui-id/backup.pass`, mode `0600`, owned
+by the `sui-id` user) holds a 32+ character random passphrase.
+Generate it once with `head -c 32 /dev/urandom | base64`. Store a
+copy in your password manager — losing the passphrase makes the
+encrypted backups unrecoverable.
+
+A trivial off-host shipper for the encrypted form:
 
 ```
 37 3 * * * sui-id rsync -a --delete \
     /var/backups/sui-id/ backup-host:/srv/backups/sui-id/
 ```
 
+Before relying on a backup, verify it. A daily smoke test:
+
+```
+47 3 * * * sui-id SUI_ID_BACKUP_PASSPHRASE="$(cat /etc/sui-id/backup.pass)" \
+    /usr/local/bin/sui-id verify-backup \
+    --from /var/backups/sui-id/sui-id-$(date +\%Y-\%m-\%d).tar.enc \
+    --decrypt > /var/log/sui-id-backup-verify.log 2>&1
+```
+
+`verify-backup` reads the file, runs a SQLite integrity check on
+the inner snapshot, and prints the manifest. It never writes
+anything. If this command fails, alert.
+
 To restore, copy a tar to the new host and:
 
 ```bash
 systemctl stop sui-id
+
+# Plain
 sui-id restore --config /etc/sui-id/sui-id.toml \
               --from /tmp/sui-id-2026-04-15.tar
+
+# Encrypted
+SUI_ID_BACKUP_PASSPHRASE="$(cat /etc/sui-id/backup.pass)" \
+  sui-id restore --config /etc/sui-id/sui-id.toml \
+                 --from /tmp/sui-id-2026-04-15.tar.enc --decrypt
+
 systemctl start sui-id
 ```
 

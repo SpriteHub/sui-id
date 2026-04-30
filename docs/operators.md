@@ -93,31 +93,139 @@ same way you would treat a TLS private key.
 
 ## Backup and restore
 
-A working backup contains two files: the SQLite database and the master
-key. sui-id ships a subcommand that bundles both into a single tarball
-with restrictive permissions:
+A working backup contains three things: a SQLite snapshot of the
+database, a copy of the master key, and a small `MANIFEST.json`
+that records what version produced it. sui-id bundles all three
+into a single tarball:
 
 ```bash
 sui-id backup --to /var/backups/sui-id-$(date +%F).tar --config /etc/sui-id/sui-id.toml
 ```
 
-The output file is created with mode `0600`. The SQLite snapshot is
-produced via `VACUUM INTO`, which is safe to run while sui-id is serving
-traffic — no need to stop the daemon for backups.
+The output file is created with mode `0600`. The SQLite snapshot
+is produced via `VACUUM INTO`, which is safe to run while sui-id
+is serving traffic — no need to stop the daemon for backups.
+
+The manifest is human-readable JSON and contains:
+
+- `format_version` — backup-file format version (currently 1).
+- `sui_id_version` — the binary that produced the backup.
+- `schema_version` — the database schema version at backup time.
+- `created_at`, `hostname`, `issuer` — provenance.
+
+`sui-id restore` reads this manifest before doing anything destructive.
+A backup whose `format_version` or `schema_version` is **newer** than
+the current binary supports is refused outright — the operator must
+upgrade the binary first.
+
+### Encrypted backups for off-host transport
+
+The plain tarball above contains the master key inline. That's fine
+for backups that never leave the host's trust boundary (a local
+disk, a same-VPC backup volume). For backups that will travel —
+cloud object storage, off-site media, email — wrap the tarball in
+sui-id's encrypted envelope:
+
+```bash
+sui-id backup --to /tmp/backup.tar.enc --encrypt \
+              --config /etc/sui-id/sui-id.toml
+# Encryption passphrase: ******
+# Encryption passphrase (again): ******
+```
+
+Or non-interactively for cron / scripts:
+
+```bash
+SUI_ID_BACKUP_PASSPHRASE='hunter2-correct-horse' \
+  sui-id backup --to /tmp/backup.tar.enc --encrypt \
+                --config /etc/sui-id/sui-id.toml
+```
+
+The envelope is XChaCha20-Poly1305 keyed by an Argon2id derivation
+(64 MiB / 3 iterations / 1 thread) of the passphrase. The salt and
+nonce are generated fresh per backup and stored in the file.
+
+**Store the passphrase separately from the file.** A backup tarball
+plus its passphrase, kept together, has the same security profile
+as a plain backup. The whole point is that the two travel through
+different channels.
+
+### Verifying a backup
+
+Before committing to a real restore — especially when migrating to
+a new host — check the file is what you think it is:
+
+```bash
+sui-id verify-backup --from /tmp/backup.tar.enc --decrypt
+# Format version: 1
+# sui-id version: 0.12.0
+# Schema version: 5
+# Created at:     2026-04-28T10:31:42Z
+# Hostname:       old-host.example.com
+# Issuer:         https://idp.example.com
+# Encrypted:      true
+# Tar size:       183808 bytes
+# Database size:  180224 bytes
+# Master key:     present
+#
+# ✓ SQLite integrity check passed
+# ✓ Decrypted with provided passphrase
+```
+
+`verify-backup` is read-only — it never touches the destination
+storage paths and never produces any output file. Use it whenever
+a backup has come in from outside; whenever you want to confirm
+versions line up before an upgrade-and-migrate; or as a daily smoke
+test from cron against the latest backup.
+
+### Restoring
 
 To restore, point `sui-id restore` at the tarball:
 
 ```bash
-sui-id restore --from /var/backups/sui-id-2026-04-25.tar --config /etc/sui-id/sui-id.toml
+# plain backup
+sui-id restore --from /var/backups/sui-id-2026-04-25.tar \
+               --config /etc/sui-id/sui-id.toml
+
+# encrypted backup
+sui-id restore --from /tmp/backup.tar.enc --decrypt \
+               --config /etc/sui-id/sui-id.toml
 ```
 
-By default `restore` refuses to overwrite an existing database or key
-file at the destination paths. Pass `--force` if you really mean it
-(typically only when recovering onto a fresh host).
+By default `restore` refuses to overwrite an existing database or
+key file at the destination paths. Pass `--force` if you really mean
+it (typically only when recovering onto a fresh host).
 
-> **Be careful where the tarball ends up.** It contains the master key.
-> Anyone who can read the archive can decrypt the SQLite columns inside
-> it. Treat the backup the same way you treat the key file itself.
+Backups produced by sui-id v0.12.x and earlier (no `MANIFEST.json`)
+are still accepted by v0.13+ restore — the manifest checks are
+skipped in that case. Upgrade-time recommendation: take a fresh
+backup with the new binary, which will write the manifest.
+
+### Migrating to a new host
+
+The recommended migration sequence is:
+
+1. **On the old host**: `sui-id backup --to /tmp/migration.tar.enc --encrypt`
+2. **Transfer the file** to the new host through whatever channel is
+   most convenient. Send the passphrase through a different channel.
+3. **On the new host**: install the same (or newer) sui-id version,
+   prepare `/etc/sui-id/sui-id.toml`, then run
+   `sui-id verify-backup --from /tmp/migration.tar.enc --decrypt`
+   to confirm the file is intact and the schema version matches what
+   the new binary expects.
+4. **Restore** with `sui-id restore --from /tmp/migration.tar.enc --decrypt`.
+5. **Start the new sui-id**. Migrations run automatically on first
+   boot if the new binary is a newer version than the old one.
+6. **Cut DNS / load balancer** to the new host. The old refresh
+   tokens, sessions, and signing keys all carry over, so end users
+   don't notice the move.
+7. **Stop the old host** and securely destroy the migration archive
+   on both sides.
+
+> **Be careful where the tarball ends up.** A plain backup contains
+> the master key. An encrypted backup contains nothing useful
+> without the passphrase, but anyone who has both has the master key.
+> Treat backups the same way you treat the key file itself.
 
 ## Reverse proxying
 

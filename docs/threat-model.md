@@ -325,6 +325,65 @@ What we do **not** do:
   whether they want to re-pin or to accept whatever the latest
   0.5.x patch is at build time.
 
+### A13. Attacker who intercepts a backup tarball in transit
+
+Threat: an operator copies a backup off-host (cloud storage, removable
+media, email to a colleague, transfer to a new server during
+migration). Somewhere along that channel the file is captured.
+
+A plain backup tarball contains the master key. An attacker who
+captures it has compromised the entire installation as completely
+as if they had stolen `/var/lib/sui-id/sui-id.key` and
+`/var/lib/sui-id/sui-id.sqlite` directly from the live host.
+
+What we do:
+
+- The `--encrypt` option on `sui-id backup` wraps the tarball in an
+  XChaCha20-Poly1305 envelope. The key is derived from a
+  passphrase via Argon2id with parameters tuned to take roughly a
+  second on contemporary hardware (m_cost = 64 MiB, t_cost = 3,
+  p_cost = 1; well above the OWASP minimum). Salt and nonce are
+  generated fresh per backup; both are stored in the envelope.
+- Restoring or `verify-backup`-ing an encrypted backup requires
+  the matching passphrase. The Poly1305 tag rejects tampering.
+- The envelope format includes a magic header (`SUIDIDBK`) and a
+  format-version field, so a future incompatible change can be
+  detected and refused cleanly rather than producing garbled
+  output.
+
+What an operator must still do:
+
+- **Use `--encrypt` for backups that will leave the host's trust
+  boundary.** A plain backup is fine for a same-host or same-trust-
+  boundary destination; an encrypted backup is what should ride
+  rsync-to-S3, an off-site disk, or a transfer to a migration host.
+- **Send the passphrase out-of-band.** The whole point is that the
+  passphrase travels through a different channel than the file. If
+  both end up on the same compromised system, the encryption gives
+  no protection.
+- **Choose a passphrase with enough entropy.** Argon2id buys time
+  against brute force, but a 4-word passphrase will not survive
+  determined offline grinding. The deployment guide recommends
+  generating a passphrase from `head -c 32 /dev/urandom | base64`
+  and keeping it in a password manager.
+- **Lose the passphrase, lose the backup.** sui-id has no recovery
+  mechanism for forgotten backup passphrases. This is the same
+  trade-off as for any encrypted archive.
+
+What we do not do:
+
+- Implement any kind of split-key, threshold, or HSM-backed
+  key-derivation for backup envelopes. The single-passphrase model
+  fits the self-hosted, single-operator scope; teams that need
+  fancier custodianship will have already invested in something
+  like Vault and can wrap the plain tarball with that instead.
+- Verify a passphrase before deriving the key. This is a deliberate
+  trade-off: a user-friendly "wrong passphrase" check that did not
+  also serve as a brute-force oracle would require a separate
+  authenticator. The Poly1305 tag is the authoritative check —
+  it gives a clear error on the wrong passphrase, without leaking
+  any signal stronger than "decryption failed".
+
 ## Adversaries we do not plan for
 
 These are out of scope. Either the threat is genuinely better handled

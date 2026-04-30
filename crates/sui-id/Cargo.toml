@@ -30,10 +30,10 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-sui-id-shared = { version = "0.12.0", path = "../sui-id-shared" }
-sui-id-store  = { version = "0.12.0", path = "../sui-id-store" }
-sui-id-core   = { version = "0.12.0", path = "../sui-id-core" }
-sui-id-web    = { version = "0.12.0", path = "../sui-id-web" }
+sui-id-shared = { version = "0.13.0", path = "../sui-id-shared" }
+sui-id-store  = { version = "0.13.0", path = "../sui-id-store" }
+sui-id-core   = { version = "0.13.0", path = "../sui-id-core" }
+sui-id-web    = { version = "0.13.0", path = "../sui-id-web" }
 
 tokio = { workspace = true }
 axum = { workspace = true }
@@ -59,6 +59,7 @@ rand = { workspace = true }
 rand_core = { workspace = true }
 base64ct = { workspace = true }
 chacha20poly1305 = { workspace = true }
+argon2 = { workspace = true }
 include_dir = { workspace = true }
 percent-encoding = { workspace = true }
 subtle = { workspace = true }
@@ -68,6 +69,7 @@ rusqlite = { workspace = true }
 tempfile = { workspace = true }
 
 [dev-dependencies]
+proptest = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
@@ -76,6 +78,6 @@ url = { workspace = true }
 sha2 = { workspace = true }
 base64ct = { workspace = true }
 percent-encoding = { workspace = true }
-sui-id-store = { version = "0.12.0", path = "../sui-id-store" }
+sui-id-store = { version = "0.13.0", path = "../sui-id-store" }
 http = "1"
 http-body-util = "0.1"

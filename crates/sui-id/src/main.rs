@@ -41,6 +41,7 @@ async fn main() -> Result<()> {
     match subcommand.as_deref() {
         Some("backup") => return run_backup_subcommand(&args),
         Some("restore") => return run_restore_subcommand(&args),
+        Some("verify-backup") => return run_verify_backup_subcommand(&args),
         Some(other) => bail!(
             "unknown subcommand {other:?}. Run `sui-id --help` for usage."
         ),
@@ -107,12 +108,28 @@ fn run_backup_subcommand(args: &[String]) -> Result<()> {
     let config_path = parse_config_path(args).unwrap_or_else(|| PathBuf::from("./sui-id.toml"));
     let cfg = Config::load(&config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
-    backup::run_backup(&cfg, &dest)?;
-    eprintln!(
-        "backup written to {} (mode 0600). Store it together with knowledge \
-         of the master key, but be aware: this archive contains the key.",
-        dest.display()
-    );
+    let opts = if args.iter().any(|a| a == "--encrypt") {
+        let pass = read_passphrase("Encryption passphrase", true)?;
+        backup::BackupOptions {
+            passphrase: Some(pass),
+        }
+    } else {
+        backup::BackupOptions::default()
+    };
+    backup::run_backup(&cfg, &dest, &opts)?;
+    if opts.passphrase.is_some() {
+        eprintln!(
+            "encrypted backup written to {} (mode 0600). Store the passphrase \
+             separately from the file — losing it makes the backup unrecoverable.",
+            dest.display()
+        );
+    } else {
+        eprintln!(
+            "backup written to {} (mode 0600). The archive contains the master key; \
+             treat it as a secret. For transport over an untrusted channel, use --encrypt.",
+            dest.display()
+        );
+    }
     Ok(())
 }
 
@@ -123,7 +140,16 @@ fn run_restore_subcommand(args: &[String]) -> Result<()> {
     let cfg = Config::load(&config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
     let force = args.iter().any(|a| a == "--force");
-    backup::run_restore(&cfg, &src, force)?;
+    let passphrase = if args.iter().any(|a| a == "--decrypt") {
+        Some(read_passphrase("Decryption passphrase", false)?)
+    } else {
+        None
+    };
+    backup::run_restore(
+        &cfg,
+        &src,
+        &backup::RestoreOptions { force, passphrase },
+    )?;
     eprintln!(
         "restored from {} into {} and {}",
         src.display(),
@@ -131,6 +157,70 @@ fn run_restore_subcommand(args: &[String]) -> Result<()> {
         cfg.storage.key_file.display()
     );
     Ok(())
+}
+
+fn run_verify_backup_subcommand(args: &[String]) -> Result<()> {
+    let src = parse_named_path(args, "--from")
+        .context("verify-backup requires --from PATH")?;
+    let passphrase = if args.iter().any(|a| a == "--decrypt") {
+        Some(read_passphrase("Decryption passphrase", false)?)
+    } else {
+        None
+    };
+    let report = backup::run_verify(&src, passphrase.as_deref())?;
+    println!("Format version: {}", report.manifest.format_version);
+    println!("sui-id version: {}", report.manifest.sui_id_version);
+    println!("Schema version: {}", report.manifest.schema_version);
+    println!("Created at:     {}", report.manifest.created_at);
+    println!("Hostname:       {}", report.manifest.hostname);
+    println!("Issuer:         {}", report.manifest.issuer);
+    println!("Encrypted:      {}", report.encrypted);
+    println!("Tar size:       {} bytes", report.tar_bytes);
+    println!("Database size:  {} bytes", report.db_bytes);
+    println!(
+        "Master key:     {}",
+        if report.key_present { "present" } else { "MISSING" }
+    );
+    println!();
+    println!("✓ SQLite integrity check passed");
+    if report.encrypted {
+        println!("✓ Decrypted with provided passphrase");
+    }
+    Ok(())
+}
+
+/// Read a passphrase from stdin (interactive TTY) or from the
+/// `SUI_ID_BACKUP_PASSPHRASE` environment variable (for cron and
+/// scripted use). When `confirm` is true and we're on a TTY, the
+/// passphrase is asked twice and rejected on mismatch.
+fn read_passphrase(prompt: &str, confirm: bool) -> Result<String> {
+    if let Ok(env) = std::env::var("SUI_ID_BACKUP_PASSPHRASE") {
+        if !env.is_empty() {
+            return Ok(env);
+        }
+    }
+    use std::io::{BufRead, Write};
+    let stdin = std::io::stdin();
+    let mut stderr = std::io::stderr();
+    write!(stderr, "{prompt}: ").ok();
+    stderr.flush().ok();
+    let mut first = String::new();
+    stdin.lock().read_line(&mut first).context("reading passphrase")?;
+    let first = first.trim_end_matches(['\r', '\n']).to_string();
+    if first.is_empty() {
+        bail!("passphrase must not be empty");
+    }
+    if confirm {
+        write!(stderr, "{prompt} (again): ").ok();
+        stderr.flush().ok();
+        let mut second = String::new();
+        stdin.lock().read_line(&mut second).context("reading passphrase confirmation")?;
+        let second = second.trim_end_matches(['\r', '\n']).to_string();
+        if first != second {
+            bail!("passphrases did not match");
+        }
+    }
+    Ok(first)
 }
 
 fn parse_config_path(args: &[String]) -> Option<PathBuf> {
@@ -159,8 +249,9 @@ Self-hosted OpenID Connect provider.
 
 USAGE:
     sui-id [--config PATH]
-    sui-id backup --to PATH [--config PATH]
-    sui-id restore --from PATH [--config PATH] [--force]
+    sui-id backup --to PATH [--config PATH] [--encrypt]
+    sui-id restore --from PATH [--config PATH] [--force] [--decrypt]
+    sui-id verify-backup --from PATH [--decrypt]
     sui-id --print-sample-config
     sui-id --version
     sui-id --help
@@ -168,19 +259,32 @@ USAGE:
 SUBCOMMANDS:
     (none)                   Run the HTTP server.
     backup                   Write a tarball containing a SQLite-consistent
-                             snapshot of the database and a copy of the
-                             master key file. The output file is created
-                             with mode 0600. Treat it like the master key.
+                             snapshot of the database, a copy of the master
+                             key file, and a manifest describing the
+                             provenance. The output file is mode 0600.
+                             With --encrypt, the tarball is wrapped in an
+                             XChaCha20-Poly1305 envelope keyed by an
+                             Argon2id derivation of a passphrase you supply.
+                             Use --encrypt for backups that will leave the
+                             trust boundary of the host.
     restore                  Restore a backup tarball into the configured
                              storage paths. Refuses to overwrite existing
-                             files unless --force is supplied.
+                             files unless --force is supplied. Use --decrypt
+                             when restoring an encrypted backup.
+    verify-backup            Read a backup file and report what it contains
+                             without writing anything. Runs a SQLite
+                             integrity check on the inner snapshot. Use
+                             before a real restore to catch a corrupted or
+                             mismatched backup.
 
 OPTIONS:
     --config PATH            Path to the TOML configuration file
                              (default: ./sui-id.toml)
     --to PATH                Output path for `backup`.
-    --from PATH              Input path for `restore`.
+    --from PATH              Input path for `restore` / `verify-backup`.
     --force                  Allow `restore` to overwrite existing files.
+    --encrypt                Encrypt the backup with a passphrase.
+    --decrypt                Treat the input as an encrypted backup.
     --print-sample-config    Print a sample configuration and exit.
     --version, -V            Print version information and exit.
     --help, -h               Print this help and exit.
@@ -188,6 +292,8 @@ OPTIONS:
 ENVIRONMENT:
     SUI_ID_MASTER_KEY        Base64-encoded 32-byte master key.
                              Overrides the key file if set.
+    SUI_ID_BACKUP_PASSPHRASE Passphrase for `--encrypt` / `--decrypt`,
+                             when running non-interactively (cron, scripts).
 
 DOCUMENTATION:
     See README.md and docs/operators.md for the operator's guide.

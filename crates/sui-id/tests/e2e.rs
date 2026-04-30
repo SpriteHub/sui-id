@@ -845,7 +845,7 @@ async fn backup_then_restore_preserves_users_and_clients() {
 
     // Step 2: take a backup.
     let archive = tmp.path().join("backup.tar");
-    backup::run_backup(&cfg_src, &archive).expect("backup");
+    backup::run_backup(&cfg_src, &archive, &backup::BackupOptions::default()).expect("backup");
     assert!(archive.exists());
 
     // Step 3: restore into a fresh location and re-open.
@@ -856,7 +856,15 @@ async fn backup_then_restore_preserves_users_and_clients() {
         },
         ..cfg_src.clone()
     };
-    backup::run_restore(&cfg_dst, &archive, false).expect("restore");
+    backup::run_restore(
+        &cfg_dst,
+        &archive,
+        &backup::RestoreOptions {
+            force: false,
+            passphrase: None,
+        },
+    )
+    .expect("restore");
 
     // Step 4: open the restored DB with the restored key and verify the
     // user and client are still there.

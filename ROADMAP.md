@@ -68,6 +68,16 @@ v0.10.1 / v0.10.2.
   tracing spans, JSON-line output, a typed `SecurityEvent` API
   in `sui-id-core`, and an operator-facing event vocabulary
   documented in `operators.md` for SIEM integration.
+- Server migration / secure backup. The `backup` and `restore`
+  subcommands now write and read a `MANIFEST.json` (format
+  version, schema version, sui-id version, creation timestamp,
+  hostname, issuer); restore refuses too-new format or schema
+  versions. `--encrypt` / `--decrypt` wrap the tarball in an
+  XChaCha20-Poly1305 envelope keyed by an Argon2id derivation of
+  an operator passphrase; the passphrase is read from stdin or
+  `SUI_ID_BACKUP_PASSPHRASE`. A new `verify-backup` subcommand
+  reads a file (decrypting if needed), parses the manifest, and
+  runs SQLite `integrity_check` without writing anything.
 
 ## Explicitly **not** on the roadmap
 

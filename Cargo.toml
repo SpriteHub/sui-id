@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.12.0"
+version = "0.13.0"
 edition = "2024"
 rust-version = "1.91"
 license = "Apache-2.0"
@@ -58,6 +58,8 @@ qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 # it stays on the server, behind the master key boundary like any other
 # row.
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
+# Property-based testing. Dev-only — never reaches production builds.
+proptest = "1.5"
 hmac = "0.12"
 subtle = "2.6"
 zeroize = { version = "1.8", features = ["derive"] }

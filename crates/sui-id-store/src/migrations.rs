@@ -36,6 +36,25 @@ const MIGRATIONS: &[Migration] = &[
     },
 ];
 
+/// The highest schema version this build of sui-id-store knows how to
+/// produce by running its bundled migrations. The backup-restore path
+/// uses this to refuse a backup that was taken on a newer sui-id (the
+/// migration to read it forward doesn't exist yet) — reversibly,
+/// rebuild with a newer binary.
+pub const MAX_SCHEMA_VERSION: i32 = {
+    // Computed at compile-time from the MIGRATIONS slice. If you add a
+    // new migration above, this picks up the new top automatically.
+    let mut i = 0;
+    let mut max = 0i32;
+    while i < MIGRATIONS.len() {
+        if MIGRATIONS[i].version > max {
+            max = MIGRATIONS[i].version;
+        }
+        i += 1;
+    }
+    max
+};
+
 const META_KEY_SCHEMA_VERSION: &str = "schema_version";
 
 /// Apply all pending migrations to `conn`.

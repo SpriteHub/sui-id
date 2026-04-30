@@ -5,6 +5,177 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-04-28
+
+Server migration / secure backup. The `backup` and `restore`
+subcommands gain provenance metadata, optional passphrase-based
+encryption, and a new sibling `verify-backup` for read-only checks.
+
+### Added — `MANIFEST.json` in every backup
+
+Every backup tarball produced by v0.13+ now includes a
+`MANIFEST.json` entry alongside `sui-id.sqlite` and `sui-id.key`:
+
+```json
+{
+  "format_version": 1,
+  "sui_id_version": "0.13.0",
+  "schema_version": 5,
+  "created_at": "2026-04-28T10:31:42Z",
+  "hostname": "idp.example.com",
+  "issuer": "https://idp.example.com"
+}
+```
+
+`restore` reads the manifest before doing anything destructive and
+refuses to act on:
+
+- a backup whose `format_version` is newer than the running binary
+  knows;
+- a backup whose `schema_version` is newer than the running binary
+  has migrations for.
+
+Both are recoverable operator failures — rebuild with the right
+binary version and try again.
+
+Backwards compatible: backups produced by v0.12 and earlier (with
+no manifest) continue to restore on v0.13. The compatibility check
+treats them as "format_version = 0, schema_version = 0" — i.e. the
+strictest reading is no reading.
+
+### Added — passphrase-encrypted backups (`--encrypt` / `--decrypt`)
+
+For backups that will leave the host's trust boundary (cloud
+storage, off-site media, transfer to a migration host):
+
+```bash
+sui-id backup --to /tmp/backup.tar.enc --encrypt
+sui-id restore --from /tmp/backup.tar.enc --decrypt
+```
+
+The envelope format:
+
+```
+magic(8)    "SUIDIDBK"
+version(4)  big-endian u32, currently 1
+salt(16)    Argon2id input
+nonce(24)   XChaCha20-Poly1305 nonce
+ciphertext  the inner tarball
+tag(16)     Poly1305 tag
+```
+
+Key derivation: Argon2id with `m_cost = 64 MiB`, `t_cost = 3`,
+`p_cost = 1`. Salt and nonce are generated fresh per backup. The
+choice of parameters targets ~1 second of derivation on commodity
+server hardware — comfortably above the OWASP minimum, well below
+operator pain.
+
+The passphrase can be supplied:
+
+- **interactively** at the terminal (asked twice for `backup
+  --encrypt`, once for `restore --decrypt`); or
+- **non-interactively** via `SUI_ID_BACKUP_PASSPHRASE`, for cron
+  and scripted use.
+
+Operator misuse is caught:
+
+- `restore --decrypt` against a plain tarball errors out with
+  "backup file is not encrypted, but a passphrase was provided"
+  rather than silently succeeding.
+- `restore` against an encrypted backup without `--decrypt` errors
+  out telling the operator to add `--decrypt`.
+
+### Added — `sui-id verify-backup`
+
+A new read-only subcommand:
+
+```bash
+sui-id verify-backup --from /tmp/backup.tar.enc --decrypt
+```
+
+It reads the file, decrypts if needed, parses the manifest, and
+runs `PRAGMA integrity_check` on the inner SQLite snapshot.
+Output looks like:
+
+```
+Format version: 1
+sui-id version: 0.12.0
+Schema version: 5
+Created at:     2026-04-28T10:31:42Z
+Hostname:       old-host.example.com
+Issuer:         https://idp.example.com
+Encrypted:      true
+Tar size:       183808 bytes
+Database size:  180224 bytes
+Master key:     present
+
+✓ SQLite integrity check passed
+✓ Decrypted with provided passphrase
+```
+
+Use cases:
+
+- Pre-flight before an upgrade-and-restore sequence on a new host.
+- Daily smoke test from cron against the latest backup, so a
+  corrupted-snapshot regression doesn't go undiscovered for weeks.
+- Inspecting an unfamiliar backup file (when did it come from?
+  what version produced it? does it have a key?).
+
+The subcommand never writes to the configured storage paths.
+
+### Added — `sui-id-store::migrations::MAX_SCHEMA_VERSION`
+
+The largest schema version this build's bundled migrations
+produce, computed at compile time from the migrations slice. Used
+by `restore` to refuse a too-new backup, and exposed for any other
+caller that needs the same answer.
+
+### Added — tests
+
+Eight new unit tests in `sui-id::backup`:
+
+- `manifest_present_in_plain_backup`
+- `encrypted_backup_round_trips_with_correct_passphrase`
+- `encrypted_backup_rejects_wrong_passphrase`
+- `restore_of_encrypted_without_passphrase_errors`
+- `restore_of_plain_with_passphrase_errors`
+- `verify_reports_manifest_and_runs_integrity_check`
+- `verify_works_on_encrypted_backup_with_passphrase`
+- `restore_refuses_backup_with_too_new_schema_version`
+
+The four pre-existing backup tests were migrated to the new
+`BackupOptions` / `RestoreOptions` signatures; all twelve pass.
+
+Smoke-tested end-to-end: a plain backup → `verify-backup` → restore
+into a different path round-trips through a real SQLite database;
+an encrypted backup with `SUI_ID_BACKUP_PASSPHRASE` round-trips the
+same way; an encrypted backup with the wrong passphrase fails
+cleanly without writing the destination files.
+
+### Documentation
+
+- `docs/operators.md`: "Backup and restore" section rewritten end
+  to end. New subsections cover encrypted backups, `verify-backup`,
+  and a recommended migration sequence (old-host backup with
+  `--encrypt`, transfer, verify-backup pre-flight, restore on new
+  host, DNS cutover, retire old host).
+- `docs/deployment.md`: section 9 (Backups) split into plain vs
+  encrypted cron examples; adds a daily `verify-backup` smoke test
+  to the schedule.
+- `docs/threat-model.md`: new threat A13 ("Attacker who intercepts
+  a backup tarball in transit") spelling out the encryption model,
+  the Argon2id parameter choice, the passphrase-management
+  responsibilities, and the deliberate non-recoverability of a
+  forgotten passphrase.
+
+### Note for operators
+
+Existing cron jobs that produce plain `.tar` backups continue to
+work unchanged. Adopt `--encrypt` (and a passphrase file at
+`/etc/sui-id/backup.pass`, mode 0600) when you next review the
+backup pipeline; meanwhile, plain backups produced by v0.13 carry
+the manifest, which makes future upgrades safer either way.
+
 ## [0.12.0] - 2026-04-28
 
 Structured logging and request correlation.
