@@ -270,3 +270,103 @@ fn flash_from_query(jar: &CookieJar) -> Option<sui_id_web::Flash> {
     let _ = jar;
     None
 }
+
+// ---------- password change (v0.19.0) ----------
+
+#[derive(Debug, Deserialize)]
+pub struct PasswordChangeForm {
+    #[serde(rename = "_csrf")]
+    pub csrf: String,
+    pub current_password: String,
+    pub new_password: String,
+    pub confirm_password: String,
+    /// Checkbox value. Browsers send the field only when checked,
+    /// so the option is presence-detected. Any non-empty string
+    /// means "yes, sweep my other sessions and refresh tokens".
+    #[serde(default)]
+    pub revoke_others: Option<String>,
+}
+
+pub async fn password_change_get(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let token = csrf::ensure_token(&jar);
+    let html = sui_id_web::render_password_change(
+        sui_id_web::PasswordChangeData {
+            username: user.username,
+            revoke_others_default: true,
+        },
+        None,
+        token.clone(),
+    );
+    let resp = Html(html).into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+pub async fn password_change_post(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    crate::handlers::ClientIp(ip): crate::handlers::ClientIp,
+    jar: CookieJar,
+    Form(form): Form<PasswordChangeForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+
+    // Order of checks:
+    //
+    // 1. CSRF first — cheap and protects every other check from
+    //    being driven from a hostile origin.
+    // 2. Rate limit second, sharing the Login bucket. Even though
+    //    the caller already has a valid session, we don't want
+    //    someone with a stolen cookie to grind the
+    //    `current_password` field at unbounded rate.
+    // 3. UI-level mismatch check (new vs confirm) before we go to
+    //    the database — pure form ergonomics.
+    // 4. The actual password change in `core::me_security`, which
+    //    verifies `current_password` against the stored hash and
+    //    enforces the policy on the new one.
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    crate::handlers::enforce_rate_limit(
+        &app.limiters,
+        &app.clock,
+        crate::handlers::RateLimitKey::Login,
+        ip,
+        crate::handlers::ErrorAs::Html,
+    )?;
+
+    if form.new_password != form.confirm_password {
+        return Err(HttpError::html(CoreError::BadRequest(
+            "new password and confirmation do not match".into(),
+        )));
+    }
+
+    let revoke_others = form.revoke_others.is_some();
+
+    // Pull the current session id from the cookie so we can keep
+    // it alive across the sweep. If the cookie isn't there we'd
+    // have failed `CurrentUser` already, but be explicit.
+    let raw_session = jar
+        .get(SESSION_COOKIE)
+        .map(|c| c.value().to_owned())
+        .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
+    let keep = SessionId::from_str(&raw_session)
+        .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
+
+    let report = sui_id_core::me_security::change_password_self(
+        &app.db,
+        &app.clock,
+        user_id,
+        &form.current_password,
+        &form.new_password,
+        Some(keep),
+        revoke_others,
+    )
+    .map_err(HttpError::html)?;
+
+    let _ = report; // counts are in the audit event already; nothing to surface
+    Ok(Redirect::to("/me/security?msg=password_changed").into_response())
+}

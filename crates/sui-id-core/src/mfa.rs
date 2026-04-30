@@ -235,6 +235,11 @@ pub fn verify_pending(
         // verified. The session's `acr` will be "2" and `amr` will
         // include `pwd`, `otp`, and `mfa`.
         auth_methods: vec![sui_id_shared::AuthMethod::Pwd, method_used],
+        // The user just completed a strong-factor challenge as part
+        // of login. Record `now` so step-up-gated actions don't
+        // immediately ask the user to re-prove themselves on a
+        // session that's seconds old.
+        last_step_up_at: Some(now),
     };
     sessions::insert(db, &session)?;
     let _ = login_pending_mfa::delete(db, pending_id);
@@ -280,6 +285,8 @@ pub fn verify_pending_webauthn(
             sui_id_shared::AuthMethod::Pwd,
             sui_id_shared::AuthMethod::Webauthn,
         ],
+        // Phishing-resistant step-up just succeeded.
+        last_step_up_at: Some(now),
     };
     sessions::insert(db, &session)?;
     let _ = login_pending_mfa::delete(db, pending_id);

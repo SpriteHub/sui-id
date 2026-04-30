@@ -5,6 +5,119 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-04-28
+
+Self-service password change at `/me/security/password`. A
+signed-in user can change their own password, optionally sweeping
+every other session and every active refresh token in one step.
+The current session stays alive so the user isn't ejected from
+the form they just submitted.
+
+### Added
+
+#### `/me/security/password` page
+
+Reachable via the "Change password" button on `/me/security`.
+Form fields:
+
+- Current password.
+- New password (12–256 characters, no composition rules per
+  NIST SP 800-63B).
+- Confirm new password.
+- "Sign out my other browsers and apps after changing the
+  password" — checkbox, checked by default.
+
+On submit:
+
+1. CSRF check.
+2. Rate limit against the shared `Login` bucket (IP-keyed).
+   Even a session-holder shouldn't be able to grind the
+   current-password field at unbounded rate from a stolen
+   cookie.
+3. New / confirm match check.
+4. Verify current password against the stored Argon2id hash.
+   Wrong current password → `InvalidCredentials`. **No account
+   lockout** is applied on this path: the user is already
+   authenticated by their session, and locking yourself out
+   by mistyping the form would be unhelpful. The order —
+   verify-current then policy-check-new — is deliberate, so the
+   endpoint doesn't become an oracle for "is X actually a
+   password?" via differentiated errors.
+5. Policy check on the new password.
+6. Hash, upsert credential row. The `must_change` flag is
+   cleared if it was set (admin-driven reset is now satisfied).
+7. If the box was checked: revoke every other session for this
+   user, and **every** active refresh token. The current
+   session is preserved.
+8. Append an `auth.password.changed_self` audit event with
+   sweep counts.
+
+#### `core::me_security::change_password_self`
+
+The action lives in `sui_id_core::me_security`. Returns a
+`PasswordChangeReport { sessions_revoked, refresh_tokens_revoked }`
+so future callers (or a future REST API) can render counts —
+the current HTML handler doesn't surface them, the audit row is
+the durable record.
+
+#### Tests
+
+5 new unit tests in `sui-id-core::me_security`:
+
+- `happy_path_replaces_hash_and_returns_zero_sweep_when_box_unchecked`
+- `wrong_current_password_is_rejected_as_invalid_credentials`
+- `weak_new_password_is_rejected_after_current_is_verified`
+- `must_change_flag_is_reset_on_self_change`
+- `audit_event_is_appended`
+
+5 new e2e tests in `sui-id`:
+
+- `me_password_change_form_renders`
+- `me_password_change_happy_path_replaces_password`
+- `me_password_change_wrong_current_is_refused`
+- `me_password_change_mismatched_confirm_is_refused`
+- `me_password_change_with_revoke_others_sweeps_other_sessions_and_refresh_tokens`
+
+Workspace lib totals: shared 13, store 15, core 59 (+5), sui-id
+47 — **134** lib tests, all passing.
+
+### Changed
+
+- `/me/security` page now has a "Change password" button next to
+  "Manage authenticators" in the two-factor section.
+
+### Documentation
+
+- `docs/operators.md` — new "Self-service password change" and
+  "Things `/me/security/password` deliberately does **not** do"
+  subsections under "Self-service security". The non-goals call
+  out the missing notification email (lands when SMTP is added),
+  no re-MFA prompt (step-up-auth is a separate pass), and no
+  reuse policy / HIBP (separate v0.20+ pass).
+- Audit event table: added `auth.password.changed_self`.
+
+### Internal — schema groundwork for step-up auth
+
+Schema migration 0010 introduces a nullable `last_step_up_at`
+column on `sessions`, and `SessionRow` carries the field through
+in repository code. The actual step-up logic — challenging the
+user to re-prove a strong factor before sensitive actions — is
+not yet wired and is deferred to v0.20.0. The column being
+nullable means existing rows are unaffected and no behaviour
+changes here. We register the column now so v0.20.0 doesn't have
+to ship a schema migration alongside the new logic.
+
+### Items deferred to v0.20.0+
+
+- Confirmation email on password change (waits on SMTP support
+  via `wasm-smtp v0.6`).
+- Step-up auth: re-prompt for MFA before sensitive actions.
+- Password-reuse policy and HIBP integration (opt-in).
+- Recording IP and User-Agent on session creation.
+- Idle session timeout, concurrent session cap, suspicious
+  activity heuristics.
+- Master-key rotation command.
+
 ## [0.18.0] - 2026-04-28
 
 Self-service security overview at `/me/security`. Every signed-in

@@ -124,6 +124,11 @@ pub fn build_router(app: AppState) -> Router {
             "/me/security/sessions/revoke-all-others",
             post(crate::handlers::me_security::revoke_all_others),
         )
+        .route(
+            "/me/security/password",
+            get(crate::handlers::me_security::password_change_get)
+                .post(crate::handlers::me_security::password_change_post),
+        )
         .route("/static/{*path}", get(crate::assets::serve))
         .with_state(app)
         // Security-headers middleware applies to *every* response,

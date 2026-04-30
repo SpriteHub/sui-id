@@ -99,6 +99,15 @@ pub struct SessionRow {
     /// in the database. An empty list represents a pre-migration
     /// session and is treated as single-factor by issuance code.
     pub auth_methods: Vec<sui_id_shared::AuthMethod>,
+    /// Most recent moment at which this session re-proved a strong
+    /// factor — set on initial login when MFA was used, and updated
+    /// every time the user completes a step-up challenge. Used by
+    /// `core::step_up::is_fresh` to decide whether a sensitive
+    /// action can proceed without a fresh challenge. `None` means
+    /// either the session was established with password-only
+    /// authentication, or the row predates the v0.20.0 migration —
+    /// either way the freshness check refuses.
+    pub last_step_up_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]

@@ -397,6 +397,7 @@ expect them to be renamed without a deprecation cycle):
 | `auth.login.locked` | A failed sign-in that just triggered or extended an account lockout. **Alert on bursts of this.** |
 | `auth.refresh.theft_detected` | A revoked refresh token was replayed at the token endpoint. The whole rotation family was revoked. **Alert on this.** |
 | `auth.sessions.bulk_revoke_self` | A user used "Sign out everywhere else" on `/me/security`. Note records how many sessions were swept. |
+| `auth.password.changed_self` | A user changed their own password via `/me/security/password`. Note records how many sessions and refresh tokens were swept (zero if the user unchecked the box). |
 | `mfa.admin_reset` | An administrator forcibly removed every MFA factor for a user. **Alert on this.** |
 | `admin.user.unlock` | An admin cleared an account lockout via `sui-id admin unlock-user`. |
 | `oauth.authorize.issued` | `/oauth2/authorize` issued an authorization code. |
@@ -774,6 +775,45 @@ but belongs to someone else". The e2e suite includes a regression
 test (`me_security_cannot_revoke_someone_elses_session`) that
 pins this behaviour.
 
+### Self-service password change
+
+Since v0.19.0, `/me/security/password` lets a signed-in user
+change their own password without an admin reset. The form asks
+for the current password, the new password, and a confirmation,
+and offers a checkbox (default ON) to "sign out my other browsers
+and apps" once the change is committed.
+
+The flow is:
+
+1. CSRF check.
+2. Rate limit on the same `Login` bucket the sign-in form uses,
+   keyed by client IP. Even though the caller already has a
+   valid session, this prevents someone with a stolen cookie
+   from grinding the `current_password` field at unbounded rate.
+3. Confirmation match check.
+4. Verify the supplied current password against the stored hash.
+   On mismatch the change is refused with `InvalidCredentials` —
+   the same error the regular login path raises.
+5. Apply the new-password policy (length, etc.).
+6. Hash and persist.
+7. If the "sign out other sessions" box is checked, revoke every
+   other session for this user and revoke every active refresh
+   token. The current session stays alive — otherwise the user
+   would be bounced back to the login page the moment they save
+   the form, which feels broken.
+8. Append a `auth.password.changed_self` audit event recording
+   how many sessions and refresh tokens were swept.
+
+The wrong-current-password branch deliberately **does not**
+trigger the account lockout that the public sign-in form does.
+Brute-forcing the current-password field requires a valid cookie
+to begin with; raising lockouts here would let a user lock
+themselves out by typo. The IP-keyed rate limit still applies.
+
+The `must_change` flag (set by an admin reset) is cleared on
+self-change — the user has demonstrated agency, so the prompt
+to rotate goes away.
+
 ### Audit trail
 
 The bulk-revoke action emits a `auth.sessions.bulk_revoke_self`
@@ -785,9 +825,6 @@ periodically alongside the audit log.
 
 ### What `/me/security` deliberately does **not** do
 
-- Password change. There's no UI for it on this page; an admin
-  resets a forgotten password through `/admin/users`. Self-serve
-  password change can be added later as a focused follow-up.
 - HIBP breach check on password reuse.
 - Long-form session metadata (browser fingerprint, IP, user
   agent). The session table does not record IP or User-Agent
@@ -796,6 +833,57 @@ periodically alongside the audit log.
 - Cross-account view. Admins do *not* get extra rows here — they
   see only their own sessions, like everyone else. The `/admin/`
   pages are the place for cross-account work.
+
+### Self-service password change (`/me/security/password`)
+
+The "Change password" button on `/me/security` opens a form
+asking for the current password, the new one (twice), and a
+checkbox — checked by default — that says "sign out my other
+browsers and apps after changing the password." On submit:
+
+1. The CSRF token is verified.
+2. The request is rate-limited against the same IP-keyed bucket
+   the login form uses. A user already holding a valid session
+   shouldn't be able to grind the current-password field at
+   unbounded rate even with a stolen cookie.
+3. The new password and the confirmation field must match.
+4. The current password is verified against the stored Argon2id
+   hash. A wrong current password is reported as
+   `InvalidCredentials` — same error variant as a failed login,
+   so client error mapping stays simple. **No account lockout
+   is applied on this path**: the user is already authenticated
+   by their session, and locking yourself out by mistyping a
+   confirmation field would be unhelpful.
+5. The new password is checked against the policy (minimum 12
+   characters, maximum 256). The order — verify-current then
+   policy-check-new — is deliberate: it stops the endpoint from
+   becoming an oracle for "is X actually a password?" via
+   differentiated error messages.
+6. The credential row is upserted with the new hash, and the
+   `must_change` flag is cleared if it was set.
+7. If "sign out everywhere else" was checked, every session
+   *except* the current one is revoked, and **every** active
+   refresh token belonging to the user is revoked. The current
+   session stays alive so the user isn't booted out of the form
+   they just submitted.
+8. An `auth.password.changed_self` audit event is appended,
+   noting in its `note` field how many sessions and refresh
+   tokens were swept.
+
+### Things `/me/security/password` deliberately does **not** do
+
+- Send a confirmation email. We don't have email integration
+  today; that lands in a later release. When it does, this
+  flow gains a "we emailed your previous address that this
+  happened" notification.
+- Require re-MFA. The session is already MFA-elevated if the
+  user's account requires MFA at sign-in time; re-prompting on
+  every sensitive action is a separate (good!) feature we'll
+  add as part of a step-up-auth pass.
+- Block re-using the same password. The check would be cheap to
+  add (verify-against-old-hash before upsert), but reuse policy
+  more broadly belongs in a dedicated v0.20+ pass alongside
+  HIBP and password-history.
 
 ## Per-client scope policy
 

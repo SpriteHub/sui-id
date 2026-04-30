@@ -127,6 +127,16 @@ v0.10.1 / v0.10.2.
   `auth.sessions.bulk_revoke_self` records the bulk-revoke
   action. MFA enrollment itself stays on `/admin/profile`
   (unchanged); `/me/security` deep-links to it.
+- Self-service password change at `/me/security/password`
+  (v0.19.0). Current-password verify, policy check on the new
+  one, and an opt-in "sign out everywhere else" sweep that
+  revokes every other session and every active refresh token
+  in one step. Current session stays alive so the user isn't
+  booted out of the form. Rate limit against the shared `Login`
+  bucket protects against grinding from a stolen cookie; no
+  account lockout because the user is already authenticated
+  by their session. Audit event `auth.password.changed_self`
+  records sweep counts.
 
 ## Explicitly **not** on the roadmap
 

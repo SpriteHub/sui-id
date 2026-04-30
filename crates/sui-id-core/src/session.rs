@@ -230,6 +230,12 @@ pub fn login_with_mfa(
         // the password. The session's `acr` will be "1" and its
         // `amr` will be ["pwd"].
         auth_methods: vec![sui_id_shared::AuthMethod::Pwd],
+        // No step-up has happened (and none was needed for login,
+        // since this user has no MFA enrolled). Sensitive actions
+        // that gate on `step_up::is_fresh` will see `None` here
+        // and behave appropriately for a no-MFA account — see the
+        // `is_fresh` doc comment.
+        last_step_up_at: None,
     };
     sessions::insert(db, &row)?;
     record_login_success(db, clock, user.id);

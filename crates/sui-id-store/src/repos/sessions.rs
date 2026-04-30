@@ -25,15 +25,19 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRow> {
         created_at: row.get::<_, DateTime<Utc>>(3)?,
         revoked_at: row.get::<_, Option<DateTime<Utc>>>(4)?,
         auth_methods,
+        last_step_up_at: row.get::<_, Option<DateTime<Utc>>>(6)?,
     })
 }
+
+const SELECT_COLS: &str =
+    "id, user_id, expires_at, created_at, revoked_at, auth_methods, last_step_up_at";
 
 pub fn insert(db: &Database, s: &SessionRow) -> StoreResult<()> {
     let methods_json = serde_json::to_string(&s.auth_methods)?;
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO sessions(id, user_id, expires_at, created_at, revoked_at, auth_methods) \
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO sessions(id, user_id, expires_at, created_at, revoked_at, auth_methods, last_step_up_at) \
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 s.id.to_string(),
                 s.user_id.to_string(),
@@ -41,6 +45,7 @@ pub fn insert(db: &Database, s: &SessionRow) -> StoreResult<()> {
                 s.created_at,
                 s.revoked_at,
                 methods_json,
+                s.last_step_up_at,
             ],
         )?;
         Ok(())
@@ -50,8 +55,7 @@ pub fn insert(db: &Database, s: &SessionRow) -> StoreResult<()> {
 pub fn get(db: &Database, id: SessionId) -> StoreResult<SessionRow> {
     db.with_conn(|conn| {
         conn.query_row(
-            "SELECT id, user_id, expires_at, created_at, revoked_at, auth_methods \
-             FROM sessions WHERE id = ?1",
+            &format!("SELECT {SELECT_COLS} FROM sessions WHERE id = ?1"),
             [id.to_string()],
             map,
         )
@@ -95,10 +99,6 @@ pub fn purge_expired(db: &Database) -> StoreResult<usize> {
 }
 
 /// List every currently-active session belonging to a given user, newest first.
-///
-/// "Active" here matches `session::resolve` exactly: not revoked and not
-/// past expiry. The `/me/security` UI uses this to show the user every
-/// place they're signed in.
 pub fn list_active_for_user(
     db: &Database,
     user_id: UserId,
@@ -106,10 +106,9 @@ pub fn list_active_for_user(
     let now = Utc::now();
     db.with_conn(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, user_id, expires_at, created_at, revoked_at, auth_methods \
-             FROM sessions \
-             WHERE user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2 \
-             ORDER BY created_at DESC",
+            &format!("SELECT {SELECT_COLS} FROM sessions \
+                      WHERE user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2 \
+                      ORDER BY created_at DESC"),
         )?;
         let rows = stmt
             .query_map(params![user_id.to_string(), now], map)?
@@ -119,11 +118,6 @@ pub fn list_active_for_user(
 }
 
 /// Revoke every active session for the user *except* the supplied id.
-///
-/// Returns the number of rows updated. Used by the "sign out everywhere
-/// else" button on `/me/security` — keeping the current session alive
-/// is the expected UX, otherwise the user would be logged out
-/// immediately and might think the action failed.
 pub fn revoke_all_for_user_except(
     db: &Database,
     user_id: UserId,
@@ -136,5 +130,28 @@ pub fn revoke_all_for_user_except(
             params![Utc::now(), user_id.to_string(), keep.to_string()],
         )?;
         Ok(n)
+    })
+}
+
+/// Update a session's `last_step_up_at` timestamp to `at`. Used after a
+/// successful step-up challenge to mark the session as freshly
+/// MFA-elevated. Idempotent: writing the same value twice is harmless.
+///
+/// We do not gate this on `revoked_at IS NULL` — the caller has already
+/// resolved the session through `session::resolve` (which does that
+/// check) and a race where the session is revoked between resolve and
+/// touch is benign: a revoked session can't be used for anything
+/// regardless of step-up state.
+pub fn touch_step_up(
+    db: &Database,
+    id: SessionId,
+    at: DateTime<Utc>,
+) -> StoreResult<()> {
+    db.with_conn(|conn| {
+        conn.execute(
+            "UPDATE sessions SET last_step_up_at = ?1 WHERE id = ?2",
+            params![at, id.to_string()],
+        )?;
+        Ok(())
     })
 }

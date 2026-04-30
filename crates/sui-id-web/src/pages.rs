@@ -1034,6 +1034,10 @@ pub fn render_me_security(
                         <a href="/admin/profile" class="button secondary">
                             "Manage authenticators"
                         </a>
+                        " "
+                        <a href="/me/security/password" class="button secondary">
+                            "Change password"
+                        </a>
                     </p>
                 </section>
 
@@ -1085,6 +1089,84 @@ pub fn render_me_security(
                         <tbody>{event_rows}</tbody>
                     </table>
                 </section>
+            </Shell>
+        }
+    })
+}
+
+// ---------- /me/security/password ----------
+
+pub struct PasswordChangeData {
+    pub username: String,
+    /// Pre-filled checked value of "sign out other sessions". The
+    /// caller hands it in so a re-render after a validation error
+    /// keeps the user's previous choice.
+    pub revoke_others_default: bool,
+}
+
+pub fn render_password_change(
+    data: PasswordChangeData,
+    flash: Option<Flash>,
+    csrf_token: String,
+) -> String {
+    render(move || {
+        let PasswordChangeData {
+            username,
+            revoke_others_default,
+        } = data;
+        let revoke_attr = if revoke_others_default { Some("") } else { None };
+        view! {
+            <Shell title="Change password".to_owned() show_nav=false current=None>
+                <h2>"Change password"</h2>
+                {flash_banner(flash)}
+                <p class="muted">
+                    "Signed in as "<strong>{username}</strong>"."
+                </p>
+
+                <form method="post" action="/me/security/password" autocomplete="off">
+                    <input type="hidden" name="_csrf" value=csrf_token />
+
+                    <p>
+                        <label for="current_password">"Current password"</label><br/>
+                        <input type="password" id="current_password" name="current_password"
+                               required autocomplete="current-password" />
+                    </p>
+                    <p>
+                        <label for="new_password">"New password"</label><br/>
+                        <input type="password" id="new_password" name="new_password"
+                               required autocomplete="new-password" minlength="12" />
+                        <br/>
+                        <span class="muted">
+                            "At least 12 characters. \
+                             Long random phrases are stronger than short complex ones."
+                        </span>
+                    </p>
+                    <p>
+                        <label for="confirm_password">"Confirm new password"</label><br/>
+                        <input type="password" id="confirm_password" name="confirm_password"
+                               required autocomplete="new-password" minlength="12" />
+                    </p>
+
+                    <p>
+                        <label>
+                            <input type="checkbox" name="revoke_others" value="1"
+                                   checked=revoke_attr />
+                            " "
+                            "Sign out my other browsers and apps after changing the password."
+                        </label>
+                        <br/>
+                        <span class="muted">
+                            "Recommended. Anyone who already has an open session or refresh \
+                             token will be forced to sign in again, with the new password."
+                        </span>
+                    </p>
+
+                    <p>
+                        <button type="submit">"Change password"</button>
+                        " "
+                        <a href="/me/security" class="button secondary">"Cancel"</a>
+                    </p>
+                </form>
             </Shell>
         }
     })

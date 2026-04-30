@@ -19,6 +19,8 @@ pub mod authorize;
 pub mod session;
 pub mod setup;
 pub mod admin;
+pub mod me_security;
+pub mod step_up;
 pub mod time;
 pub mod totp;
 pub mod mfa;

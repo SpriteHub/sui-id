@@ -1,0 +1,24 @@
+-- 0010: per-session "last step-up" timestamp.
+--
+-- Step-up authentication is the practice of asking the user to
+-- re-prove a stronger factor (typically MFA) right before a
+-- sensitive action — password change, destructive admin
+-- operations, signing-key rotation, etc. The freshness window
+-- is short (default 5 minutes) so that a long-running session
+-- whose cookie has been stolen can't be used to immediately
+-- ratchet into destructive work.
+--
+-- We keep the bookkeeping on the session row itself rather than
+-- in a sidecar table because step-up state is per-session: a
+-- given user might be signed in on a laptop (MFA fresh) and a
+-- phone (MFA not fresh), and the laptop should not be able to
+-- approve actions on behalf of the phone.
+--
+-- For sessions established via the regular MFA login flow, the
+-- application sets `last_step_up_at = created_at` so the user
+-- doesn't immediately get re-prompted on a freshly-minted
+-- session. Pre-migration sessions get NULL (treated as "no
+-- step-up ever performed" by the freshness check) which is the
+-- safe default — anyone holding such a session will be asked
+-- to step up before the next sensitive action.
+ALTER TABLE sessions ADD COLUMN last_step_up_at TEXT;
