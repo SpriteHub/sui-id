@@ -8,6 +8,8 @@
 [![Dependency Status](https://deps.rs/crate/sui-id/latest/status.svg)](https://deps.rs/crate/sui-id)
 [![License](https://img.shields.io/github/license/nabbisen/sui-id)](https://github.com/nabbisen/sui-id/blob/main/LICENSE)
 
+![logo](/docs/assets/logo.png)
+
 ---
 
 ## Overview
