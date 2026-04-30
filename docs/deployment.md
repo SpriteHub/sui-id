@@ -383,6 +383,13 @@ parse directly.
 Test the upgrade on a copy first if you can. The general flow:
 
 ```bash
+# Pre-flight: scan the build's dependency tree for known
+# vulnerabilities. This catches advisories published since the
+# upstream release tagged its lockfile.
+cd /path/to/sui-id-source-of-the-new-build
+cargo install --locked cargo-audit
+cargo audit
+
 # Make a fresh backup before doing anything.
 sui-id backup --config /etc/sui-id/sui-id.toml \
               --to /var/backups/sui-id/pre-upgrade-$(date +%Y-%m-%d).tar

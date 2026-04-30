@@ -1,0 +1,53 @@
+name: Security audit
+
+# Runs cargo-audit against the dependency tree to flag known
+# vulnerabilities and unmaintained crates from the RustSec advisory
+# database.
+#
+# Triggers:
+# - On every push to main and on every PR (so a new dependency that
+#   pulls in a vulnerable transitive doesn't slip in unnoticed).
+# - On a weekly schedule (so an advisory published *after* a
+#   dependency was added still gets caught — RustSec's database
+#   updates continually).
+# - Manually via the Actions tab if a release is being prepared.
+#
+# This workflow uses rustsec/audit-check, the official action
+# maintained by the same project as cargo-audit. It surfaces results
+# as PR review comments, which is the pattern operators expect.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".github/workflows/audit.yml"
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".github/workflows/audit.yml"
+  schedule:
+    # Wednesdays at 06:13 UTC. Off-business-hours, off-the-hour to
+    # avoid a thundering herd of GitHub-scheduled jobs.
+    - cron: "13 6 * * 3"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    permissions:
+      # rustsec/audit-check@v2 needs `issues: write` to file an issue
+      # if a fresh advisory hits a previously-clean tree, and
+      # `contents: read` to read the lockfile.
+      contents: read
+      issues: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: cargo-audit
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

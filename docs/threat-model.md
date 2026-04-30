@@ -303,7 +303,12 @@ What we do:
   well-understood APIs.
 - Production builds should track the upstream advisory feed for
   these crates. `cargo audit` against the published crate version
-  is part of the recommended pre-deploy checklist.
+  is part of the recommended pre-deploy checklist, and the upstream
+  CI runs the same scan on every push and on a weekly schedule
+  (see `.github/workflows/audit.yml`). At the time v0.10.2 shipped,
+  the dependency tree had **zero** known vulnerabilities and one
+  informational warning (`paste`, an unmaintained transitive of
+  the Leptos framework) which is not directly exploitable.
 
 What we do **not** do:
 
@@ -312,7 +317,9 @@ What we do **not** do:
   `webauthn-rs-core` for some cryptographic operations; an OpenSSL
   vulnerability would surface here. This is the cost of using a
   battle-tested library — we accept it as preferable to writing the
-  cryptographic verification ourselves.
+  cryptographic verification ourselves. The `cargo audit` integration
+  in CI is the mitigation: an OpenSSL CVE that lands in RustSec is
+  flagged on the next push and the next weekly scan.
 - Pin the patch version of `webauthn-rs`. The `Cargo.lock` is
   reproducible, but operators rebuilding from source should consider
   whether they want to re-pin or to accept whatever the latest

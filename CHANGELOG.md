@@ -5,6 +5,51 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] - 2026-04-28
+
+`cargo audit` integration. No code changes.
+
+### Added
+
+- **`.github/workflows/audit.yml`** — scans the dependency tree
+  against the [RustSec advisory database](https://rustsec.org/) on
+  every push to `main`, on every PR that touches `Cargo.{toml,lock}`,
+  and on a weekly schedule (Wednesdays at 06:13 UTC). Uses the
+  official `rustsec/audit-check` action.
+- **`.github/workflows/ci.yml`** — basic build + test + fmt + clippy
+  workflow on Linux stable. The audit workflow is intentionally
+  separate so it can run on a different cadence and surface its
+  results independently.
+
+### Documentation
+
+- **`docs/operators.md`** — new "Auditing dependencies for known
+  vulnerabilities" section that walks an operator through running
+  `cargo audit` locally, interpreting the two output categories
+  (vulnerabilities vs informational warnings), and what to do when
+  one of each shows up.
+- **`docs/deployment.md`** — the upgrade procedure now starts with
+  a `cargo audit` pre-flight against the new build's source tree,
+  to catch advisories published since the upstream lockfile was
+  tagged.
+- **`docs/threat-model.md`** — A12 (third-party authentication
+  library) updated to reflect that the audit integration is now
+  active and to record the scan result at v0.10.2 ship time
+  (zero vulnerabilities, one informational warning for `paste`,
+  an unmaintained transitive of the Leptos framework that is not
+  directly exploitable).
+
+### Verified at this release
+
+A manual scan of the `Cargo.lock` against the advisory database on
+2026-04-28 reported:
+
+- **Vulnerabilities: 0**
+- **Warnings: 1** — `paste` v1.0.15, marked `unmaintained`
+  (RUSTSEC-2024-0436). Pulled in transitively via `leptos`,
+  `reactive_graph`, and several other framework crates. Not
+  exploitable; tracking upstream Leptos for a migration off it.
+
 ## [0.10.1] - 2026-04-28
 
 Documentation expansion. No functional changes.

@@ -17,9 +17,9 @@ authentication and authorization surface is, for v0.x, broadly
 complete; the natural next steps are operability and quality work
 rather than new auth primitives.
 
-- **`cargo audit` integration** in CI / pre-deploy. The dependency
-  tree now reaches OpenSSL via webauthn-rs, so a periodic check is
-  prudent.
+The Medium term list is now empty — the items previously here
+(`cargo audit` integration, the deployment guide) shipped in
+v0.10.1 / v0.10.2.
 
 ## Longer term, less certain
 
@@ -57,6 +57,9 @@ rather than new auth primitives.
   been lost).
 - `docs/deployment.md` — chronological install walkthrough from a
   fresh Linux server to a hardened production deployment.
+- `cargo audit` CI integration — `.github/workflows/audit.yml` runs
+  on push, on PR, and weekly. The companion `ci.yml` covers build,
+  test, fmt, and clippy on every change.
 
 ## Explicitly **not** on the roadmap
 

@@ -296,6 +296,44 @@ takes effect immediately; loosening too. There is no token-issuance
 window for a previously-issued code to slip through with a now-
 forbidden scope.
 
+## Auditing dependencies for known vulnerabilities
+
+sui-id pins its dependency tree via `Cargo.lock`. New advisories
+against pinned versions of those dependencies happen all the time,
+and the only way to find out about them quickly is to scan the lock
+file against the [RustSec advisory database](https://rustsec.org/).
+
+The tool for this is [`cargo-audit`](https://crates.io/crates/cargo-audit):
+
+```bash
+cargo install --locked cargo-audit
+cd /path/to/sui-id-source
+cargo audit
+```
+
+The output flags two categories:
+
+- **Vulnerabilities** — a published advisory whose `patched` versions
+  do not include the version locked in `Cargo.lock`. These need
+  attention. The fix is usually `cargo update -p <crate>` to pick up
+  the patched version, then rebuild and redeploy. If the patched
+  version requires a major-version bump that breaks downstream
+  callers, consult the CHANGELOG before upgrading.
+- **Warnings** — informational advisories: most commonly a
+  dependency that has been **unmaintained**. Not directly
+  exploitable; prompt to consider migrating off the crate over time.
+  These do not need to block a deployment.
+
+The upstream project runs the same scan in CI on every push and on a
+weekly schedule, so contributors see results immediately. Operators
+who build their own binary should run `cargo audit` as part of their
+pre-deploy checklist — at minimum, before each upgrade.
+
+If a freshly-disclosed CVE affects a dependency you're already
+running and you cannot upgrade right away, the next-best step is to
+isolate the deployment (firewall, IP allow-list) until the patched
+build ships.
+
 ## Upgrading
 
 For now, sui-id is pre-release: take a backup, replace the binary, and
