@@ -13,11 +13,6 @@ draws from medium-term.)
 - **WebAuthn / passkeys.** A second-factor option that doesn't require an
   authenticator app, using the W3C WebAuthn API. Larger surface than TOTP
   (CBOR, attestation, multiple credentials per user) so its own release.
-- **Editing existing clients.** v0.6.0 added scope-policy and
-  post-logout-URI fields at *create* time but not yet a UI for editing
-  them on existing clients. The use-case helpers
-  `set_client_allowed_scopes` and `set_client_post_logout_redirect_uris`
-  are in place; what's missing is a page to drive them.
 
 ## Longer term, less certain
 
@@ -50,6 +45,8 @@ draws from medium-term.)
 - Per-client scope policy enforced at `/oauth2/authorize`.
 - Per-client `post_logout_redirect_uris` (separate from `redirect_uris`).
 - TOTP MFA (RFC 6238) with single-use recovery codes.
+- Edit page for existing clients (name / redirect URIs / allowed scopes /
+  post-logout redirect URIs).
 
 ## Explicitly **not** on the roadmap
 

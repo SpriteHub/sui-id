@@ -416,11 +416,14 @@ fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
         format!("{logout_count} URI(s)")
     };
 
+    let edit_url = format!("/admin/clients/{id_str}/edit");
     let actions = if is_deleted {
         view! { <td class="muted">"-"</td> }.into_any()
     } else {
         view! {
             <td>
+                <a href=edit_url class="button secondary">"Edit"</a>
+                " "
                 <form method="post" action=disabled_url style="display:inline">
                     <input type="hidden" name="_csrf" value=csrf_disable />
                     <input type="hidden" name="disabled" value=action_target />
@@ -510,6 +513,77 @@ pub fn render_clients(
                     </thead>
                     <tbody>{rows}</tbody>
                 </table>
+            </Shell>
+        }
+    })
+}
+
+// ---------- client edit ----------
+
+pub struct ClientEditData {
+    pub id: String,
+    pub name: String,
+    /// Newline-separated for textarea editing.
+    pub redirect_uris: Vec<String>,
+    /// Space-separated.
+    pub allowed_scopes: String,
+    pub post_logout_redirect_uris: Vec<String>,
+    pub confidential: bool,
+    pub is_disabled: bool,
+}
+
+pub fn render_client_edit(
+    data: ClientEditData,
+    flash: Option<Flash>,
+    csrf_token: String,
+) -> String {
+    render(move || {
+        let ClientEditData {
+            id,
+            name,
+            redirect_uris,
+            allowed_scopes,
+            post_logout_redirect_uris,
+            confidential,
+            is_disabled,
+        } = data;
+        let post_url = format!("/admin/clients/{id}/edit");
+        let kind = if confidential { "confidential" } else { "public" };
+        let status = if is_disabled { "disabled" } else { "active" };
+        let redirect_uris_value = redirect_uris.join("\n");
+        let post_logout_value = post_logout_redirect_uris.join("\n");
+        view! {
+            <Shell title="Edit client".to_string() show_nav=true current=Some("clients".to_string())>
+                <h2>"Edit client"</h2>
+                {flash_banner(flash)}
+                <p class="muted">
+                    "Client id: "<span class="code">{id.clone()}</span>
+                    " - Type: "{kind}
+                    " - Status: "{status}
+                </p>
+                <p class="muted">
+                    "The client id, type (confidential vs public), and client secret are fixed at creation time. \
+                     If you need to change them, delete this client and register a new one."
+                </p>
+                <form method="post" action=post_url>
+                    <input type="hidden" name="_csrf" value=csrf_token />
+
+                    <label for="e-name">"Application name"</label>
+                    <input id="e-name" name="name" type="text" required=true value=name />
+
+                    <label for="e-uris">"Redirect URIs (one per line; https or http loopback)"</label>
+                    <textarea id="e-uris" name="redirect_uris" required=true rows="3">{redirect_uris_value}</textarea>
+
+                    <label for="e-scopes">"Allowed scopes (space-separated; blank = permit any)"</label>
+                    <input id="e-scopes" name="allowed_scopes" type="text" value=allowed_scopes />
+
+                    <label for="e-logout">"Post-logout redirect URIs (one per line; blank = fall back to redirect URIs)"</label>
+                    <textarea id="e-logout" name="post_logout_redirect_uris" rows="2">{post_logout_value}</textarea>
+
+                    <button type="submit">"Save changes"</button>
+                    " "
+                    <a href="/admin/clients" class="secondary">"Cancel"</a>
+                </form>
             </Shell>
         }
     })

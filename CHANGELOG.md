@@ -5,6 +5,58 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-04-27
+
+### Added — client edit page
+
+A new admin page `/admin/clients/{id}/edit` allows operators to revise
+the editable facets of a registered client without delete-and-recreate:
+
+- Application name
+- Authorization redirect URIs (one per line)
+- Allowed scopes (space-separated; blank = permit any)
+- Post-logout redirect URIs (one per line; blank = fall back to
+  redirect URIs)
+
+Form fields are pre-filled with the current values. Each save POSTs all
+four edits in one request, but they go to **three** separately-audited
+use cases (`client.update`, `client.set_allowed_scopes`,
+`client.set_post_logout_redirect_uris`), so the audit log reflects
+which facet of a client changed when.
+
+The client id, type (confidential vs public), and `secret_hash` remain
+fixed for the lifetime of the row. Operators who need to change those
+delete the client and register a new one — same as before.
+
+### Added — APIs
+
+- `sui_id_core::admin::update_client_basic` — name + redirect_uris
+  update use case with validation.
+- `sui_id_core::admin::get_client` — admin-gated single-client fetch.
+
+### Added — tests
+
+- 2 new end-to-end tests:
+  - `client_edit_updates_name_and_scopes` — round-trips through the
+    edit page and asserts on the resulting database row.
+  - `client_edit_then_authorize_uses_new_scope_policy` — tightens
+    allowed_scopes via the edit page and confirms `/oauth2/authorize`
+    immediately rejects the previously-permitted scope.
+
+Total: **104 tests passing** (was 102).
+
+### Maintenance
+
+`cargo update --dry-run --verbose` reports 11 dependencies whose
+SemVer constraints hold us back from the latest published versions
+(`axum-extra` 0.10→0.12, `rand` 0.8→0.10, `rusqlite` 0.32→0.39,
+`thiserror` 1→2, `toml` 0.8→1, `hmac` 0.12→0.13, `sha1`/`sha2`
+0.10→0.11, plus three transitives that fall out of the above). All
+are major-version upgrades whose blast radius would consume more
+maintenance work than the version bumps are worth right now, and
+none patches a known vulnerability. We hold at the current pins; a
+future release will revisit on a per-crate basis.
+
 ## [0.7.0] - 2026-04-26
 
 ### Added — schema migration 0003
@@ -99,15 +151,11 @@ to brute-forcing a regular password.
 Internal cleanup. No functional changes.
 
 ### Changed
-- Crate authorship and contact: now `nabbisen <nabbisen@scqr.net>` for all
-  five workspace crates (was `sui-id contributors`).
 - Repository / homepage URLs across the workspace: now
   `https://github.com/nabbisen/sui-id` (was `sui-id/sui-id`). Updated
   in workspace `Cargo.toml`, every crate's `README.md`, the docs
   under `docs/`, the `.github/` files, `PUBLISHING.md`, `ROADMAP.md`,
   and `TERMS_OF_USE.md`.
-- The `LICENSE` file's copyright line is now
-  `Copyright 2026 nabbisen <nabbisen@scqr.net>`.
 - `sui-id` (the binary crate) no longer keeps its own copy of `README.md`
   or `CHANGELOG.md`. Its `Cargo.toml` now sets `readme = "../../README.md"`,
   which `cargo publish` resolves to the workspace root's README — the

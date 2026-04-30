@@ -16,7 +16,8 @@ pub mod layout;
 pub mod pages;
 
 pub use pages::{
-    render_audit, render_clients, render_dashboard, render_error, render_login, render_mfa_challenge,
-    render_mfa_setup, render_profile, render_setup, render_signing_keys, render_users, Flash,
-    FlashKind, MfaSetupData, ProfileData,
+    render_audit, render_client_edit, render_clients, render_dashboard, render_error,
+    render_login, render_mfa_challenge, render_mfa_setup, render_profile, render_setup,
+    render_signing_keys, render_users, ClientEditData, Flash, FlashKind, MfaSetupData,
+    ProfileData,
 };

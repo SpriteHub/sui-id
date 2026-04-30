@@ -49,6 +49,10 @@ pub fn build_router(app: AppState) -> Router {
             post(admin::clients_set_disabled),
         )
         .route("/admin/clients/{id}/delete", post(admin::clients_delete))
+        .route(
+            "/admin/clients/{id}/edit",
+            get(admin::clients_edit_get).post(admin::clients_edit_post),
+        )
         .route("/admin/signing-keys", get(admin::signing_keys_get))
         .route("/admin/signing-keys/rotate", post(admin::signing_keys_rotate))
         .route(

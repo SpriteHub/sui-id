@@ -304,6 +304,47 @@ pub fn set_client_post_logout_redirect_uris(
     Ok(())
 }
 
+/// Update the basic client metadata: human-readable name and the
+/// authorization redirect URIs. The id, type (confidential vs public),
+/// and `secret_hash` are immutable.
+pub fn update_client_basic(
+    db: &Database,
+    actor: UserId,
+    target: ClientId,
+    name: &str,
+    redirect_uris: &[String],
+) -> CoreResult<()> {
+    require_admin(db, actor)?;
+    if name.trim().is_empty() {
+        return Err(CoreError::BadRequest("client name must not be empty".into()));
+    }
+    if redirect_uris.is_empty() {
+        return Err(CoreError::BadRequest(
+            "at least one redirect_uri must be provided".into(),
+        ));
+    }
+    for uri in redirect_uris {
+        validate_redirect_uri(uri)?;
+    }
+    clients::update_basic(db, target, Some(name.trim()), Some(redirect_uris)).map_err(|e| {
+        match e {
+            sui_id_store::StoreError::NotFound => CoreError::NotFound,
+            other => CoreError::from(other),
+        }
+    })?;
+    audit_ok(db, actor, "client.update", Some(target.to_string()));
+    Ok(())
+}
+
+/// Convenience: fetch a single client (admin-gated).
+pub fn get_client(db: &Database, actor: UserId, target: ClientId) -> CoreResult<ClientRow> {
+    require_admin(db, actor)?;
+    clients::get(db, target).map_err(|e| match e {
+        sui_id_store::StoreError::NotFound => CoreError::NotFound,
+        other => CoreError::from(other),
+    })
+}
+
 pub fn list_clients(db: &Database, actor: UserId) -> CoreResult<Vec<ClientRow>> {
     require_admin(db, actor)?;
     Ok(clients::list(db)?)

@@ -534,6 +534,92 @@ pub async fn clients_delete(
     Ok(Redirect::to("/admin/clients").into_response())
 }
 
+pub async fn clients_edit_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(admin_id): CurrentAdmin,
+    jar: CookieJar,
+    Path(id): Path<String>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let target = ClientId::from_str(&id)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
+    let row = admin_uc::get_client(&app.db, admin_id, target).map_err(HttpError::html)?;
+    let token = crate::csrf::ensure_token(&jar);
+    let resp = Html(sui_id_web::render_client_edit(
+        sui_id_web::ClientEditData {
+            id: row.id.to_string(),
+            name: row.name,
+            redirect_uris: row.redirect_uris,
+            allowed_scopes: row.allowed_scopes,
+            post_logout_redirect_uris: row.post_logout_redirect_uris,
+            confidential: row.confidential,
+            is_disabled: row.is_disabled,
+        },
+        None,
+        token.clone(),
+    ))
+    .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EditClientForm {
+    pub name: String,
+    pub redirect_uris: String,
+    #[serde(default)]
+    pub allowed_scopes: String,
+    #[serde(default)]
+    pub post_logout_redirect_uris: String,
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+}
+
+pub async fn clients_edit_post(
+    state_ext: AppStateExt,
+    CurrentAdmin(admin_id): CurrentAdmin,
+    jar: CookieJar,
+    Path(id): Path<String>,
+    Form(form): Form<EditClientForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let target = ClientId::from_str(&id)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
+    let uris: Vec<String> = form
+        .redirect_uris
+        .lines()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let post_logout_uris: Vec<String> = form
+        .post_logout_redirect_uris
+        .lines()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .collect();
+    // Apply all three updates. Each is admin-gated and audit-logged
+    // separately; the operator sees three audit-log entries per save,
+    // which is desirable — it makes it possible to track exactly which
+    // facet of a client changed when.
+    admin_uc::update_client_basic(&app.db, admin_id, target, form.name.trim(), &uris)
+        .map_err(HttpError::html)?;
+    admin_uc::set_client_allowed_scopes(
+        &app.db,
+        admin_id,
+        target,
+        form.allowed_scopes.trim(),
+    )
+    .map_err(HttpError::html)?;
+    admin_uc::set_client_post_logout_redirect_uris(
+        &app.db,
+        admin_id,
+        target,
+        &post_logout_uris,
+    )
+    .map_err(HttpError::html)?;
+    Ok(Redirect::to("/admin/clients").into_response())
+}
+
 // ---------- audit ----------
 
 pub async fn audit_get(
