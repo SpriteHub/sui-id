@@ -307,14 +307,23 @@ pub async fn users_get(
     let rows = admin_uc::list_users(&app.db, admin_id).map_err(HttpError::html)?;
     let summaries: Vec<UserSummary> = rows
         .into_iter()
-        .map(|r| UserSummary {
-            id: r.id,
-            username: r.username,
-            display_name: r.display_name,
-            is_admin: r.is_admin,
-            is_disabled: r.is_disabled,
-            is_deleted: r.is_deleted,
-            created_at: r.created_at,
+        .map(|r| {
+            // We tolerate MFA-lookup errors per row by treating them as
+            // "MFA off" — the worst that does is hide the Reset button,
+            // which is recoverable. Failing the whole list page on a
+            // single read error would be hostile.
+            let mfa_enabled =
+                sui_id_core::mfa::is_mfa_enabled(&app.db, r.id).unwrap_or(false);
+            UserSummary {
+                id: r.id,
+                username: r.username,
+                display_name: r.display_name,
+                is_admin: r.is_admin,
+                is_disabled: r.is_disabled,
+                is_deleted: r.is_deleted,
+                mfa_enabled,
+                created_at: r.created_at,
+            }
         })
         .collect();
     let token = crate::csrf::ensure_token(&jar);
@@ -410,6 +419,23 @@ pub async fn users_delete(
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
     admin_uc::delete_user(&app.db, admin_id, target).map_err(HttpError::html)?;
+    Ok(Redirect::to("/admin/users").into_response())
+}
+
+/// Forcibly remove every MFA factor for a target user. Recovery path
+/// for users who lost their second factor entirely.
+pub async fn users_mfa_reset(
+    state_ext: AppStateExt,
+    CurrentAdmin(admin_id): CurrentAdmin,
+    jar: CookieJar,
+    Path(id): Path<String>,
+    Form(form): Form<CsrfOnlyForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let target = UserId::from_str(&id)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
+    admin_uc::admin_reset_mfa(&app.db, admin_id, target).map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/users").into_response())
 }
 

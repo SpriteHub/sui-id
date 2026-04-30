@@ -271,15 +271,19 @@ What we do **not** do:
 - Force MFA on every account. The operator chooses, and so does each
   user. A future release may add an "all admins must have MFA"
   policy switch.
-- Have a way to recover an account when the user has lost every
-  factor (password, authenticator app, all recovery codes, and every
-  passkey). The operator must intervene at the storage layer. An
-  admin-driven reset path is on the roadmap.
 - Implement WebAuthn attestation verification beyond what the
   default `start_passkey_registration` flow does. Synchronised
   passkeys (Apple iCloud Keychain, Google Password Manager, etc) by
   design do not produce trustworthy attestation; the attested-passkey
   flow exists in webauthn-rs but is not exposed in sui-id today.
+
+For users who have lost every factor — password reset, TOTP
+authenticator, recovery codes, *and* every passkey — sui-id provides
+an administrator-initiated reset at `/admin/users/{id}/mfa-reset`.
+This lifts every second factor for the target user, audit-logged with
+the actor's id and a breakdown of what was removed. The reset does
+not revoke active sessions; an operator who wants a hard logout in
+addition should follow with disable-and-re-enable on the same row.
 
 ### A12. Compromise or vulnerability in a third-party authentication library
 

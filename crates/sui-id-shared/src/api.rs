@@ -65,6 +65,11 @@ pub struct UserSummary {
     pub is_admin: bool,
     pub is_disabled: bool,
     pub is_deleted: bool,
+    /// True if the user has any active MFA factor — TOTP enrolment or
+    /// at least one registered passkey. Drives whether the admin user
+    /// list shows a "Reset MFA" action.
+    #[serde(default)]
+    pub mfa_enabled: bool,
     pub created_at: DateTime<Utc>,
 }
 

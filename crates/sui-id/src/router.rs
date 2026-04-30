@@ -60,6 +60,7 @@ pub fn build_router(app: AppState) -> Router {
         .route("/admin/users", get(admin::users_get).post(admin::users_create))
         .route("/admin/users/{id}/disabled", post(admin::users_set_disabled))
         .route("/admin/users/{id}/delete", post(admin::users_delete))
+        .route("/admin/users/{id}/mfa-reset", post(admin::users_mfa_reset))
         .route(
             "/admin/clients",
             get(admin::clients_get).post(admin::clients_create),

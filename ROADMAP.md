@@ -12,12 +12,17 @@ draws from medium-term.)
 
 The big-ticket auth features have all shipped (TOTP MFA, WebAuthn
 passkeys, scope policy, post-logout URIs, signing key rotation, CSRF
-tokens, edit page for clients). What's left is mostly operability and
-edge-case handling.
+tokens, edit page for clients, admin-initiated MFA reset). The
+authentication and authorization surface is, for v0.x, broadly
+complete; the natural next steps are operability and quality work
+rather than new auth primitives.
 
-- **Admin-initiated MFA reset.** Letting an administrator delete
-  another user's TOTP enrolment or passkeys when the user has lost
-  every factor. Today the only path is to manually edit the database.
+- **`cargo audit` integration** in CI / pre-deploy. The dependency
+  tree now reaches OpenSSL via webauthn-rs, so a periodic check is
+  prudent.
+- **Documentation**: a deployment guide that walks an operator from
+  zero to a hardened production install (HTTPS termination, systemd
+  unit, backup schedule).
 
 ## Longer term, less certain
 
@@ -50,6 +55,9 @@ edge-case handling.
   post-logout redirect URIs).
 - WebAuthn / passkey support (registration, authentication, multiple
   credentials per user, list / delete UI).
+- Admin-initiated MFA reset (lifts every second factor for a user
+  whose authenticator app, recovery codes, and passkeys have all
+  been lost).
 
 ## Explicitly **not** on the roadmap
 

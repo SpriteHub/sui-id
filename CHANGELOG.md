@@ -5,6 +5,185 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-04-27
+
+### Added — admin-initiated MFA reset
+
+The recovery path for users who have lost every second factor (TOTP
+authenticator, every recovery code, *and* every registered passkey) is
+now self-contained inside sui-id. Previously the only option was
+direct SQL surgery on the database file.
+
+- New use case `sui_id_core::admin::admin_reset_mfa(actor, target)` —
+  admin-gated, audit-logged. Removes the user's `user_totp` row (if
+  present) and every `user_webauthn_credentials` row in a single call.
+  Returns a `MfaResetReport` indicating exactly what was removed.
+- New HTTP endpoint `POST /admin/users/{id}/mfa-reset`. CSRF-protected
+  like every other admin POST. Surfaces a "Reset MFA" button on the
+  users page for any user who currently has MFA enabled.
+- The users page now has a "MFA" column (`on` / `off`) so operators
+  can see at a glance which accounts have a second factor configured.
+- New audit-log action `mfa.admin_reset` with a `note` field that
+  records the breakdown (`totp=removed passkeys=2`, etc), so a later
+  review of the audit log can reconstruct exactly what was lifted.
+
+### Changed
+
+- `UserSummary` (in `sui-id-shared`) gains a `mfa_enabled: bool` field
+  with `#[serde(default)]` for compat. The HTTP `users_get` handler
+  computes this per row by calling `mfa::is_mfa_enabled`. A read error
+  per row is treated as "off" rather than failing the whole list page.
+
+### Notes for operators
+
+- The reset is intentionally permissive about self-resets: an
+  administrator who still has a valid session can reset their *own*
+  MFA factors. This is rarely the right thing — most lockouts happen
+  precisely because the session is gone — but the alternative
+  (refusing self-reset) didn't seem like it added safety while it did
+  remove a recovery path.
+- The reset does **not** revoke active sessions for the target user.
+  An admin who wants to log the user out as well should follow the
+  reset with disable-and-re-enable, which already revokes sessions
+  and refresh tokens.
+- The reset is logged with the actor's user id; combined with the
+  password-reset and user-management entries, the audit log gives a
+  full picture of who acted on whose account when.
+
+### Added — tests
+
+- 2 new end-to-end tests:
+  - `admin_can_reset_users_mfa_factors` — uses the core API to enrol
+    TOTP for a target user, calls `admin_reset_mfa`, verifies that
+    `is_mfa_enabled` flips back to false, and asserts on the audit
+    log entry's actor / target / note fields.
+  - `admin_mfa_reset_via_http_redirects_and_disables_mfa_requirement`
+    — full round-trip: enrol TOTP, confirm a fresh password login
+    redirects to the MFA challenge, POST the reset endpoint, then
+    confirm the next password login goes straight to a session.
+
+Total: **111 tests passing** (was 109).
+
+## [0.10.0] - 2026-04-27
+
+### Added — admin-initiated MFA reset
+
+The recovery path for the lost-every-factor case is now self-service
+for administrators rather than a manual database edit.
+
+- New `Reset MFA` action on each row of `/admin/users` (visible only
+  when the target user actually has any MFA factor configured). The
+  action is gated by a confirmation dialog with a deliberately
+  pointed message: this is a privileged downgrade of someone's
+  authentication posture, not a routine flip.
+- New use case `sui_id_core::admin::admin_reset_mfa(actor, target)`:
+  removes the user's TOTP enrolment (if any) **and** every registered
+  WebAuthn passkey for that user. Returns an `MfaResetReport`
+  describing what was removed so the UI can confirm to the operator.
+- The action is admin-gated and audit-logged with action name
+  `mfa.admin_reset` and a `note` field shaped like
+  `totp=removed passkeys=3`, so reviewers can reconstruct exactly
+  what happened months later.
+- Active sessions are deliberately left alone. A reset restores
+  login capability rather than logging the user out — admins who
+  want a hard logout as well can use the existing user.disable
+  flow, which already revokes sessions.
+- Self-resets are permitted (an admin who has lost their own MFA
+  but still has an active session can recover); the typical "I'm
+  locked out entirely" case still requires another admin to act.
+
+### Added — UI
+
+- `/admin/users` table grew an `MFA` column showing `on` / `off` per
+  row. Drives the visibility of the new Reset MFA button.
+- `UserSummary` (in `sui-id-shared`) gained an `mfa_enabled` field
+  with `#[serde(default)]` for compat.
+
+### Added — HTTP
+
+- New route `POST /admin/users/{id}/mfa-reset`. CSRF-protected like
+  every other admin POST.
+
+### Added — tests
+
+- 2 new end-to-end tests:
+  - `admin_can_reset_users_mfa_factors` — exercises
+    `admin_reset_mfa` directly, asserts on TOTP removal, the report,
+    and the audit log entry.
+  - `admin_mfa_reset_via_http_redirects_and_disables_mfa_requirement` —
+    full HTTP flow: enrol TOTP → assert MFA challenge required →
+    POST reset endpoint → assert subsequent login skips MFA.
+
+### Threat model
+
+A11 (MFA) updated to remove the "no recovery path" caveat — operators
+now have a documented, audited recovery path. The "lost everything
+including admin access" edge case still requires direct database
+intervention, which is unavoidable for any IdP that doesn't have an
+external rescue channel.
+
+## [0.10.0] - 2026-04-27
+
+### Added — admin-initiated MFA reset
+
+A recovery path for users who have lost every second factor at once
+(authenticator app gone, recovery codes lost, every passkey broken).
+Up to v0.9.0 the only fix was to manually edit the database; this
+release adds a one-click admin action that does the same thing,
+audit-logged.
+
+- **New use case**: `sui_id_core::admin::admin_reset_mfa(actor, target)`
+  — privileged operation that deletes the target's `user_totp` row
+  and every row in `user_webauthn_credentials` for that user.
+  Returns a `MfaResetReport` so the caller can surface what was
+  removed (TOTP yes/no, passkey count).
+- **New HTTP endpoint**: `POST /admin/users/{id}/mfa-reset`. Admin-only,
+  CSRF-protected, redirects back to `/admin/users` on success.
+- **UI**: the `/admin/users` page gains an "MFA" column showing
+  `on`/`off`, plus a "Reset MFA" button on each row where MFA is
+  active. The button uses a `confirm()` prompt so a stray click
+  doesn't cost anything. The button is hidden for the current admin's
+  own row (consistent with how Disable / Delete already work).
+- **Audit log**: every reset records `actor`, `target`, and a `note`
+  describing exactly what was removed (e.g. `totp=removed passkeys=2`),
+  so an operator reviewing the log later can reconstruct the action
+  precisely. The action key is `mfa.admin_reset`.
+
+### Changed
+
+- `sui_id_shared::api::UserSummary` gains an `mfa_enabled` field
+  (defaulted `false` for backwards compatibility on the wire).
+
+### Notes for operators
+
+- The reset deletes second-factor data only. The user's password
+  hash is untouched. After a reset, the user can log in with
+  password alone — they should re-enrol MFA at their next sign-in
+  if they want it back, which the operator should follow up on.
+- The reset does **not** revoke the target's existing sessions or
+  refresh tokens. If the operator wants to force a re-login as part
+  of an investigation, the existing `user.disable` / re-enable flow
+  is the right tool — it already revokes sessions.
+- A self-reset is permitted (an admin can reset their own MFA via
+  this endpoint). In practice this is rarely useful — if you're
+  signed in, you can disable your factors via your own profile —
+  but blocking it would require an extra check that doesn't
+  improve the safety story.
+
+### Added — tests
+
+- 2 new end-to-end tests:
+  - `admin_can_reset_users_mfa_factors` — round-trips through the
+    use case and asserts on `MfaResetReport`, the `user_totp` row
+    being gone, MFA-required state flipping back to false, and the
+    audit log having exactly one `mfa.admin_reset` row with the
+    expected note.
+  - `admin_mfa_reset_via_http_redirects_and_disables_mfa_requirement`
+    — exercises the HTTP endpoint with CSRF, then verifies that the
+    target user's password login no longer goes through `/admin/login/mfa`.
+
+Total: **111 tests passing** (was 109).
+
 ## [0.9.0] - 2026-04-27
 
 ### Added — schema migration 0004

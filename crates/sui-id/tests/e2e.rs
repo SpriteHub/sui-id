@@ -1538,6 +1538,154 @@ async fn mfa_disable_lets_user_log_in_with_password_only() {
     assert!(extract_set_cookie(resp.headers(), "sui_id_session").is_some());
 }
 
+// ---------- admin-initiated MFA reset (v0.10.0) ----------
+
+#[tokio::test]
+async fn admin_can_reset_users_mfa_factors() {
+    use sui_id_core::admin::{admin_reset_mfa, CreateUserSpec};
+    use sui_id_core::mfa;
+    use sui_id_core::time::system_clock;
+
+    let state = test_app();
+    let _ = complete_setup_and_login(&state).await;
+    let admin_id = sui_id_store::repos::users::find_by_username(&state.db, "alice")
+        .expect("admin")
+        .id;
+    let clock = system_clock();
+
+    // Create a second user (the target) and enrol TOTP for them.
+    sui_id_core::admin::create_user(
+        &state.db,
+        &state.clock,
+        admin_id,
+        CreateUserSpec {
+            username: "bob",
+            password: "bob-very-strong-password",
+            display_name: None,
+            is_admin: false,
+        },
+    )
+    .expect("create");
+    let bob = sui_id_store::repos::users::find_by_username(&state.db, "bob")
+        .expect("bob")
+        .id;
+    let ticket = mfa::start_enrollment(&state.db, "sui-id", bob, "bob").expect("start");
+    let step = clock.now().timestamp() / 30;
+    let code = sui_id_core::totp::code_for_step(&ticket.secret, step);
+    let _ = mfa::confirm_enrollment(&state.db, &clock, bob, code).expect("confirm");
+    assert!(mfa::is_mfa_enabled(&state.db, bob).unwrap());
+
+    // Admin resets it.
+    let report = admin_reset_mfa(&state.db, admin_id, bob).expect("reset");
+    assert!(report.totp_removed);
+    assert_eq!(report.passkeys_removed, 0);
+
+    // MFA is now off for bob, and the audit log captured the reset.
+    assert!(!mfa::is_mfa_enabled(&state.db, bob).unwrap());
+    let audit = sui_id_store::repos::audit::recent(&state.db, 50).expect("audit");
+    let reset_entries: Vec<_> = audit
+        .iter()
+        .filter(|e| e.action == "mfa.admin_reset")
+        .collect();
+    assert_eq!(reset_entries.len(), 1, "exactly one reset row expected");
+    assert_eq!(reset_entries[0].actor, Some(admin_id));
+    assert_eq!(reset_entries[0].target, Some(bob.to_string()));
+    let note = reset_entries[0].note.as_deref().unwrap_or("");
+    assert!(
+        note.contains("totp=removed") && note.contains("passkeys=0"),
+        "audit note should describe what was removed; got {note:?}"
+    );
+}
+
+#[tokio::test]
+async fn admin_mfa_reset_via_http_redirects_and_disables_mfa_requirement() {
+    use sui_id_core::admin::CreateUserSpec;
+    use sui_id_core::mfa;
+    use sui_id_core::time::system_clock;
+
+    let state = test_app();
+    let session = complete_setup_and_login(&state).await;
+    let admin_id = sui_id_store::repos::users::find_by_username(&state.db, "alice")
+        .expect("admin")
+        .id;
+    let clock = system_clock();
+
+    sui_id_core::admin::create_user(
+        &state.db,
+        &state.clock,
+        admin_id,
+        CreateUserSpec {
+            username: "carol",
+            password: "carol-very-strong-password",
+            display_name: None,
+            is_admin: false,
+        },
+    )
+    .expect("create");
+    let carol = sui_id_store::repos::users::find_by_username(&state.db, "carol")
+        .expect("carol")
+        .id;
+    let ticket = mfa::start_enrollment(&state.db, "sui-id", carol, "carol").expect("start");
+    let step = clock.now().timestamp() / 30;
+    let code = sui_id_core::totp::code_for_step(&ticket.secret, step);
+    let _ = mfa::confirm_enrollment(&state.db, &clock, carol, code).expect("confirm");
+
+    // Sanity: a fresh password login for carol now goes to MFA challenge.
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("username=carol&password=carol-very-strong-password"))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("login");
+    assert!(resp.status().is_redirection());
+    let loc = resp
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(loc.ends_with("/admin/login/mfa"), "got: {loc}");
+
+    // Admin issues the reset via the HTTP endpoint.
+    let csrf = fetch_csrf(&state, &session).await;
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/admin/users/{carol}/mfa-reset"))
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(
+            header::COOKIE,
+            format!("sui_id_session={session}; sui_id_csrf={csrf}"),
+        )
+        .body(Body::from(format!("_csrf={csrf}")))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("reset");
+    assert!(resp.status().is_redirection(), "got {}", resp.status());
+    assert_eq!(
+        resp.headers().get(header::LOCATION).and_then(|v| v.to_str().ok()),
+        Some("/admin/users")
+    );
+
+    // Now carol's password login goes straight to a session.
+    let router = build_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("username=carol&password=carol-very-strong-password"))
+        .expect("req");
+    let resp = router.oneshot(req).await.expect("login post-reset");
+    assert!(resp.status().is_redirection());
+    let loc = resp
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(!loc.ends_with("/admin/login/mfa"), "should not require MFA; got: {loc}");
+    assert!(extract_set_cookie(resp.headers(), "sui_id_session").is_some());
+}
+
 // `http` is brought in transitively by axum; we only need its HeaderMap.
 use axum::http;
 

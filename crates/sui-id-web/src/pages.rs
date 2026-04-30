@@ -392,20 +392,43 @@ fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl Int
     let is_self = u.username == current_user;
     let is_disabled = u.is_disabled;
     let is_deleted = u.is_deleted;
+    let mfa_enabled = u.mfa_enabled;
     let action_label = if is_disabled { "Enable" } else { "Disable" };
     let action_target = if is_disabled { "false" } else { "true" };
     let disabled_url = format!("/admin/users/{id_str}/disabled");
     let delete_url = format!("/admin/users/{id_str}/delete");
+    let reset_mfa_url = format!("/admin/users/{id_str}/mfa-reset");
     let csrf_disable = csrf.clone();
     let csrf_delete = csrf.clone();
+    let csrf_reset = csrf.clone();
+
+    let mfa_cell = if mfa_enabled {
+        view! { <td>"on"</td> }.into_any()
+    } else {
+        view! { <td class="muted">"off"</td> }.into_any()
+    };
 
     let actions = if is_self {
         view! { <td class="muted">"(you)"</td> }.into_any()
     } else if is_deleted {
         view! { <td class="muted">"-"</td> }.into_any()
     } else {
+        let reset_form = if mfa_enabled {
+            view! {
+                <form method="post" action=reset_mfa_url style="display:inline"
+                      onsubmit="return confirm('Forcibly remove every MFA factor for this user (TOTP and all passkeys)? Use only when the user has lost access to their second factor.');">
+                    <input type="hidden" name="_csrf" value=csrf_reset />
+                    <button type="submit" class="secondary">"Reset MFA"</button>
+                </form>
+                " "
+            }
+            .into_any()
+        } else {
+            view! { <></> }.into_any()
+        };
         view! {
             <td>
+                {reset_form}
                 <form method="post" action=disabled_url style="display:inline">
                     <input type="hidden" name="_csrf" value=csrf_disable />
                     <input type="hidden" name="disabled" value=action_target />
@@ -427,6 +450,7 @@ fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl Int
             <td><span class="code">{u.username}</span></td>
             <td>{display}</td>
             <td>{status}</td>
+            {mfa_cell}
             <td>{fmt_time(u.created_at)}</td>
             {actions}
         </tr>
@@ -469,7 +493,7 @@ pub fn render_users(
                 <h3>"All users"</h3>
                 <table>
                     <thead>
-                        <tr><th>"Username"</th><th>"Display"</th><th>"Status"</th><th>"Created"</th><th></th></tr>
+                        <tr><th>"Username"</th><th>"Display"</th><th>"Status"</th><th>"MFA"</th><th>"Created"</th><th></th></tr>
                     </thead>
                     <tbody>{rows}</tbody>
                 </table>
