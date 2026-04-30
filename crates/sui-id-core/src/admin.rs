@@ -69,6 +69,7 @@ pub fn create_user(
         is_admin: spec.is_admin,
         is_disabled: false,
         is_deleted: false,
+     user_uuid: uuid::Uuid::new_v4(),
         created_at: now,
         updated_at: now,
     };

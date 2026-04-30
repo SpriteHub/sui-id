@@ -132,12 +132,21 @@ pub async fn mfa_challenge_get(
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    // Caller must already have a pending-mfa cookie. We don't insist on
-    // validating the row here — the POST will reject if it's missing or
-    // expired — so a stale visit just shows a generic challenge form.
-    let _ = &app;
+    // Best-effort: if we can resolve the pending-MFA row, look up
+    // whether the user has any passkeys so the page can offer that
+    // path. If we can't (cookie missing or row gone), default to
+    // hiding the passkey button — the user can still type a TOTP code.
+    let has_passkey = jar
+        .get(crate::handlers::PENDING_MFA_COOKIE)
+        .and_then(|c| c.value().parse::<sui_id_shared::ids::PendingMfaId>().ok())
+        .and_then(|pid| sui_id_store::repos::login_pending_mfa::get(&app.db, pid).ok().flatten())
+        .map(|row| {
+            sui_id_core::webauthn::has_credentials(&app.db, row.user_id).unwrap_or(false)
+        })
+        .unwrap_or(false);
     let token = crate::csrf::ensure_token(&jar);
-    let resp = Html(sui_id_web::render_mfa_challenge(None, token.clone())).into_response();
+    let resp =
+        Html(sui_id_web::render_mfa_challenge(None, token.clone(), has_passkey)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -219,10 +228,26 @@ pub async fn mfa_challenge_post(
                     note: None,
                 },
             );
+            let has_passkey = jar
+                .get(crate::handlers::PENDING_MFA_COOKIE)
+                .and_then(|c| c.value().parse::<sui_id_shared::ids::PendingMfaId>().ok())
+                .and_then(|pid| {
+                    sui_id_store::repos::login_pending_mfa::get(&app.db, pid)
+                        .ok()
+                        .flatten()
+                })
+                .map(|row| {
+                    sui_id_core::webauthn::has_credentials(&app.db, row.user_id).unwrap_or(false)
+                })
+                .unwrap_or(false);
             let token = crate::csrf::ensure_token(&jar);
             let resp = (
                 StatusCode::UNAUTHORIZED,
-                Html(sui_id_web::render_mfa_challenge(Some(flash), token.clone())),
+                Html(sui_id_web::render_mfa_challenge(
+                    Some(flash),
+                    token.clone(),
+                    has_passkey,
+                )),
             )
                 .into_response();
             Ok(with_csrf_cookie(resp, &app, &token))
@@ -706,13 +731,27 @@ pub async fn profile_get(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
-    let mfa_enabled = sui_id_core::mfa::is_mfa_enabled(&app.db, user_id).map_err(HttpError::html)?;
+    let totp_enabled = sui_id_store::repos::user_totp::get(&app.db, user_id)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?
+        .map(|r| r.enabled)
+        .unwrap_or(false);
+    let passkeys = sui_id_core::webauthn::list_for_user(&app.db, user_id)
+        .map_err(HttpError::html)?
+        .into_iter()
+        .map(|d| sui_id_web::PasskeyDescriptor {
+            id: d.id.to_string(),
+            nickname: d.nickname,
+            created_at: d.created_at,
+            last_used_at: d.last_used_at,
+        })
+        .collect();
     let token = crate::csrf::ensure_token(&jar);
     let resp = Html(sui_id_web::render_profile(
         sui_id_web::ProfileData {
             username: user.username,
-            mfa_enabled,
+            totp_enabled,
             fresh_recovery_codes: None,
+            passkeys,
         },
         None,
         token.clone(),
@@ -799,8 +838,18 @@ pub async fn profile_mfa_enroll_confirm(
     let resp = Html(sui_id_web::render_profile(
         sui_id_web::ProfileData {
             username: user.username,
-            mfa_enabled: true,
+            totp_enabled: true,
             fresh_recovery_codes: Some(codes),
+            passkeys: sui_id_core::webauthn::list_for_user(&app.db, user_id)
+                .map_err(HttpError::html)?
+                .into_iter()
+                .map(|d| sui_id_web::PasskeyDescriptor {
+                    id: d.id.to_string(),
+                    nickname: d.nickname,
+                    created_at: d.created_at,
+                    last_used_at: d.last_used_at,
+                })
+                .collect(),
         },
         Some(Flash {
             kind: FlashKind::Info,
@@ -861,8 +910,18 @@ pub async fn profile_mfa_regenerate_recovery(
     let resp = Html(sui_id_web::render_profile(
         sui_id_web::ProfileData {
             username: user.username,
-            mfa_enabled: true,
+            totp_enabled: true,
             fresh_recovery_codes: Some(codes),
+            passkeys: sui_id_core::webauthn::list_for_user(&app.db, user_id)
+                .map_err(HttpError::html)?
+                .into_iter()
+                .map(|d| sui_id_web::PasskeyDescriptor {
+                    id: d.id.to_string(),
+                    nickname: d.nickname,
+                    created_at: d.created_at,
+                    last_used_at: d.last_used_at,
+                })
+                .collect(),
         },
         Some(Flash {
             kind: FlashKind::Info,
@@ -887,6 +946,295 @@ fn render_qr_svg(uri: &str) -> String {
             "<p class=\"muted\">QR rendering failed; use the secret key below instead.</p>"
         ),
     }
+}
+
+// ---------- WebAuthn / passkey enrolment ----------
+
+use axum::Json;
+
+#[derive(Debug, Deserialize)]
+pub struct WebauthnRegisterStartForm {
+    pub nickname: String,
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+}
+
+/// Start a passkey-registration ceremony. Returns the
+/// `CreationChallengeResponse` JSON for `navigator.credentials.create()`
+/// and sets a `sui_id_webauthn_pending` cookie that the matching
+/// completion endpoint reads. Nickname is buffered in a query param for
+/// the completion call (we keep server state minimal — the pending row
+/// already holds the in-flight ceremony state).
+pub async fn webauthn_register_start(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Form(form): Form<WebauthnRegisterStartForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let started = sui_id_core::webauthn::start_registration(
+        &app.db,
+        &app.clock,
+        app.issuer(),
+        user_id,
+    )
+    .map_err(HttpError::html)?;
+    // Stash the nickname in a second cookie so the completion call
+    // can pick it up without requiring the JS to echo it back.
+    let nickname_cookie = {
+        use axum_extra::extract::cookie::{Cookie, SameSite};
+        let mut c = Cookie::new("sui_id_webauthn_nickname", form.nickname);
+        c.set_path("/");
+        c.set_http_only(true);
+        c.set_same_site(SameSite::Lax);
+        c.set_secure(app.config.server.cookie_secure);
+        c.set_max_age(cookie::time::Duration::minutes(5));
+        c
+    };
+    let pending_cookie = crate::handlers::webauthn_pending_cookie(
+        started.pending_id.to_string(),
+        app.config.server.cookie_secure,
+    );
+    let jar = jar.add(pending_cookie).add(nickname_cookie);
+    // Return the challenge JSON as application/json so the browser's
+    // fetch() can parse it directly.
+    let challenge_value: serde_json::Value =
+        serde_json::from_str(&started.challenge_json).map_err(|_| HttpError::html(CoreError::Internal))?;
+    Ok((jar, Json(challenge_value)).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WebauthnRegisterCompleteForm {
+    /// JSON-stringified `RegisterPublicKeyCredential`.
+    pub credential: String,
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+}
+
+pub async fn webauthn_register_complete(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Form(form): Form<WebauthnRegisterCompleteForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let pending_value = jar
+        .get(crate::handlers::WEBAUTHN_PENDING_COOKIE)
+        .ok_or_else(|| HttpError::html(CoreError::BadRequest("no pending ceremony".into())))?
+        .value()
+        .to_owned();
+    let pending_id: sui_id_shared::ids::WebauthnPendingId =
+        pending_value.parse().map_err(|_| {
+            HttpError::html(CoreError::BadRequest("malformed pending id".into()))
+        })?;
+    let nickname = jar
+        .get("sui_id_webauthn_nickname")
+        .map(|c| c.value().to_owned())
+        .unwrap_or_default();
+    let credential: webauthn_rs::prelude::RegisterPublicKeyCredential =
+        serde_json::from_str(&form.credential).map_err(|_| {
+            HttpError::html(CoreError::BadRequest("malformed credential JSON".into()))
+        })?;
+    sui_id_core::webauthn::finish_registration(
+        &app.db,
+        &app.clock,
+        app.issuer(),
+        pending_id,
+        user_id,
+        &nickname,
+        &credential,
+    )
+    .map_err(HttpError::html)?;
+    let _ = sui_id_store::repos::audit::append(
+        &app.db,
+        &sui_id_store::models::AuditLogRow {
+            at: app.clock.now(),
+            actor: Some(user_id),
+            action: "webauthn.credential.register".into(),
+            target: Some(user_id.to_string()),
+            result: "ok".into(),
+            note: None,
+        },
+    );
+    let jar = jar
+        .add(crate::handlers::clear_webauthn_pending_cookie(
+            app.config.server.cookie_secure,
+        ));
+    Ok((jar, Redirect::to("/admin/profile")).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WebauthnDeleteForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+}
+
+pub async fn webauthn_delete(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Path(cred_id): Path<String>,
+    Form(form): Form<WebauthnDeleteForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let id = cred_id.parse::<sui_id_shared::ids::WebauthnCredentialId>().map_err(|_| {
+        HttpError::html(CoreError::BadRequest("invalid credential id".into()))
+    })?;
+    sui_id_core::webauthn::delete(&app.db, user_id, id).map_err(HttpError::html)?;
+    let _ = sui_id_store::repos::audit::append(
+        &app.db,
+        &sui_id_store::models::AuditLogRow {
+            at: app.clock.now(),
+            actor: Some(user_id),
+            action: "webauthn.credential.delete".into(),
+            target: Some(user_id.to_string()),
+            result: "ok".into(),
+            note: None,
+        },
+    );
+    Ok(Redirect::to("/admin/profile").into_response())
+}
+
+// ---------- WebAuthn login challenge ----------
+
+#[derive(Debug, Deserialize)]
+pub struct WebauthnAuthStartForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+}
+
+/// Starts a passkey-authentication ceremony for the user identified by
+/// the active `sui_id_pending_mfa` cookie. Returns the
+/// `RequestChallengeResponse` JSON for `navigator.credentials.get()`.
+pub async fn webauthn_auth_start(
+    state_ext: AppStateExt,
+    jar: CookieJar,
+    Form(form): Form<WebauthnAuthStartForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let pending_value = jar
+        .get(crate::handlers::PENDING_MFA_COOKIE)
+        .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?
+        .value()
+        .to_owned();
+    let pending_mfa_id = pending_value
+        .parse::<sui_id_shared::ids::PendingMfaId>()
+        .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
+    // Look up the user via the pending-MFA row.
+    let pending = sui_id_store::repos::login_pending_mfa::get(&app.db, pending_mfa_id)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?
+        .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
+    if pending.expires_at < app.clock.now() {
+        return Err(HttpError::html(CoreError::Unauthenticated));
+    }
+    let started = sui_id_core::webauthn::start_authentication(
+        &app.db,
+        &app.clock,
+        app.issuer(),
+        pending.user_id,
+    )
+    .map_err(HttpError::html)?;
+    let cookie = crate::handlers::webauthn_pending_cookie(
+        started.pending_id.to_string(),
+        app.config.server.cookie_secure,
+    );
+    let jar = jar.add(cookie);
+    let challenge_value: serde_json::Value =
+        serde_json::from_str(&started.challenge_json)
+            .map_err(|_| HttpError::html(CoreError::Internal))?;
+    Ok((jar, Json(challenge_value)).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WebauthnAuthCompleteForm {
+    pub credential: String,
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+}
+
+pub async fn webauthn_auth_complete(
+    state_ext: AppStateExt,
+    crate::handlers::ClientIp(ip): crate::handlers::ClientIp,
+    jar: CookieJar,
+    Form(form): Form<WebauthnAuthCompleteForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_rate_limit(
+        &app.limiters,
+        &app.clock,
+        crate::handlers::RateLimitKey::Login,
+        ip,
+        crate::handlers::ErrorAs::Html,
+    )?;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+
+    let pending_mfa_id = jar
+        .get(crate::handlers::PENDING_MFA_COOKIE)
+        .and_then(|c| c.value().parse::<sui_id_shared::ids::PendingMfaId>().ok())
+        .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
+    let webauthn_pending_id = jar
+        .get(crate::handlers::WEBAUTHN_PENDING_COOKIE)
+        .and_then(|c| c.value().parse::<sui_id_shared::ids::WebauthnPendingId>().ok())
+        .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
+    let pending = sui_id_store::repos::login_pending_mfa::get(&app.db, pending_mfa_id)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?
+        .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
+    if pending.expires_at < app.clock.now() {
+        return Err(HttpError::html(CoreError::Unauthenticated));
+    }
+    let credential: webauthn_rs::prelude::PublicKeyCredential =
+        serde_json::from_str(&form.credential).map_err(|_| {
+            HttpError::html(CoreError::BadRequest("malformed credential JSON".into()))
+        })?;
+    sui_id_core::webauthn::finish_authentication(
+        &app.db,
+        &app.clock,
+        app.issuer(),
+        webauthn_pending_id,
+        pending.user_id,
+        &credential,
+    )
+    .map_err(HttpError::html)?;
+    let session = sui_id_core::mfa::verify_pending_webauthn(
+        &app.db,
+        &app.clock,
+        pending_mfa_id,
+        pending.user_id,
+    )
+    .map_err(HttpError::html)?;
+    let _ = sui_id_store::repos::audit::append(
+        &app.db,
+        &sui_id_store::models::AuditLogRow {
+            at: app.clock.now(),
+            actor: Some(session.user_id),
+            action: "auth.mfa.success".into(),
+            target: Some(session.user_id.to_string()),
+            result: "ok".into(),
+            note: Some("webauthn".into()),
+        },
+    );
+    let next = jar
+        .get(PENDING_MFA_NEXT_COOKIE)
+        .map(|c| c.value().to_owned())
+        .filter(|s| s.starts_with('/'))
+        .unwrap_or_else(|| "/admin".into());
+    let cookie = session_cookie(session.id.to_string(), app.config.server.cookie_secure);
+    let jar = jar
+        .add(cookie)
+        .add(crate::handlers::clear_pending_mfa_cookie(
+            app.config.server.cookie_secure,
+        ))
+        .add(crate::handlers::clear_pending_mfa_next_cookie(
+            app.config.server.cookie_secure,
+        ))
+        .add(crate::handlers::clear_webauthn_pending_cookie(
+            app.config.server.cookie_secure,
+        ));
+    Ok((jar, Redirect::to(&next)).into_response())
 }
 
 #[allow(dead_code)]

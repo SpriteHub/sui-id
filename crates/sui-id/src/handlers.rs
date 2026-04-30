@@ -19,6 +19,31 @@ pub mod index;
 pub mod oidc;
 pub mod setup;
 
+/// Cookie name for the in-flight WebAuthn ceremony id (used by both
+/// registration and authentication challenges). HttpOnly because the
+/// browser-side JS only needs the JSON challenge body, not the id.
+pub const WEBAUTHN_PENDING_COOKIE: &str = "sui_id_webauthn_pending";
+
+pub fn webauthn_pending_cookie<'a>(value: String, secure: bool) -> Cookie<'a> {
+    let mut c = Cookie::new(WEBAUTHN_PENDING_COOKIE, value);
+    c.set_path("/");
+    c.set_http_only(true);
+    c.set_same_site(SameSite::Lax);
+    c.set_secure(secure);
+    c.set_max_age(cookie_time::Duration::minutes(5));
+    c
+}
+
+pub fn clear_webauthn_pending_cookie<'a>(secure: bool) -> Cookie<'a> {
+    let mut c = Cookie::new(WEBAUTHN_PENDING_COOKIE, "");
+    c.set_path("/");
+    c.set_http_only(true);
+    c.set_same_site(SameSite::Lax);
+    c.set_secure(secure);
+    c.set_max_age(cookie_time::Duration::seconds(0));
+    c
+}
+
 /// Cookie name for the admin / user session id.
 pub const SESSION_COOKIE: &str = "sui_id_session";
 

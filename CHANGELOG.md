@@ -5,6 +5,129 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-04-27
+
+### Added — schema migration 0004
+
+- **`users.user_uuid`** column added with backfill. WebAuthn requires a
+  stable per-user UUID handle as the relying party's `user.id`. We
+  keep this decoupled from the typed `UserId` so the WebAuthn handle
+  can be rotated independently if it ever has to be.
+- **`user_webauthn_credentials`** table — one row per registered
+  passkey. `passkey_enc` holds a serialised `webauthn_rs::prelude::Passkey`
+  sealed under the master key (XChaCha20-Poly1305, separate AAD from
+  every other encrypted column). `credential_id` is indexed unique so
+  authentication can look the row up; the rest of the row is opaque
+  to sui-id.
+- **`webauthn_pending`** table — short-lived (5 minute) state for
+  in-flight registration / authentication ceremonies. Holds the
+  `PasskeyRegistration` / `PasskeyAuthentication` JSON the high-level
+  webauthn-rs API expects on the second leg of each ceremony.
+
+Existing rows from v0.8.0 and earlier come through cleanly: the
+backfill assigns each user a fresh UUID, and the new tables are empty.
+
+### Added — WebAuthn / passkey support
+
+- **`sui_id_core::webauthn`** module wraps the
+  [`webauthn-rs`](https://docs.rs/webauthn-rs) 0.5.4 high-level
+  framework. Public API: `start_registration` / `finish_registration`,
+  `start_authentication` / `finish_authentication`, `list_for_user`,
+  `delete`, `has_credentials`. Each ceremony round-trips through the
+  `webauthn_pending` table so the in-flight state survives between
+  the browser's two requests.
+- **`sui_id_core::mfa::is_mfa_enabled`** is now true when the user has
+  *either* TOTP enrolled *or* at least one passkey registered. Either
+  factor satisfies the MFA challenge.
+- **`sui_id_core::mfa::verify_pending_webauthn`** promotes a
+  pending-MFA row into a real session after the bin layer has already
+  verified the WebAuthn ceremony. Splitting it from the TOTP path
+  keeps webauthn-rs out of `session.rs` and lets the audit log
+  record `auth.mfa.success` once at the end of either factor.
+
+### Added — admin UI and HTTP
+
+- `/admin/profile` now lists registered passkeys (nickname, registered
+  date, last used) with a per-row delete button, plus a "Register a
+  new passkey" form pointing at the JS-driven enrolment flow.
+- `/admin/login/mfa` page surfaces a "Sign in with passkey" button
+  when the pending-MFA user has at least one passkey enrolled.
+- New routes:
+  - `POST /admin/profile/webauthn/register/start` →
+    `CreationChallengeResponse` JSON for `navigator.credentials.create()`
+  - `POST /admin/profile/webauthn/register/complete`
+  - `POST /admin/profile/webauthn/{id}/delete`
+  - `POST /admin/login/webauthn/start` →
+    `RequestChallengeResponse` JSON for `navigator.credentials.get()`
+  - `POST /admin/login/webauthn/complete`
+- Two new HttpOnly, SameSite=Lax cookies with 5-minute TTLs:
+  `sui_id_webauthn_pending` (ceremony id) and
+  `sui_id_webauthn_nickname` (carries the registration label across
+  the two legs without server-side state expansion).
+- New audit-log actions:
+  `webauthn.credential.register`,
+  `webauthn.credential.delete`,
+  `auth.mfa.success` (with `note: "webauthn"` when the WebAuthn path
+  was the satisfying factor).
+- Background GC purges expired `webauthn_pending` rows.
+
+### Added — browser JavaScript
+
+A self-contained 6.5 KB `static/webauthn.js` handles base64url ↔
+ArrayBuffer marshalling and the two `navigator.credentials.*`
+ceremonies. No dependencies. Loaded only on the two pages that need
+it (Profile and the MFA challenge) and only when a passkey path is
+relevant.
+
+### Added — dependencies
+
+- `webauthn-rs = "0.5"` with the `danger-allow-state-serialisation`
+  feature enabled. The "danger" prefix is the upstream signal that
+  the in-flight `PasskeyRegistration`/`PasskeyAuthentication` state
+  should not escape the trust boundary; we never expose it over the
+  wire — it stays in the `webauthn_pending` table behind the master
+  key.
+- Transitive: `openssl` (system `libssl-dev` required at build time).
+  The build environment must have an OpenSSL development package
+  installed; on Debian/Ubuntu, `apt install libssl-dev pkg-config`.
+
+### Added — tests
+
+- 2 unit tests in `sui_id_core::webauthn::tests`
+  (`build_accepts_https_url`, `build_rejects_url_without_host`).
+- 3 integration tests in `sui_id_core::webauthn::integration_tests`
+  (`start_registration_persists_pending_row_and_returns_challenge_json`,
+  `start_authentication_rejects_users_with_no_credentials`,
+  `finish_registration_rejects_expired_pending_row`).
+
+End-to-end testing of the full ceremony with attestation requires a
+software authenticator (e.g. `webauthn-authenticator-rs`); we
+deliberately leave that out of this release. The webauthn-rs
+project itself is well-tested for the cryptographic verification we
+delegate to it.
+
+Total: **109 tests passing** (was 104).
+
+### Notes for operators
+
+- WebAuthn over HTTP is permitted only on `localhost`; this matches
+  the Web platform spec and is enforced by webauthn-rs. Public
+  deployments must terminate HTTPS upstream and configure
+  `server.issuer = "https://your.host"`. The `rp_id` is the bare
+  host portion of the issuer URL.
+- A user who loses every registered factor (password reset link,
+  TOTP authenticator, recovery codes, *and* every passkey) has no
+  self-service recovery path. The operator must intervene at the
+  storage layer. An admin-driven reset is on the roadmap.
+- `passkey_enc` is sealed under the master key like every other
+  encrypted column. A backup taken via `sui-id backup` covers
+  passkey data the same way it covers the rest of the database.
+
+### Threat model
+
+A11 is updated to describe the WebAuthn path; A12 is added to track
+the dependency on `webauthn-rs`.
+
 ## [0.8.0] - 2026-04-27
 
 ### Added — client edit page

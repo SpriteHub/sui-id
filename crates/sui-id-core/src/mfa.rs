@@ -37,10 +37,18 @@ const RECOVERY_CODE_BYTES: usize = 12;
 const PENDING_MFA_TTL_SECS: i64 = 5 * 60;
 const SESSION_LIFETIME_HOURS: i64 = 12;
 
-/// True if the user has TOTP enrolled and confirmed.
+/// True if the user must complete a second factor before a session is
+/// issued. Either TOTP enrolment or at least one registered WebAuthn
+/// credential counts; the user picks which factor to present at the
+/// challenge page.
 pub fn is_mfa_enabled(db: &Database, user_id: UserId) -> CoreResult<bool> {
-    let row = user_totp::get(db, user_id)?;
-    Ok(row.map(|r| r.enabled).unwrap_or(false))
+    let totp_on = user_totp::get(db, user_id)?
+        .map(|r| r.enabled)
+        .unwrap_or(false);
+    if totp_on {
+        return Ok(true);
+    }
+    crate::webauthn::has_credentials(db, user_id)
 }
 
 // ----- enrolment ---------------------------------------------------------
@@ -227,6 +235,43 @@ pub fn verify_pending(
     Ok(session)
 }
 
+/// Promote a pending-MFA record into a real session, treating a successful
+/// WebAuthn authentication as the second factor.
+///
+/// The caller is responsible for having already invoked
+/// `crate::webauthn::finish_authentication` against this pending row's
+/// user — this function only consumes the pending row and issues the
+/// session. Splitting it like this keeps webauthn-rs out of session.rs
+/// and lets the HTTP layer audit "auth.mfa.success" once at the end of
+/// either branch (TOTP or WebAuthn).
+pub fn verify_pending_webauthn(
+    db: &Database,
+    clock: &SharedClock,
+    pending_id: sui_id_shared::ids::PendingMfaId,
+    expected_user_id: UserId,
+) -> CoreResult<SessionRow> {
+    let pending = login_pending_mfa::get(db, pending_id)?
+        .ok_or(CoreError::Unauthenticated)?;
+    if pending.expires_at < clock.now() {
+        let _ = login_pending_mfa::delete(db, pending_id);
+        return Err(CoreError::Unauthenticated);
+    }
+    if pending.user_id != expected_user_id {
+        return Err(CoreError::Unauthenticated);
+    }
+    let now = clock.now();
+    let session = SessionRow {
+        id: SessionId::new(),
+        user_id: pending.user_id,
+        expires_at: now + Duration::hours(SESSION_LIFETIME_HOURS),
+        created_at: now,
+        revoked_at: None,
+    };
+    sessions::insert(db, &session)?;
+    let _ = login_pending_mfa::delete(db, pending_id);
+    Ok(session)
+}
+
 fn consume_recovery_code(
     db: &Database,
     user_id: UserId,
@@ -316,6 +361,7 @@ mod integration_tests {
                 is_admin: true,
                 is_disabled: false,
                 is_deleted: false,
+                user_uuid: uuid::Uuid::new_v4(),
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
             },

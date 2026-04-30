@@ -237,35 +237,82 @@ What we do **not** do:
 
 What we do:
 
-- The `/admin/profile` page lets every account opt in to TOTP MFA
-  (RFC 6238, HMAC-SHA1, 30-second window, 6 digits). Once enabled,
-  password authentication alone never produces a session — the user
-  must also provide a 6-digit code from an authenticator app, or one
-  of 8 single-use recovery codes generated at enrolment time.
-- Recovery codes are stored as Argon2id hashes sealed under the
-  master key, so a stolen database does not yield usable codes.
-- Used recovery codes are removed from the stored list immediately,
-  so they really are single-use.
-- A `last_used_step` cursor stops a successful 6-digit code from
-  being replayed within its 30-second window.
-- The TOTP secret is sealed under the master key in storage; the
-  plaintext exists only at enrolment time (briefly, to render the
-  QR) and at verification time (briefly, to compute the expected
-  code). It is zeroed in between.
+- The `/admin/profile` page lets every account opt in to one or both
+  of two MFA factors:
+  - **TOTP** (RFC 6238, HMAC-SHA1, 30-second window, 6 digits) with
+    8 single-use Argon2id-hashed recovery codes.
+  - **WebAuthn / passkeys** — hardware-backed credentials registered
+    via the browser's `navigator.credentials.create()` API. A user
+    may register multiple passkeys (security key + platform
+    authenticator + recovery key on a different device).
+- Once *either* factor is enabled, password authentication alone
+  never produces a session. The user must also pass the second
+  factor at `/admin/login/mfa`. The challenge page accepts a TOTP
+  code, a recovery code, or a passkey assertion — whichever the
+  user has.
+- WebAuthn is phishing-resistant in a way TOTP is not: the browser
+  binds the credential to the relying-party id (`rp_id`), so a
+  fake login page on a look-alike domain cannot trick the
+  authenticator into producing a usable assertion.
+- TOTP secrets and the entire `Passkey` value (public key, signature
+  counter, attestation metadata) are sealed under the master key in
+  storage. The plaintext exists only briefly during the relevant
+  ceremony.
+- A `last_used_step` cursor stops a successful 6-digit TOTP code
+  from being replayed within its 30-second window.
+- WebAuthn ceremonies persist their in-flight state in a
+  `webauthn_pending` table behind the master key. The
+  `danger-allow-state-serialisation` feature of webauthn-rs is
+  used purely for that internal storage; the state never crosses
+  a network boundary.
 
 What we do **not** do:
 
 - Force MFA on every account. The operator chooses, and so does each
   user. A future release may add an "all admins must have MFA"
   policy switch.
-- Have a way to recover an account when the user has lost both the
-  authenticator app and all eight recovery codes, except for an
-  operator manually deleting the `user_totp` row at the database
-  level. An admin-driven reset path is on the roadmap.
-- Implement WebAuthn yet. A roaming-authenticator option (TOTP) is in
-  place and is interoperable with every authenticator app on the
-  market; WebAuthn / passkeys is on the roadmap as a second factor
-  for users who would rather have one.
+- Have a way to recover an account when the user has lost every
+  factor (password, authenticator app, all recovery codes, and every
+  passkey). The operator must intervene at the storage layer. An
+  admin-driven reset path is on the roadmap.
+- Implement WebAuthn attestation verification beyond what the
+  default `start_passkey_registration` flow does. Synchronised
+  passkeys (Apple iCloud Keychain, Google Password Manager, etc) by
+  design do not produce trustworthy attestation; the attested-passkey
+  flow exists in webauthn-rs but is not exposed in sui-id today.
+
+### A12. Compromise or vulnerability in a third-party authentication library
+
+What we do:
+
+- The WebAuthn implementation depends on `webauthn-rs` 0.5, the safe
+  high-level wrapper from the kanidm project. We use the
+  high-level `Webauthn::start_passkey_registration` /
+  `finish_passkey_registration` and `start_passkey_authentication` /
+  `finish_passkey_authentication` API only. The lower-level
+  `webauthn-rs-core` ships with explicit warnings telling
+  integrators not to call it directly; we don't.
+- All other cryptographic primitives are kept narrow and visible:
+  Argon2id (RustCrypto `argon2`), Ed25519 (`ed25519-dalek`),
+  XChaCha20-Poly1305 (`chacha20poly1305`), HMAC-SHA1 (RustCrypto
+  `hmac` + `sha1`). These are widely audited and have small,
+  well-understood APIs.
+- Production builds should track the upstream advisory feed for
+  these crates. `cargo audit` against the published crate version
+  is part of the recommended pre-deploy checklist.
+
+What we do **not** do:
+
+- Audit the transitive dependency graph of `webauthn-rs` ourselves.
+  Notably, `webauthn-rs` pulls in OpenSSL via
+  `webauthn-rs-core` for some cryptographic operations; an OpenSSL
+  vulnerability would surface here. This is the cost of using a
+  battle-tested library — we accept it as preferable to writing the
+  cryptographic verification ourselves.
+- Pin the patch version of `webauthn-rs`. The `Cargo.lock` is
+  reproducible, but operators rebuilding from source should consider
+  whether they want to re-pin or to accept whatever the latest
+  0.5.x patch is at build time.
 
 ## Adversaries we do not plan for
 

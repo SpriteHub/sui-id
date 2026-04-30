@@ -10,27 +10,28 @@ draws from medium-term.)
 
 ## Medium term
 
-- **WebAuthn / passkeys.** A second-factor option that doesn't require an
-  authenticator app, using the W3C WebAuthn API. Larger surface than TOTP
-  (CBOR, attestation, multiple credentials per user) so its own release.
+The big-ticket auth features have all shipped (TOTP MFA, WebAuthn
+passkeys, scope policy, post-logout URIs, signing key rotation, CSRF
+tokens, edit page for clients). What's left is mostly operability and
+edge-case handling.
+
+- **Admin-initiated MFA reset.** Letting an administrator delete
+  another user's TOTP enrolment or passkeys when the user has lost
+  every factor. Today the only path is to manually edit the database.
 
 ## Longer term, less certain
 
-- **Federation.** Acting as an OIDC client to an upstream IdP, mapping the
-  result onto a sui-id user.
-- **Pluggable user backends.** A read-only LDAP shim, perhaps. The current
-  storage layer assumes sui-id owns the user table.
+- **Federation.** Acting as an OIDC client to an upstream IdP, mapping
+  the result onto a sui-id user.
+- **Pluggable user backends.** A read-only LDAP shim, perhaps. The
+  current storage layer assumes sui-id owns the user table.
 - **Metrics.** A Prometheus endpoint behind admin auth.
-- **Admin-initiated MFA reset.** Letting an administrator delete
-  another user's TOTP enrolment when the user has lost both their
-  authenticator app and their recovery codes. Today the only path is
-  to manually delete the user_totp row.
 
 ## Done
 
 - Per-IP rate limiting on `/admin/login`, `/oauth2/token`, `/setup`.
 - Background GC of expired authorization codes, sessions, refresh
-  tokens, and pending-MFA rows.
+  tokens, pending-MFA rows, and WebAuthn ceremonies.
 - Audit logging of authentication outcomes (success/failure).
 - `/healthz` endpoint suitable for liveness/readiness probes.
 - crates.io publication metadata; binary distributable via
@@ -47,6 +48,8 @@ draws from medium-term.)
 - TOTP MFA (RFC 6238) with single-use recovery codes.
 - Edit page for existing clients (name / redirect URIs / allowed scopes /
   post-logout redirect URIs).
+- WebAuthn / passkey support (registration, authentication, multiple
+  credentials per user, list / delete UI).
 
 ## Explicitly **not** on the roadmap
 

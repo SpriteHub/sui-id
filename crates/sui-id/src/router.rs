@@ -36,6 +36,26 @@ pub fn build_router(app: AppState) -> Router {
             "/admin/profile/mfa/recovery-codes/regenerate",
             post(admin::profile_mfa_regenerate_recovery),
         )
+        .route(
+            "/admin/profile/webauthn/register/start",
+            post(admin::webauthn_register_start),
+        )
+        .route(
+            "/admin/profile/webauthn/register/complete",
+            post(admin::webauthn_register_complete),
+        )
+        .route(
+            "/admin/profile/webauthn/{id}/delete",
+            post(admin::webauthn_delete),
+        )
+        .route(
+            "/admin/login/webauthn/start",
+            post(admin::webauthn_auth_start),
+        )
+        .route(
+            "/admin/login/webauthn/complete",
+            post(admin::webauthn_auth_complete),
+        )
         .route("/admin", get(admin::dashboard))
         .route("/admin/users", get(admin::users_get).post(admin::users_create))
         .route("/admin/users/{id}/disabled", post(admin::users_set_disabled))

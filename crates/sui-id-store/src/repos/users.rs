@@ -8,6 +8,7 @@ use rusqlite::params;
 use sui_id_shared::ids::UserId;
 
 fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
+    let user_uuid_str: String = row.get(8)?;
     Ok(UserRow {
         id: row
             .get::<_, String>(0)?
@@ -18,19 +19,23 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
         is_admin: row.get::<_, i64>(3)? != 0,
         is_disabled: row.get::<_, i64>(4)? != 0,
         is_deleted: row.get::<_, i64>(5)? != 0,
+        user_uuid: uuid::Uuid::parse_str(&user_uuid_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e))
+        })?,
         created_at: row.get::<_, DateTime<Utc>>(6)?,
         updated_at: row.get::<_, DateTime<Utc>>(7)?,
     })
 }
 
-const SELECT_USER: &str =
-    "SELECT id, username, display_name, is_admin, is_disabled, is_deleted, created_at, updated_at FROM users";
+const SELECT_USER: &str = "SELECT id, username, display_name, is_admin, is_disabled, \
+                           is_deleted, created_at, updated_at, user_uuid FROM users";
 
 pub fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO users(id, username, display_name, is_admin, is_disabled, is_deleted, created_at, updated_at) \
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO users(id, username, display_name, is_admin, is_disabled, is_deleted, \
+                                created_at, updated_at, user_uuid) \
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 user.id.to_string(),
                 user.username,
@@ -40,6 +45,7 @@ pub fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
                 user.is_deleted as i64,
                 user.created_at,
                 user.updated_at,
+                user.user_uuid.to_string(),
             ],
         )
         .map_err(|e| match e {

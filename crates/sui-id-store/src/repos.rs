@@ -14,4 +14,6 @@ pub mod sessions;
 pub mod signing_keys;
 pub mod state;
 pub mod user_totp;
+pub mod user_webauthn_credentials;
 pub mod users;
+pub mod webauthn_pending;

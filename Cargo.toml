@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 rust-version = "1.91"
 license = "Apache-2.0"
@@ -47,6 +47,17 @@ ed25519-dalek = { version = "2.1", features = ["rand_core", "pkcs8"] }
 sha2 = "0.10"
 sha1 = { version = "0.10", default-features = false }
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+# WebAuthn / passkey support. We use the high-level safe wrapper from
+# webauthn-rs; the lower-level webauthn-rs-core has explicit warnings
+# in its docs not to use it directly. Pinned to 0.5.x.
+#
+# `danger-allow-state-serialisation` lets us serialise the in-flight
+# `PasskeyRegistration` / `PasskeyAuthentication` ceremony state to the
+# `webauthn_pending` table. The "danger" prefix signals: do not let this
+# state escape the trust boundary. We never expose it over the wire —
+# it stays on the server, behind the master key boundary like any other
+# row.
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 hmac = "0.12"
 subtle = "2.6"
 zeroize = { version = "1.8", features = ["derive"] }

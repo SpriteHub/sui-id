@@ -16,8 +16,8 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-sui-id-shared = { version = "0.8.0", path = "../sui-id-shared" }
-sui-id-store  = { version = "0.8.0", path = "../sui-id-store" }
+sui-id-shared = { version = "0.9.0", path = "../sui-id-shared" }
+sui-id-store  = { version = "0.9.0", path = "../sui-id-store" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -26,6 +26,7 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 url = { workspace = true }
+webauthn-rs = { workspace = true }
 
 argon2 = { workspace = true }
 ed25519-dalek = { workspace = true }

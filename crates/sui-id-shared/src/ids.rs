@@ -58,6 +58,14 @@ define_id!(
     PendingMfaId,
     "Identifier of a short-lived 'password verified, MFA pending' record."
 );
+define_id!(
+    WebauthnPendingId,
+    "Identifier of a short-lived WebAuthn registration or authentication ceremony."
+);
+define_id!(
+    WebauthnCredentialId,
+    "Identifier of a registered WebAuthn passkey (sui-id-side row id, not the authenticator's credential id)."
+);
 
 #[cfg(test)]
 mod tests;

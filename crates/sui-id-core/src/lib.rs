@@ -22,5 +22,6 @@ pub mod admin;
 pub mod time;
 pub mod totp;
 pub mod mfa;
+pub mod webauthn;
 
 pub use errors::{CoreError, CoreResult};

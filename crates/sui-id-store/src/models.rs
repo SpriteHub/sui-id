@@ -16,6 +16,12 @@ pub struct UserRow {
     pub is_admin: bool,
     pub is_disabled: bool,
     pub is_deleted: bool,
+    /// Stable per-user UUID handle for WebAuthn `user.id`. Backfilled
+    /// at migration 0004 time for users created before that. Decoupled
+    /// from `id` (sui-id `UserId`) on purpose so the relying-party
+    /// handle can be rotated independently without breaking foreign
+    /// keys.
+    pub user_uuid: uuid::Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -131,4 +137,54 @@ pub struct LoginPendingMfaRow {
     pub user_id: UserId,
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UserWebauthnCredentialRow {
+    pub id: sui_id_shared::ids::WebauthnCredentialId,
+    pub user_id: UserId,
+    /// Raw credential id bytes as the authenticator returned them.
+    pub credential_id: Vec<u8>,
+    /// Sealed `webauthn_rs::prelude::Passkey` (JSON).
+    pub passkey_enc: Vec<u8>,
+    pub nickname: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WebauthnPendingRow {
+    pub id: sui_id_shared::ids::WebauthnPendingId,
+    pub kind: WebauthnPendingKind,
+    /// `None` for authentication ceremonies that started without a
+    /// known user (e.g. discoverable-credential flows). Today we only
+    /// drive authentication after the password step has identified the
+    /// user, so this is always `Some` in practice.
+    pub user_id: Option<UserId>,
+    /// Opaque JSON the application layer hands back to webauthn-rs.
+    pub state_json: String,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebauthnPendingKind {
+    Register,
+    Authenticate,
+}
+
+impl WebauthnPendingKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Register => "register",
+            Self::Authenticate => "authenticate",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "register" => Some(Self::Register),
+            "authenticate" => Some(Self::Authenticate),
+            _ => None,
+        }
+    }
 }

@@ -115,8 +115,28 @@ pub fn render_login(flash: Option<Flash>, next: Option<String>) -> String {
 
 // ---------- MFA challenge ----------
 
-pub fn render_mfa_challenge(flash: Option<Flash>, csrf_token: String) -> String {
+pub fn render_mfa_challenge(
+    flash: Option<Flash>,
+    csrf_token: String,
+    has_passkey: bool,
+) -> String {
     render(move || {
+        let csrf_for_totp = csrf_token.clone();
+        let csrf_for_pk = csrf_token.clone();
+        let passkey_block = if has_passkey {
+            view! {
+                <hr/>
+                <p class="muted">"Or, sign in with a passkey:"</p>
+                <form id="passkey-auth-form" method="post" action="/admin/login/webauthn/start">
+                    <input type="hidden" name="_csrf" value=csrf_for_pk />
+                    <button type="submit">"Sign in with passkey"</button>
+                </form>
+                <script src="/static/webauthn.js"></script>
+            }
+            .into_any()
+        } else {
+            view! { <></> }.into_any()
+        };
         view! {
             <Shell title="Verification required".to_string() show_nav=false current=None>
                 <h2>"Verification code"</h2>
@@ -126,12 +146,13 @@ pub fn render_mfa_challenge(flash: Option<Flash>, csrf_token: String) -> String 
                      your single-use recovery codes."
                 </p>
                 <form method="post" action="/admin/login/mfa">
-                    <input type="hidden" name="_csrf" value=csrf_token />
+                    <input type="hidden" name="_csrf" value=csrf_for_totp />
                     <label for="code">"Code"</label>
                     <input id="code" name="code" type="text" required=true
                            autocomplete="one-time-code" inputmode="text" autofocus=true />
                     <button type="submit">"Verify"</button>
                 </form>
+                {passkey_block}
             </Shell>
         }
     })
@@ -141,18 +162,35 @@ pub fn render_mfa_challenge(flash: Option<Flash>, csrf_token: String) -> String 
 
 pub struct ProfileData {
     pub username: String,
-    pub mfa_enabled: bool,
+    /// True if TOTP is set up.
+    pub totp_enabled: bool,
     /// Set when the user has just enrolled or regenerated codes.
     /// Displayed exactly once.
     pub fresh_recovery_codes: Option<Vec<String>>,
+    /// Registered WebAuthn passkeys for this user.
+    pub passkeys: Vec<PasskeyDescriptor>,
+}
+
+pub struct PasskeyDescriptor {
+    pub id: String,
+    pub nickname: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub fn render_profile(data: ProfileData, flash: Option<Flash>, csrf_token: String) -> String {
     render(move || {
-        let ProfileData { username, mfa_enabled, fresh_recovery_codes } = data;
+        let ProfileData {
+            username,
+            totp_enabled,
+            fresh_recovery_codes,
+            passkeys,
+        } = data;
         let csrf_for_disable = csrf_token.clone();
         let csrf_for_regen = csrf_token.clone();
         let csrf_for_enroll = csrf_token.clone();
+        let csrf_for_passkey_register = csrf_token.clone();
+        let csrf_for_passkey_delete = csrf_token.clone();
         let recovery_block = fresh_recovery_codes.map(|codes| {
             let lis: Vec<_> = codes
                 .into_iter()
@@ -169,32 +207,74 @@ pub fn render_profile(data: ProfileData, flash: Option<Flash>, csrf_token: Strin
                 </div>
             }
         });
-        let mfa_section = if mfa_enabled {
+        let mfa_section = if totp_enabled {
             view! {
-                <p>"Two-factor authentication is "<strong>"enabled"</strong>" for this account."</p>
+                <p>"Authenticator-app two-factor authentication is "<strong>"enabled"</strong>"."</p>
                 <form method="post" action="/admin/profile/mfa/recovery-codes/regenerate" style="display:inline">
                     <input type="hidden" name="_csrf" value=csrf_for_regen />
                     <button type="submit" class="secondary">"Regenerate recovery codes"</button>
                 </form>
                 " "
                 <form method="post" action="/admin/profile/mfa/disable" style="display:inline"
-                      onsubmit="return confirm('Disable two-factor authentication?');">
+                      onsubmit="return confirm('Disable authenticator-app two-factor authentication?');">
                     <input type="hidden" name="_csrf" value=csrf_for_disable />
-                    <button type="submit" class="danger">"Disable MFA"</button>
+                    <button type="submit" class="danger">"Disable TOTP"</button>
                 </form>
             }
             .into_any()
         } else {
             view! {
-                <p>"Two-factor authentication is "<strong>"not configured"</strong>" for this account."</p>
+                <p>"Authenticator-app two-factor authentication is "<strong>"not configured"</strong>"."</p>
                 <p class="muted">
                     "When enabled, sui-id will ask for a 6-digit code from your authenticator app each time you sign in. \
                      You can use any standards-compliant TOTP app (Aegis, FreeOTP, Google Authenticator, 1Password, etc)."
                 </p>
                 <form method="post" action="/admin/profile/mfa/enroll/start">
                     <input type="hidden" name="_csrf" value=csrf_for_enroll />
-                    <button type="submit">"Set up MFA"</button>
+                    <button type="submit">"Set up TOTP"</button>
                 </form>
+            }
+            .into_any()
+        };
+        let passkey_rows: Vec<_> = passkeys
+            .into_iter()
+            .map(|p| {
+                let id = p.id.clone();
+                let delete_url = format!("/admin/profile/webauthn/{id}/delete");
+                let csrf = csrf_for_passkey_delete.clone();
+                let last = p
+                    .last_used_at
+                    .map(fmt_time)
+                    .unwrap_or_else(|| "never".into());
+                view! {
+                    <tr>
+                        <td>{p.nickname}</td>
+                        <td>{fmt_time(p.created_at)}</td>
+                        <td class="muted">{last}</td>
+                        <td>
+                            <form method="post" action=delete_url style="display:inline"
+                                  onsubmit="return confirm('Delete this passkey? You will no longer be able to sign in with it.');">
+                                <input type="hidden" name="_csrf" value=csrf />
+                                <button type="submit" class="danger">"Delete"</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            })
+            .collect();
+        let passkey_table = if passkey_rows.is_empty() {
+            view! {
+                <p class="muted">"No passkeys registered yet."</p>
+            }
+            .into_any()
+        } else {
+            view! {
+                <table>
+                    <thead>
+                        <tr><th>"Name"</th><th>"Registered"</th><th>"Last used"</th><th></th></tr>
+                    </thead>
+                    <tbody>{passkey_rows}</tbody>
+                </table>
             }
             .into_any()
         };
@@ -203,8 +283,22 @@ pub fn render_profile(data: ProfileData, flash: Option<Flash>, csrf_token: Strin
                 <h2>{format!("Profile - {username}")}</h2>
                 {flash_banner(flash)}
                 {recovery_block}
-                <h3>"Two-factor authentication"</h3>
+                <h3>"Authenticator app (TOTP)"</h3>
                 {mfa_section}
+                <h3>"Passkeys"</h3>
+                <p class="muted">
+                    "Passkeys are hardware-backed credentials stored on your phone, laptop, security key, or password manager. \
+                     They never leave your device. You can register more than one - bring at least two if you want a fallback in case one is lost."
+                </p>
+                {passkey_table}
+                <h4>"Register a new passkey"</h4>
+                <form id="passkey-register-form" method="post" action="/admin/profile/webauthn/register/start">
+                    <input type="hidden" name="_csrf" value=csrf_for_passkey_register />
+                    <label for="pk-nickname">"Nickname (e.g. \"YubiKey 5C\", \"MacBook Touch ID\")"</label>
+                    <input id="pk-nickname" name="nickname" type="text" required=true />
+                    <button type="submit">"Register passkey"</button>
+                </form>
+                <script src="/static/webauthn.js"></script>
             </Shell>
         }
     })
