@@ -5,6 +5,178 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-05-03
+
+Multilingual support v1. Adds Japanese ↔ English UI selection
+across the resolution chain user-preference → cookie →
+Accept-Language → server default, plus the typed i18n foundation
+(`sui-id-i18n` crate, `Locale` enum, `Strings` struct) on which
+the rest of the UI translation work will land.
+
+### Why a typed Strings struct rather than Fluent / external files
+
+Three considerations drove the design:
+
+- **Compile-time completeness.** Every translation is a field on
+  the `Strings` struct, and every locale is a `static Strings`
+  constant. Adding a locale means adding a variant to `Locale`
+  and a new `STRINGS_*` constant — the exhaustive `match` in
+  `Locale::strings` then guarantees no field is forgotten.
+  Adding a string means adding a field — every per-locale
+  constant fails to compile until populated. There is no
+  runtime "key missing" failure mode.
+- **No new dependencies for the foundation tier.** Fluent or
+  ICU MessageFormat would buy plural-form rules and complex
+  bidi at the cost of pulling a substantial dependency. For the
+  enumeration-style messages we have today, per-locale functions
+  are simpler and faster, and the architecture leaves room to
+  upgrade individual messages to Fluent later if real plural-form
+  requirements appear.
+- **Translator workflow.** The Strings struct is a single Rust
+  file per locale, friendly to standard diff tooling, and easy
+  to PR. External translators get a single file to edit.
+
+### Locale resolution chain
+
+The four-tier chain in `core::i18n::resolve`:
+
+1. `users.preferred_lang` — explicit per-user setting from
+   `/admin/profile`. Wins because the user actively chose it.
+2. Cookie `sui_id_lang` — per-browser override. Lets a
+   signed-out user pick a language and lets a signed-in user
+   override on a different machine without changing the
+   per-user setting.
+3. `Accept-Language` header — browser default. q-weights are
+   intentionally ignored (first recognised tag wins).
+4. `server_settings.default_lang` — admin-configured fallback
+   editable at `/admin/settings/basic`.
+
+Final fallback is `Locale::Ja` in code, reachable only if the
+singleton settings row has been tampered with.
+
+### Added
+
+#### Crate `sui-id-i18n` (new)
+
+- `Locale::{Ja, En}` enum with `tag()` (BCP-47),
+  `native_name()`, `parse()` (region-suffix-tolerant), `strings()`,
+  `ALL` slice.
+- `Strings` struct — ~150 fields covering generic UI, navigation,
+  login, setup wizard, step-up, forgot password, settings hub,
+  profile, password change, email subjects/bodies, errors,
+  audit-log labels.
+- Static constants `STRINGS_JA`, `STRINGS_EN` with full translations.
+- `negotiate_from_accept_language(header)`.
+- 6 unit tests (parse round-trip, region suffix tolerance, unknown
+  returns None, accept-language negotiation, every locale populated,
+  native names in their own script).
+
+#### Migration 0016: schema for the user and server tiers
+
+- `users.preferred_lang TEXT NULL` — application-validated, no
+  CHECK constraint so locale additions do not require a fresh
+  migration.
+- `server_settings` table — singleton row keyed on `'singleton'`,
+  modeled on `smtp_config`. Today only `default_lang`; future
+  process-wide knobs can extend the row without a new migration.
+  Default row INSERTed by the migration.
+- `MAX_SCHEMA_VERSION` rolls to 16.
+
+#### Core
+
+- `core/src/i18n.rs` — `LocaleInputs` struct,
+  `resolve(db, inputs)` walking the four-tier chain, `Locale`
+  re-exported. 5 new unit tests pinning the priority order, the
+  cookie-over-header rule, the accept-language fallback, the
+  server-default fallback, and the unknown-tag fallthrough.
+- `forgot_password::request_reset` — reset-link mail composed
+  in the recipient's preferred locale (user.preferred_lang →
+  server default → Ja). Subject and body come from
+  `Strings.email_*`.
+- `forgot_password::notify_password_changed` gains a
+  `locale: Locale` parameter; callers resolve from
+  `user.preferred_lang` and the server-settings fallback before
+  calling.
+
+#### Storage
+
+- `users::set_preferred_lang(db, id, lang, now)` — pass `None`
+  for "clear".
+- `repos::server_settings` — `get`, `update_default_lang`.
+- `UserRow.preferred_lang: Option<String>` — nullable, no
+  CHECK constraint.
+- `ServerSettingsRow` model.
+
+#### HTTP
+
+- `RequestLocale(Locale)` extractor — pulls the cookie jar,
+  best-effort resolves a session id to a user_id (no expiry
+  check; the locale path is read-only and a stale id is
+  harmless), walks `core::i18n::resolve`. Never fails.
+- `LANG_COOKIE` constant (`"sui_id_lang"`).
+- `admin::profile_lang_post` — `POST /admin/profile/lang`.
+  Validates tag against `Locale::ALL`, calls
+  `users::set_preferred_lang`, sets/clears cookie
+  (`SameSite=Lax`, secure-flag from config, max-age 1 year for
+  set / 0 for clear), redirects to `/admin/profile`.
+  Empty tag clears; unknown tag returns 400.
+- `settings::basic_lang_post` — `POST /admin/settings/basic/lang`.
+  Validates tag, writes `server_settings.default_lang`.
+- `login_get` / `login_post` extract `RequestLocale` and pass
+  it into `render_login`.
+
+#### Web
+
+- `Shell` and `AuthShell` gain optional `lang: Option<Locale>`
+  prop; rendered `<html lang>` reflects it. Existing callers
+  unchanged.
+- `render_login(flash, next, lang)` — first page fully
+  translated, every label/hint/helper from `Strings`. Remaining
+  pages get the same treatment in v0.23.x patches; see the
+  ROADMAP "i18n scope expansion" entry.
+- `render_profile` gains a "表示言語 / Display language"
+  section with a `Browser default | 日本語 | English` select.
+  Bilingual UI on this picker so a user accidentally on the
+  wrong language can still recognise their own.
+  `ProfileData.preferred_lang` carries the current setting.
+- `render_settings_basic` gains a "サーバーデフォルト言語 /
+  Server default language" form section.
+  `SettingsBasicData.default_lang` and `csrf_token`.
+
+### Tests
+
+- 6 new lib tests in `sui-id-i18n`.
+- 5 new lib tests in `core::i18n`.
+- 8 new e2e tests:
+  - `login_page_html_lang_defaults_to_ja`
+  - `login_page_html_lang_follows_accept_language`
+  - `lang_cookie_overrides_accept_language`
+  - `profile_lang_post_persists_and_sets_cookie`
+  - `profile_lang_clear_resets_to_browser_default`
+  - `profile_lang_post_rejects_unknown_tag`
+  - `admin_settings_basic_default_lang_change`
+  - `forgot_password_email_in_user_preferred_locale`
+- All existing e2e (110+) and lib tests (164) continue to pass.
+
+### Notes
+
+- The login page is fully translated. Forgot-password,
+  reset-password, profile and settings pages render with their
+  Japanese strings unchanged at this release; full per-page i18n
+  is queued for v0.23.x patches. The plumbing — `RequestLocale`
+  extractor, `Strings` struct, `<html lang>` on every page — is
+  in place, so each per-page conversion is a mechanical pass over
+  view! literals.
+- `users.preferred_lang` has no CHECK constraint by design.
+  Locale additions should not require a migration; application-
+  layer validation is the single source of truth.
+- Email locale resolution is decoupled from HTTP locale resolution.
+  A signed-in user requesting a password reset for themselves
+  will see the form in one locale (HTTP chain) and receive the
+  email in another (recipient chain) if their cookie/header
+  differ from `users.preferred_lang`. Intentional — the email
+  follows the recipient, the form follows the browser session.
+
 ## [0.22.0] - 2026-05-02
 
 Email features. Two user-facing flows land:

@@ -78,6 +78,9 @@ pub fn create_user(
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_owned),
+        // No language preference yet; admin user manages own
+        // language on /me/profile.
+        preferred_lang: None,
         is_admin: spec.is_admin,
         is_disabled: false,
         is_deleted: false,

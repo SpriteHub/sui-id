@@ -19,6 +19,10 @@ pub struct UserRow {
     /// reset flows once SMTP support lands. NULL = "we don't have one";
     /// userinfo simply omits the `email` claim in that case.
     pub email: Option<String>,
+    /// Preferred UI locale, BCP-47 tag (e.g. "ja", "en"). NULL =
+    /// no preference; the application falls back through Cookie /
+    /// Accept-Language / server default. Added in migration 0016.
+    pub preferred_lang: Option<String>,
     pub is_admin: bool,
     pub is_disabled: bool,
     pub is_deleted: bool,
@@ -321,4 +325,21 @@ pub struct PasswordResetTokenRow {
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub consumed_at: Option<chrono::DateTime<chrono::Utc>>,
     pub requester_ip: Option<String>,
+}
+
+// ---------- Server settings (v0.23.0) ----------
+
+/// Singleton row in `server_settings`. Holds process-wide settings
+/// that an admin should be able to change without restarting the
+/// server. Today only `default_lang`; the row is designed to be
+/// extended without a fresh migration.
+#[derive(Debug, Clone)]
+pub struct ServerSettingsRow {
+    /// BCP-47 language tag used as a fallback when no per-user,
+    /// cookie, or Accept-Language preference matches a supported
+    /// locale. Validated at the application layer to be one of the
+    /// known `Locale` tags.
+    pub default_lang: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }

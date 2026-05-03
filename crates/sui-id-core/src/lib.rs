@@ -30,5 +30,6 @@ pub mod oauth_token;
 pub mod events;
 pub mod mail;
 pub mod forgot_password;
+pub mod i18n;
 
 pub use errors::{CoreError, CoreResult};

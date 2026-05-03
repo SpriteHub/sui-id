@@ -71,16 +71,21 @@ const THEME_INIT_JS: &str = r#"
 "#;
 
 /// Wrap a page body in the standard sui-id chrome.
+///
+/// `lang` controls the `<html lang="…">` attribute; pass the
+/// current request's resolved [`sui_id_i18n::Locale`].
 #[component]
 pub fn Shell(
     title: String,
     show_nav: bool,
     current: Option<String>,
+    #[prop(optional)] lang: Option<sui_id_i18n::Locale>,
     children: Children,
 ) -> impl IntoView {
     let stylesheet = format!("{}\n{}", TOKENS_CSS, COMPONENTS_CSS);
+    let lang_tag = lang.unwrap_or_default().tag();
     view! {
-        <html lang="en">
+        <html lang=lang_tag>
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -106,10 +111,15 @@ pub fn Shell(
 /// "card on a quiet field" look the design memo asks for on
 /// auth-style screens.
 #[component]
-pub fn AuthShell(title: String, children: Children) -> impl IntoView {
+pub fn AuthShell(
+    title: String,
+    #[prop(optional)] lang: Option<sui_id_i18n::Locale>,
+    children: Children,
+) -> impl IntoView {
     let stylesheet = format!("{}\n{}", TOKENS_CSS, COMPONENTS_CSS);
+    let lang_tag = lang.unwrap_or_default().tag();
     view! {
-        <html lang="en">
+        <html lang=lang_tag>
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />

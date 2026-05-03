@@ -42,6 +42,9 @@ pub async fn basic_get(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let cfg = app.config.as_ref();
+    let server_settings = sui_id_store::repos::server_settings::get(&app.db)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let token = csrf::ensure_token(&jar);
     let data = sui_id_web::SettingsBasicData {
         issuer: cfg.server.issuer.clone(),
         listen_addr: cfg.server.listen_addr.clone(),
@@ -49,11 +52,43 @@ pub async fn basic_get(
         trusted_proxies: cfg.server.trusted_proxies.clone(),
         discovery_url: format!("{}/.well-known/openid-configuration", cfg.server.issuer),
         jwks_url: format!("{}/.well-known/jwks.json", cfg.server.issuer),
+        default_lang: server_settings.default_lang,
+        csrf_token: token.clone(),
     };
-    let token = csrf::ensure_token(&jar);
     let html = sui_id_web::render_settings_basic(data, None);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+/// Update the server-wide default UI language.
+///
+/// Form fields:
+///   - `_csrf`: standard CSRF token
+///   - `default_lang`: BCP-47 tag (must be one of `Locale::ALL`)
+#[derive(Debug, serde::Deserialize)]
+pub struct BasicLangForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    pub default_lang: String,
+}
+
+pub async fn basic_lang_post(
+    state_ext: AppStateExt,
+    CurrentAdmin(_admin_id): CurrentAdmin,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<BasicLangForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    if sui_id_i18n::Locale::parse(&form.default_lang).is_none() {
+        return Err(HttpError::html(CoreError::BadRequest(
+            "unknown language tag".into(),
+        )));
+    }
+    let now = app.clock.now();
+    sui_id_store::repos::server_settings::update_default_lang(&app.db, &form.default_lang, now)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    Ok(axum::response::Redirect::to("/admin/settings/basic").into_response())
 }
 
 // ---------- セキュリティ ----------

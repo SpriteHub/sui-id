@@ -74,6 +74,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 15,
         sql: include_str!("./migrations/0015_password_reset_tokens.sql"),
     },
+    Migration {
+        version: 16,
+        sql: include_str!("./migrations/0016_i18n.sql"),
+    },
 ];
 
 /// The highest schema version this build of sui-id-store knows how to

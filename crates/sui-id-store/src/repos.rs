@@ -12,6 +12,7 @@ pub mod login_pending_mfa;
 pub mod password_reset_tokens;
 pub mod refresh_tokens;
 pub mod revoked_access_tokens;
+pub mod server_settings;
 pub mod sessions;
 pub mod signing_keys;
 pub mod smtp_config;

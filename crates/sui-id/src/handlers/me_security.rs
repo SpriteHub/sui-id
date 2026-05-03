@@ -398,10 +398,25 @@ pub async fn password_change_post(
         sui_id_store::repos::users::find_by_id_opt(&app.db, user_id)
     {
         if let Some(email) = user_row.email.as_deref() {
+            // Recipient's preferred locale, falling through to
+            // the server default if unset. Resolved here rather
+            // than inside `notify_password_changed` so that
+            // function stays a pure builder.
+            let recipient_locale = user_row
+                .preferred_lang
+                .as_deref()
+                .and_then(sui_id_i18n::Locale::parse)
+                .unwrap_or_else(|| {
+                    sui_id_store::repos::server_settings::get(&app.db)
+                        .ok()
+                        .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
+                        .unwrap_or_default()
+                });
             if let Err(e) = sui_id_core::forgot_password::notify_password_changed(
                 app.mailer.as_ref(),
                 email,
                 &user_row.display_name,
+                recipient_locale,
             )
             .await
             {

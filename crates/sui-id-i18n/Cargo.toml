@@ -1,0 +1,18 @@
+[package]
+name        = "sui-id-i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "sui-id internationalisation (i18n) — typed string tables for UI text."
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }

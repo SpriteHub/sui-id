@@ -72,6 +72,7 @@ pub fn build_router(app: AppState) -> Router {
         )
         .route("/admin/logout", post(admin::logout).get(admin::logout))
         .route("/admin/profile", get(admin::profile_get))
+        .route("/admin/profile/lang", post(admin::profile_lang_post))
         .route(
             "/admin/profile/mfa/enroll/start",
             post(admin::profile_mfa_enroll_start),
@@ -138,6 +139,10 @@ pub fn build_router(app: AppState) -> Router {
         .route(
             "/admin/settings/basic",
             get(crate::handlers::settings::basic_get),
+        )
+        .route(
+            "/admin/settings/basic/lang",
+            post(crate::handlers::settings::basic_lang_post),
         )
         .route(
             "/admin/settings/security",

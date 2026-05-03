@@ -1,0 +1,722 @@
+//! sui-id internationalisation.
+//!
+//! ## Design
+//!
+//! All user-facing strings are fields on a [`Strings`] struct. Each
+//! supported locale has a `static Strings` constant with all fields
+//! filled in (`STRINGS_JA`, `STRINGS_EN`). Adding a locale means
+//! adding a variant to [`Locale`] and a new `static Strings`
+//! constant — the compiler then guarantees every translation is
+//! complete via the exhaustive `match` in [`Locale::strings`].
+//! Adding a string means adding a field to [`Strings`] — the
+//! compiler then yells at every per-locale constant until it's
+//! filled in.
+//!
+//! Strings without variable interpolation are `&'static str`.
+//! Strings with interpolation use small format functions that
+//! take parameters and return `String`. We deliberately avoid a
+//! generic templating layer (Fluent, MessageFormat, etc) at this
+//! tier — the interpolation patterns we have are simple,
+//! enumeration-style ("3 outstanding tokens"), and a per-locale
+//! function is more readable than a templated string.
+//!
+//! ## What lives here, what doesn't
+//!
+//! - **Lives here**: UI labels, button text, flash messages,
+//!   page titles, email subjects/bodies. Anything a human reads.
+//! - **Does not live here**: log messages, audit-event names
+//!   (those are stable identifiers operators query against),
+//!   error machine codes, configuration keys.
+//!
+//! ## Future expansion (see sui-id ROADMAP)
+//!
+//! - More locales (zh, ko, etc) — add `Locale::Zh` and
+//!   `STRINGS_ZH`; the type system handles the rest.
+//! - Date/number formatting localisation — currently we use a
+//!   single ISO-ish format across locales for simplicity. v2
+//!   will add per-locale formatters.
+
+use serde::{Deserialize, Serialize};
+
+/// A supported locale.
+///
+/// New variants must:
+///   - have a stable BCP-47-style tag returned by [`Locale::tag`];
+///   - have a `static STRINGS_*` constant matched in [`Locale::strings`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Locale {
+    Ja,
+    En,
+}
+
+impl Locale {
+    /// All locales sui-id recognises, in display order.
+    pub const ALL: &'static [Locale] = &[Locale::Ja, Locale::En];
+
+    /// BCP-47 language tag. Used in HTML `lang=` attributes,
+    /// cookies, and the user preference column. Stable.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Ja => "ja",
+            Self::En => "en",
+        }
+    }
+
+    /// Native-language name of this locale, displayed in the
+    /// language picker. Always shown in the locale's own script
+    /// so a user who has accidentally landed on the wrong language
+    /// can still recognise their own.
+    pub fn native_name(self) -> &'static str {
+        match self {
+            Self::Ja => "日本語",
+            Self::En => "English",
+        }
+    }
+
+    /// Parse a tag back into a `Locale`. Tolerant of region
+    /// suffixes (`en-US` → `En`) and capitalisation. Unknown tags
+    /// return `None`; callers should fall back through their
+    /// preference chain rather than choosing here.
+    pub fn parse(tag: &str) -> Option<Locale> {
+        let primary = tag
+            .split(|c: char| c == '-' || c == '_')
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        match primary.as_str() {
+            "ja" => Some(Locale::Ja),
+            "en" => Some(Locale::En),
+            _ => None,
+        }
+    }
+
+    /// Strings table for this locale. The exhaustive match is the
+    /// completeness guarantee — adding a `Locale` variant without a
+    /// strings table fails to compile.
+    pub fn strings(self) -> &'static Strings {
+        match self {
+            Self::Ja => &STRINGS_JA,
+            Self::En => &STRINGS_EN,
+        }
+    }
+}
+
+impl Default for Locale {
+    fn default() -> Self {
+        Locale::Ja
+    }
+}
+
+/// Pick a locale from a `q`-weighted Accept-Language header.
+///
+/// Cheap parser: split on commas, take each token's primary
+/// subtag, return the first one we recognise. We ignore `q=`
+/// weights — for a two-locale catalogue the cost of a real parser
+/// outweighs the benefit. A user with `Accept-Language: fr;q=1, en;q=0.5`
+/// will get English (the first recognised tag), which matches the
+/// "best available match" intent close enough.
+pub fn negotiate_from_accept_language(header: &str) -> Option<Locale> {
+    for raw in header.split(',') {
+        let tag = raw.split(';').next().unwrap_or("").trim();
+        if let Some(loc) = Locale::parse(tag) {
+            return Some(loc);
+        }
+    }
+    None
+}
+
+/// All translatable UI strings.
+///
+/// Keep field names descriptive — the field name is what shows up
+/// at every call site, and `t.login_button_submit` is much easier
+/// to grep for than `t.s127`.
+///
+/// Group fields by area with section comments. When a string has
+/// variable interpolation, expose it as a method below the struct
+/// (`impl Strings { pub fn n_outstanding_tokens(...) }`) rather
+/// than as a field.
+pub struct Strings {
+    // ---- Generic UI ----
+    pub button_save: &'static str,
+    pub button_cancel: &'static str,
+    pub button_back: &'static str,
+    pub button_continue: &'static str,
+    pub button_delete: &'static str,
+    pub button_create: &'static str,
+    pub button_confirm: &'static str,
+    pub button_test: &'static str,
+    pub badge_enabled: &'static str,
+    pub badge_disabled: &'static str,
+    pub badge_ok: &'static str,
+    pub badge_warn: &'static str,
+    pub badge_error: &'static str,
+    pub label_optional: &'static str,
+    pub label_required: &'static str,
+    pub muted_none: &'static str,
+
+    // ---- Navigation ----
+    pub nav_dashboard: &'static str,
+    pub nav_users: &'static str,
+    pub nav_clients: &'static str,
+    pub nav_signing_keys: &'static str,
+    pub nav_audit: &'static str,
+    pub nav_settings: &'static str,
+    pub nav_profile: &'static str,
+    pub nav_logout: &'static str,
+
+    // ---- Login ----
+    pub login_title: &'static str,
+    pub login_username_label: &'static str,
+    pub login_password_label: &'static str,
+    pub login_submit: &'static str,
+    pub login_passkey_button: &'static str,
+    pub login_forgot_password_link: &'static str,
+    pub login_invalid_credentials: &'static str,
+    pub login_account_locked: &'static str,
+    pub login_reset_ok_banner: &'static str,
+
+    // ---- Setup wizard ----
+    pub setup_step_welcome: &'static str,
+    pub setup_step_admin: &'static str,
+    pub setup_step_done: &'static str,
+    pub setup_welcome_title: &'static str,
+    pub setup_welcome_lede: &'static str,
+    pub setup_welcome_lede2: &'static str,
+    pub setup_welcome_begin: &'static str,
+    pub setup_admin_title: &'static str,
+    pub setup_admin_lede: &'static str,
+    pub setup_admin_token_label: &'static str,
+    pub setup_admin_token_hint: &'static str,
+    pub setup_admin_username_label: &'static str,
+    pub setup_admin_email_label: &'static str,
+    pub setup_admin_email_hint: &'static str,
+    pub setup_admin_display_label: &'static str,
+    pub setup_admin_password_label: &'static str,
+    pub setup_admin_password_hint: &'static str,
+    pub setup_admin_confirm_label: &'static str,
+    pub setup_admin_submit: &'static str,
+    pub setup_done_title: &'static str,
+    pub setup_done_lede: &'static str,
+    pub setup_done_next_steps_title: &'static str,
+    pub setup_done_next_step_register_clients: &'static str,
+    pub setup_done_next_step_enable_mfa: &'static str,
+    pub setup_done_next_step_review_settings: &'static str,
+    pub setup_done_enter_admin: &'static str,
+    pub setup_not_complete_title: &'static str,
+    pub setup_not_complete_lede: &'static str,
+    pub setup_password_mismatch: &'static str,
+    pub setup_already_initialized: &'static str,
+    pub setup_invalid_token: &'static str,
+
+    // ---- Step-up auth ----
+    pub step_up_title: &'static str,
+    pub step_up_lede: &'static str,
+    pub step_up_code_label: &'static str,
+    pub step_up_code_hint: &'static str,
+    pub step_up_code_invalid: &'static str,
+    pub step_up_passkey_alt: &'static str,
+    pub step_up_passkey_button: &'static str,
+
+    // ---- Forgot password ----
+    pub forgot_password_title: &'static str,
+    pub forgot_password_lede: &'static str,
+    pub forgot_password_email_label: &'static str,
+    pub forgot_password_submit: &'static str,
+    pub forgot_password_sent_title: &'static str,
+    pub forgot_password_sent_lede: &'static str,
+    pub forgot_password_sent_lede2: &'static str,
+    pub reset_password_title: &'static str,
+    pub reset_password_lede: &'static str,
+    pub reset_password_new_label: &'static str,
+    pub reset_password_new_hint: &'static str,
+    pub reset_password_confirm_label: &'static str,
+    pub reset_password_submit: &'static str,
+    pub reset_password_invalid_title: &'static str,
+    pub reset_password_invalid_lede: &'static str,
+    pub reset_password_invalid_request_again: &'static str,
+    pub password_mismatch_flash: &'static str,
+    pub reset_password_failed_flash: &'static str,
+
+    // ---- Settings hub ----
+    pub settings_title: &'static str,
+    pub settings_lede: &'static str,
+    pub settings_tab_basic: &'static str,
+    pub settings_tab_security: &'static str,
+    pub settings_tab_authentication: &'static str,
+    pub settings_tab_logs: &'static str,
+    pub settings_tab_email: &'static str,
+    pub settings_tab_other: &'static str,
+    pub settings_basic_section: &'static str,
+    pub settings_basic_oidc_section: &'static str,
+    pub settings_basic_issuer: &'static str,
+    pub settings_basic_listen_addr: &'static str,
+    pub settings_basic_cookie_secure: &'static str,
+    pub settings_basic_trusted_proxies: &'static str,
+    pub settings_basic_trusted_proxies_none: &'static str,
+    pub settings_basic_default_lang: &'static str,
+    pub settings_basic_default_lang_hint: &'static str,
+    pub settings_basic_save: &'static str,
+    pub settings_basic_saved: &'static str,
+
+    // ---- Profile ----
+    pub profile_title: &'static str,
+    pub profile_username_label: &'static str,
+    pub profile_email_label: &'static str,
+    pub profile_display_name_label: &'static str,
+    pub profile_lang_label: &'static str,
+    pub profile_lang_hint: &'static str,
+    pub profile_lang_browser_default: &'static str,
+    pub profile_save: &'static str,
+    pub profile_saved: &'static str,
+
+    // ---- Password change ----
+    pub password_change_title: &'static str,
+    pub password_change_lede: &'static str,
+    pub password_change_current_label: &'static str,
+    pub password_change_new_label: &'static str,
+    pub password_change_confirm_label: &'static str,
+    pub password_change_revoke_others_label: &'static str,
+    pub password_change_submit: &'static str,
+    pub password_change_wrong_current: &'static str,
+    pub password_change_done_flash: &'static str,
+
+    // ---- Email subjects (notifications) ----
+    pub email_subject_password_reset: &'static str,
+    pub email_subject_password_changed: &'static str,
+    pub email_greeting_suffix: &'static str,
+    pub email_password_reset_intro: &'static str,
+    pub email_password_reset_link_label: &'static str,
+    pub email_password_reset_disregard: &'static str,
+    pub email_password_changed_intro: &'static str,
+    pub email_password_changed_security_warning: &'static str,
+    pub email_password_changed_link_security: &'static str,
+
+    // ---- Errors / generic ----
+    pub error_generic_title: &'static str,
+    pub error_not_found_title: &'static str,
+    pub error_not_found_lede: &'static str,
+    pub error_internal: &'static str,
+    pub error_too_many_requests_label: &'static str,
+
+    // ---- Audit log labels ----
+    pub audit_title: &'static str,
+    pub audit_col_when: &'static str,
+    pub audit_col_actor: &'static str,
+    pub audit_col_action: &'static str,
+    pub audit_col_target: &'static str,
+    pub audit_col_outcome: &'static str,
+    pub audit_col_note: &'static str,
+}
+
+// ---- Strings::JA ----
+
+pub static STRINGS_JA: Strings = Strings {
+    // Generic UI
+    button_save: "保存",
+    button_cancel: "キャンセル",
+    button_back: "戻る",
+    button_continue: "続行",
+    button_delete: "削除",
+    button_create: "作成",
+    button_confirm: "確認",
+    button_test: "テスト",
+    badge_enabled: "有効",
+    badge_disabled: "無効",
+    badge_ok: "正常",
+    badge_warn: "警告",
+    badge_error: "エラー",
+    label_optional: "(任意)",
+    label_required: "(必須)",
+    muted_none: "(なし)",
+
+    // Navigation
+    nav_dashboard: "ダッシュボード",
+    nav_users: "ユーザー",
+    nav_clients: "クライアント",
+    nav_signing_keys: "署名キー",
+    nav_audit: "監査ログ",
+    nav_settings: "設定",
+    nav_profile: "プロフィール",
+    nav_logout: "サインアウト",
+
+    // Login
+    login_title: "サインイン",
+    login_username_label: "ユーザー名",
+    login_password_label: "パスワード",
+    login_submit: "サインイン",
+    login_passkey_button: "パスキーでサインイン",
+    login_forgot_password_link: "パスワードをお忘れですか?",
+    login_invalid_credentials: "ユーザー名またはパスワードが正しくありません。",
+    login_account_locked: "アカウントは一時的にロックされています。しばらく待ってから再度お試しください。",
+    login_reset_ok_banner: "パスワードを再設定しました。新しいパスワードでサインインしてください。",
+
+    // Setup wizard
+    setup_step_welcome: "ようこそ",
+    setup_step_admin: "管理者作成",
+    setup_step_done: "完了",
+    setup_welcome_title: "sui-id へようこそ",
+    setup_welcome_lede: "このサーバーはまだ初期化されていません。数分で完了するセットアップを始めましょう。",
+    setup_welcome_lede2: "次の画面で最初の管理者アカウントを作成します。サーバー起動時に出力されたセットアップトークンをお手元にご準備ください。",
+    setup_welcome_begin: "セットアップを始める",
+    setup_admin_title: "管理者アカウントの作成",
+    setup_admin_lede: "サーバー起動時に出力されたセットアップトークンと、新しい管理者アカウントの情報を入力してください。",
+    setup_admin_token_label: "セットアップトークン",
+    setup_admin_token_hint: "起動ログに 1 度だけ出力された値",
+    setup_admin_username_label: "ユーザー名",
+    setup_admin_email_label: "メールアドレス(任意)",
+    setup_admin_email_hint: "通知やパスワードリセットに使用します。後から変更できます。",
+    setup_admin_display_label: "表示名(任意)",
+    setup_admin_password_label: "パスワード",
+    setup_admin_password_hint: "12 文字以上",
+    setup_admin_confirm_label: "パスワード(確認)",
+    setup_admin_submit: "管理者を作成",
+    setup_done_title: "セットアップ完了",
+    setup_done_lede: "管理者アカウントの作成と初期署名キーの発行が完了しました。管理画面からシステムの設定を確認できます。",
+    setup_done_next_steps_title: "次のステップ",
+    setup_done_next_step_register_clients: "OIDC クライアントを登録する。",
+    setup_done_next_step_enable_mfa: "パスキーや認証アプリで 2 段階認証を有効にする。",
+    setup_done_next_step_review_settings: "設定タブで現在の有効な設定を確認する。",
+    setup_done_enter_admin: "管理画面へ進む",
+    setup_not_complete_title: "セットアップは完了していません",
+    setup_not_complete_lede: "管理者アカウントの作成がまだ完了していません。セットアップを最初から始めてください。",
+    setup_password_mismatch: "パスワードと確認用パスワードが一致しません。",
+    setup_already_initialized: "サーバーは既に初期化されています。",
+    setup_invalid_token: "セットアップトークンが正しくありません。",
+
+    // Step-up auth
+    step_up_title: "再認証",
+    step_up_lede: "セキュリティ上重要な操作を行う前に、認証アプリのコードで本人確認をお願いします。短時間(5 分間)有効です。",
+    step_up_code_label: "確認コード",
+    step_up_code_hint: "認証アプリの 6 桁コード、またはリカバリーコード。",
+    step_up_code_invalid: "コードが正しくありません。もう一度入力してください。",
+    step_up_passkey_alt: "または、パスキーで再認証:",
+    step_up_passkey_button: "パスキーで再認証",
+
+    // Forgot password
+    forgot_password_title: "パスワードを忘れた場合",
+    forgot_password_lede: "登録したメールアドレスを入力してください。アカウントが存在する場合、リセット用のリンクをお送りします。",
+    forgot_password_email_label: "メールアドレス",
+    forgot_password_submit: "リセットリンクを送信",
+    forgot_password_sent_title: "メールを送信しました",
+    forgot_password_sent_lede: "リクエストを受け付けました。アカウントが存在する場合、ご指定のメールアドレスにリセットリンクをお送りしています。",
+    forgot_password_sent_lede2: "リンクは 30 分間有効です。届かない場合は迷惑メールフォルダもご確認ください。",
+    reset_password_title: "パスワードの再設定",
+    reset_password_lede: "新しいパスワードを 2 回入力してください。",
+    reset_password_new_label: "新しいパスワード",
+    reset_password_new_hint: "12 文字以上",
+    reset_password_confirm_label: "確認のためもう一度",
+    reset_password_submit: "パスワードを変更",
+    reset_password_invalid_title: "このリンクは無効です",
+    reset_password_invalid_lede: "リセットリンクが期限切れ、すでに使用済み、または無効です。",
+    reset_password_invalid_request_again: "再度リクエストする",
+    password_mismatch_flash: "パスワードと確認用パスワードが一致しません。",
+    reset_password_failed_flash: "パスワードの再設定に失敗しました。もう一度お試しください。",
+
+    // Settings hub
+    settings_title: "設定",
+    settings_lede: "現在の有効な設定の確認。",
+    settings_tab_basic: "基本",
+    settings_tab_security: "セキュリティ",
+    settings_tab_authentication: "認証",
+    settings_tab_logs: "ログ",
+    settings_tab_email: "メール",
+    settings_tab_other: "その他",
+    settings_basic_section: "基本",
+    settings_basic_oidc_section: "OIDC 公開エンドポイント",
+    settings_basic_issuer: "Issuer",
+    settings_basic_listen_addr: "Listen address",
+    settings_basic_cookie_secure: "Cookie Secure フラグ",
+    settings_basic_trusted_proxies: "Trusted proxies",
+    settings_basic_trusted_proxies_none: "(なし — peer の IP を直接信頼)",
+    settings_basic_default_lang: "サーバーデフォルト言語",
+    settings_basic_default_lang_hint: "ユーザー言語設定が無く Accept-Language ヘッダも一致しない場合のフォールバック。",
+    settings_basic_save: "保存",
+    settings_basic_saved: "サーバー設定を更新しました。",
+
+    // Profile
+    profile_title: "プロフィール",
+    profile_username_label: "ユーザー名",
+    profile_email_label: "メールアドレス",
+    profile_display_name_label: "表示名",
+    profile_lang_label: "表示言語",
+    profile_lang_hint: "ブラウザのデフォルトを使用するには「ブラウザに従う」を選択してください。",
+    profile_lang_browser_default: "ブラウザに従う",
+    profile_save: "保存",
+    profile_saved: "プロフィールを更新しました。",
+
+    // Password change
+    password_change_title: "パスワードの変更",
+    password_change_lede: "現在のパスワードと、新しいパスワードを 2 回入力してください。",
+    password_change_current_label: "現在のパスワード",
+    password_change_new_label: "新しいパスワード",
+    password_change_confirm_label: "新しいパスワード(確認)",
+    password_change_revoke_others_label: "他のすべてのセッションをサインアウトする",
+    password_change_submit: "パスワードを変更",
+    password_change_wrong_current: "現在のパスワードが正しくありません。",
+    password_change_done_flash: "パスワードを変更しました。",
+
+    // Email subjects/bodies
+    email_subject_password_reset: "パスワードのリセット — sui-id",
+    email_subject_password_changed: "パスワードが変更されました — sui-id",
+    email_greeting_suffix: "様",
+    email_password_reset_intro: "sui-id でパスワードリセットの依頼を受け付けました。以下のリンクから 30 分以内に新しいパスワードを設定してください。",
+    email_password_reset_link_label: "パスワードを再設定する",
+    email_password_reset_disregard: "このメールに心当たりがない場合は無視してください。",
+    email_password_changed_intro: "sui-id のあなたのアカウントのパスワードが変更されました。",
+    email_password_changed_security_warning: "心当たりがない場合は、すぐに他のセッションを取り消し、サポートに連絡してください。",
+    email_password_changed_link_security: "セキュリティ設定",
+
+    // Errors
+    error_generic_title: "エラー",
+    error_not_found_title: "ページが見つかりません",
+    error_not_found_lede: "お探しのページは存在しないか、移動された可能性があります。",
+    error_internal: "予期しないエラーが発生しました。",
+    error_too_many_requests_label: "リクエストが多すぎます。しばらく待ってから再度お試しください。",
+
+    // Audit
+    audit_title: "監査ログ",
+    audit_col_when: "日時",
+    audit_col_actor: "実行者",
+    audit_col_action: "操作",
+    audit_col_target: "対象",
+    audit_col_outcome: "結果",
+    audit_col_note: "備考",
+};
+
+// ---- Strings::EN ----
+
+pub static STRINGS_EN: Strings = Strings {
+    // Generic UI
+    button_save: "Save",
+    button_cancel: "Cancel",
+    button_back: "Back",
+    button_continue: "Continue",
+    button_delete: "Delete",
+    button_create: "Create",
+    button_confirm: "Confirm",
+    button_test: "Test",
+    badge_enabled: "Enabled",
+    badge_disabled: "Disabled",
+    badge_ok: "OK",
+    badge_warn: "Warning",
+    badge_error: "Error",
+    label_optional: "(optional)",
+    label_required: "(required)",
+    muted_none: "(none)",
+
+    // Navigation
+    nav_dashboard: "Dashboard",
+    nav_users: "Users",
+    nav_clients: "Clients",
+    nav_signing_keys: "Signing keys",
+    nav_audit: "Audit log",
+    nav_settings: "Settings",
+    nav_profile: "Profile",
+    nav_logout: "Sign out",
+
+    // Login
+    login_title: "Sign in",
+    login_username_label: "Username",
+    login_password_label: "Password",
+    login_submit: "Sign in",
+    login_passkey_button: "Sign in with passkey",
+    login_forgot_password_link: "Forgot your password?",
+    login_invalid_credentials: "The username or password is incorrect.",
+    login_account_locked: "Your account is temporarily locked. Please try again later.",
+    login_reset_ok_banner: "Your password has been reset. Please sign in with the new password.",
+
+    // Setup wizard
+    setup_step_welcome: "Welcome",
+    setup_step_admin: "Create admin",
+    setup_step_done: "Done",
+    setup_welcome_title: "Welcome to sui-id",
+    setup_welcome_lede: "This server has not been initialized yet. Setup will only take a few minutes.",
+    setup_welcome_lede2: "On the next screen you'll create the first administrator account. Please have the setup token (printed when the server started) ready.",
+    setup_welcome_begin: "Begin setup",
+    setup_admin_title: "Create the administrator account",
+    setup_admin_lede: "Enter the setup token printed at server startup, plus the details for the new administrator account.",
+    setup_admin_token_label: "Setup token",
+    setup_admin_token_hint: "Printed once in the startup log",
+    setup_admin_username_label: "Username",
+    setup_admin_email_label: "Email address (optional)",
+    setup_admin_email_hint: "Used for notifications and password resets. You can change it later.",
+    setup_admin_display_label: "Display name (optional)",
+    setup_admin_password_label: "Password",
+    setup_admin_password_hint: "12 characters or more",
+    setup_admin_confirm_label: "Password (confirm)",
+    setup_admin_submit: "Create administrator",
+    setup_done_title: "Setup complete",
+    setup_done_lede: "The administrator account has been created and the initial signing key issued. You can now review system configuration in the admin console.",
+    setup_done_next_steps_title: "Next steps",
+    setup_done_next_step_register_clients: "Register an OIDC client.",
+    setup_done_next_step_enable_mfa: "Enable two-factor authentication with a passkey or authenticator app.",
+    setup_done_next_step_review_settings: "Review the current effective configuration on the Settings tab.",
+    setup_done_enter_admin: "Go to admin console",
+    setup_not_complete_title: "Setup is not complete",
+    setup_not_complete_lede: "The administrator account has not been created yet. Please start setup from the beginning.",
+    setup_password_mismatch: "The password and the confirmation do not match.",
+    setup_already_initialized: "The server is already initialized.",
+    setup_invalid_token: "The setup token is incorrect.",
+
+    // Step-up auth
+    step_up_title: "Re-authenticate",
+    step_up_lede: "Before performing this security-sensitive action, please confirm your identity with a code from your authenticator app. Valid for 5 minutes.",
+    step_up_code_label: "Confirmation code",
+    step_up_code_hint: "Six-digit code from your authenticator app, or a recovery code.",
+    step_up_code_invalid: "That code is not valid. Please try again.",
+    step_up_passkey_alt: "Or re-authenticate with a passkey:",
+    step_up_passkey_button: "Re-authenticate with passkey",
+
+    // Forgot password
+    forgot_password_title: "Forgot your password",
+    forgot_password_lede: "Enter your registered email address. If an account exists, we'll send you a reset link.",
+    forgot_password_email_label: "Email address",
+    forgot_password_submit: "Send reset link",
+    forgot_password_sent_title: "Email sent",
+    forgot_password_sent_lede: "Request received. If an account exists for the address you provided, we have sent a reset link.",
+    forgot_password_sent_lede2: "The link is valid for 30 minutes. If you don't see it, check your spam folder.",
+    reset_password_title: "Reset your password",
+    reset_password_lede: "Enter your new password twice.",
+    reset_password_new_label: "New password",
+    reset_password_new_hint: "12 characters or more",
+    reset_password_confirm_label: "Confirm again",
+    reset_password_submit: "Change password",
+    reset_password_invalid_title: "This link is no longer valid",
+    reset_password_invalid_lede: "The reset link has expired, has already been used, or is invalid.",
+    reset_password_invalid_request_again: "Request a new link",
+    password_mismatch_flash: "The password and the confirmation do not match.",
+    reset_password_failed_flash: "Password reset failed. Please try again.",
+
+    // Settings hub
+    settings_title: "Settings",
+    settings_lede: "Review the current effective configuration.",
+    settings_tab_basic: "Basic",
+    settings_tab_security: "Security",
+    settings_tab_authentication: "Authentication",
+    settings_tab_logs: "Logs",
+    settings_tab_email: "Email",
+    settings_tab_other: "Other",
+    settings_basic_section: "Basic",
+    settings_basic_oidc_section: "OIDC public endpoints",
+    settings_basic_issuer: "Issuer",
+    settings_basic_listen_addr: "Listen address",
+    settings_basic_cookie_secure: "Cookie Secure flag",
+    settings_basic_trusted_proxies: "Trusted proxies",
+    settings_basic_trusted_proxies_none: "(none — peer IP is trusted directly)",
+    settings_basic_default_lang: "Server default language",
+    settings_basic_default_lang_hint: "Used as a fallback when the user has no preferred language and no Accept-Language header matches.",
+    settings_basic_save: "Save",
+    settings_basic_saved: "Server settings updated.",
+
+    // Profile
+    profile_title: "Profile",
+    profile_username_label: "Username",
+    profile_email_label: "Email address",
+    profile_display_name_label: "Display name",
+    profile_lang_label: "Display language",
+    profile_lang_hint: "Choose \"Browser default\" to follow your browser's language setting.",
+    profile_lang_browser_default: "Browser default",
+    profile_save: "Save",
+    profile_saved: "Profile updated.",
+
+    // Password change
+    password_change_title: "Change password",
+    password_change_lede: "Enter your current password, and the new password twice.",
+    password_change_current_label: "Current password",
+    password_change_new_label: "New password",
+    password_change_confirm_label: "New password (confirm)",
+    password_change_revoke_others_label: "Sign out all other sessions",
+    password_change_submit: "Change password",
+    password_change_wrong_current: "Current password is incorrect.",
+    password_change_done_flash: "Password changed.",
+
+    // Email subjects/bodies
+    email_subject_password_reset: "Reset your password — sui-id",
+    email_subject_password_changed: "Your password was changed — sui-id",
+    email_greeting_suffix: "",
+    email_password_reset_intro: "We received a password-reset request for your sui-id account. Use the link below within 30 minutes to set a new password.",
+    email_password_reset_link_label: "Reset your password",
+    email_password_reset_disregard: "If you didn't request this, you can ignore this email.",
+    email_password_changed_intro: "The password for your sui-id account was changed.",
+    email_password_changed_security_warning: "If you didn't do this, please revoke other sessions immediately and contact support.",
+    email_password_changed_link_security: "security settings",
+
+    // Errors
+    error_generic_title: "Error",
+    error_not_found_title: "Page not found",
+    error_not_found_lede: "The page you were looking for doesn't exist or has moved.",
+    error_internal: "An unexpected error occurred.",
+    error_too_many_requests_label: "Too many requests. Please wait a moment before trying again.",
+
+    // Audit
+    audit_title: "Audit log",
+    audit_col_when: "When",
+    audit_col_actor: "Actor",
+    audit_col_action: "Action",
+    audit_col_target: "Target",
+    audit_col_outcome: "Outcome",
+    audit_col_note: "Note",
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_round_trip() {
+        for &loc in Locale::ALL {
+            assert_eq!(Locale::parse(loc.tag()), Some(loc));
+        }
+    }
+
+    #[test]
+    fn parse_tolerates_region_suffix() {
+        assert_eq!(Locale::parse("en-US"), Some(Locale::En));
+        assert_eq!(Locale::parse("ja_JP"), Some(Locale::Ja));
+        assert_eq!(Locale::parse("EN"), Some(Locale::En));
+    }
+
+    #[test]
+    fn parse_unknown_returns_none() {
+        assert_eq!(Locale::parse("zh"), None);
+        assert_eq!(Locale::parse(""), None);
+        assert_eq!(Locale::parse("xyz-RegionTag"), None);
+    }
+
+    #[test]
+    fn negotiate_picks_first_recognised() {
+        // English has q=0.5 in real life, but our parser ignores
+        // weights — the first recognised tag wins.
+        assert_eq!(
+            negotiate_from_accept_language("fr;q=1, en;q=0.5"),
+            Some(Locale::En)
+        );
+        assert_eq!(
+            negotiate_from_accept_language("ja, en"),
+            Some(Locale::Ja)
+        );
+        assert_eq!(negotiate_from_accept_language(""), None);
+        assert_eq!(negotiate_from_accept_language("zh, fr"), None);
+    }
+
+    #[test]
+    fn each_locale_has_strings() {
+        for &loc in Locale::ALL {
+            // Compile-only check that strings() returns; smoke
+            // a couple of fields to confirm both populated.
+            let s = loc.strings();
+            assert!(!s.button_save.is_empty(), "{:?}.button_save empty", loc);
+            assert!(!s.login_title.is_empty(), "{:?}.login_title empty", loc);
+        }
+    }
+
+    #[test]
+    fn native_names_are_in_their_own_script() {
+        // Sanity: a user wandering in shouldn't see their own
+        // language listed only in someone else's script.
+        assert!(STRINGS_JA.button_save.chars().any(|c| c >= '\u{3040}'));
+        assert!(Locale::Ja.native_name().contains("日本語"));
+        assert!(Locale::En.native_name().is_ascii());
+    }
+}

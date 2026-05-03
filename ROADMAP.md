@@ -28,6 +28,37 @@ rather than new auth primitives.
   forgot-password / password-change), but a clear future
   enhancement once a deployment hits delivery problems.
 
+- **i18n scope expansion (post-v0.23.0).** v0.23.0 ships the
+  typed `sui-id-i18n` foundation — `Locale` enum, `Strings`
+  struct with compile-time exhaustiveness on every translation —
+  with two locales (Japanese, English) and the core admin/auth
+  UI translated. The architecture is deliberately built so that
+  expansion is incremental, not invasive. The threads we plan to
+  pull on:
+  - **More locales.** Add `Locale::Zh`, `Locale::Ko`, etc by
+    declaring the variant and providing a `STRINGS_*` constant;
+    the type system enforces every string is translated. No
+    schema changes, no migration, no new dependencies. Specific
+    languages will be prioritised by deployment demand.
+  - **Date and number formatting.** Today timestamps render in a
+    single ISO-ish format across locales; locale-aware date,
+    time, and number formatting (`chrono::Locale`,
+    `icu_decimal`-style) is deferred to a v2 pass when we have
+    real-world feedback on which formats matter.
+  - **Email template polish.** The forgot-password and password-
+    change-notification templates are translated, but the prose
+    is functional rather than polished. A native-speaker review
+    pass for each shipped locale is on the list.
+  - **Admin-facing audit-event labels.** Event *names* are
+    stable English identifiers (operators query against them);
+    the human-readable labels for the audit log UI are
+    translated, but the long-form descriptions still need a
+    pass per locale.
+  - **Right-to-left support.** When a RTL locale (Arabic,
+    Hebrew, etc) gets requested we'll need a CSS `[dir="rtl"]`
+    pass on the design language. The `Locale::tag()` API is
+    already the right anchor point for this.
+
 ## Longer term, less certain
 
 - **Federation.** Acting as an OIDC client to an upstream IdP, mapping
@@ -293,6 +324,26 @@ rather than new auth primitives.
   `wasm-smtp-tokio` 0.9. The integration was clean enough that
   the matching CHANGELOG entry contains a small list of
   upstream suggestions rather than complaints.
+- Multilingual support v1 (v0.23.0). Typed `sui-id-i18n`
+  foundation — `Locale` enum, `Strings` struct with compile-
+  time exhaustiveness — backing a four-tier resolution chain
+  (user.preferred_lang → cookie `sui_id_lang` →
+  Accept-Language → `server_settings.default_lang` → Ja).
+  Japanese and English ship at this release; the architecture
+  enforces "every locale is a complete `Strings` constant" at
+  compile time, so adding zh / ko / ... is purely additive
+  with no schema changes. Migration 0016 adds
+  `users.preferred_lang` (no CHECK constraint, so locale
+  additions don't require a migration) and `server_settings`
+  (singleton row pattern, modeled on `smtp_config`). The login
+  page is fully translated at v0.23.0; the rest of the UI gets
+  the same treatment in v0.23.x patches via the "i18n scope
+  expansion" entry under Medium term — each per-page conversion
+  is mechanical now that the plumbing (RequestLocale extractor,
+  Strings struct, `<html lang>` on every page) is in place.
+  Email locale resolution is decoupled from HTTP locale
+  resolution: the email follows the recipient (their
+  preferred_lang), the form follows the browser session.
 
 ## Explicitly **not** on the roadmap
 

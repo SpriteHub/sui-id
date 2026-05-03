@@ -49,7 +49,11 @@ pub struct LoginForm {
     pub next: String,
 }
 
-pub async fn login_get(jar: CookieJar, state_ext: AppStateExt) -> Result<Response, HttpError> {
+pub async fn login_get(
+    jar: CookieJar,
+    state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
+) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     // Already logged in?
     if let Some(cookie) = jar.get(SESSION_COOKIE) {
@@ -59,12 +63,13 @@ pub async fn login_get(jar: CookieJar, state_ext: AppStateExt) -> Result<Respons
             }
         }
     }
-    Ok(Html(render_login(None, None)).into_response())
+    Ok(Html(render_login(None, None, lang)).into_response())
 }
 
 pub async fn login_post(
     state_ext: AppStateExt,
     crate::handlers::ClientIp(ip): crate::handlers::ClientIp,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
     jar: CookieJar,
     Form(form): Form<LoginForm>,
 ) -> Result<Response, HttpError> {
@@ -126,7 +131,7 @@ pub async fn login_post(
                 Some(form.next)
             };
             Ok(
-                (StatusCode::UNAUTHORIZED, Html(render_login(Some(flash), next)))
+                (StatusCode::UNAUTHORIZED, Html(render_login(Some(flash), next, lang)))
                     .into_response(),
             )
         }
@@ -871,12 +876,83 @@ pub async fn profile_get(
             totp_enabled,
             fresh_recovery_codes: None,
             passkeys,
+            preferred_lang: user.preferred_lang.clone(),
         },
         None,
         token.clone(),
     ))
     .into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+/// Update the signed-in user's preferred display language.
+///
+/// Form fields:
+///   - `_csrf`: standard CSRF token
+///   - `lang`: BCP-47 tag, or empty string to clear (= "follow
+///     browser default", which un-sets the user-tier of the
+///     locale resolution chain)
+///
+/// On success, sets the `sui_id_lang` cookie to the same value
+/// (cleared when `lang` is empty) so non-authenticated pages
+/// (e.g. logout, forgot-password) immediately reflect the choice
+/// too. The cookie is `SameSite=Lax`, **not** `HttpOnly` (it is
+/// not sensitive — the same value is in the form select), with a
+/// long max-age (one year) since language preference is rarely
+/// changed.
+pub async fn profile_lang_post(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Form(form): Form<ProfileLangForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+
+    // Validate the tag is one we recognise — or empty (=clear).
+    let lang_to_store: Option<&str> = if form.lang.trim().is_empty() {
+        None
+    } else if sui_id_i18n::Locale::parse(&form.lang).is_some() {
+        Some(form.lang.as_str())
+    } else {
+        return Err(HttpError::html(CoreError::BadRequest(
+            "unknown language tag".into(),
+        )));
+    };
+
+    let now = app.clock.now();
+    sui_id_store::repos::users::set_preferred_lang(&app.db, user_id, lang_to_store, now)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+
+    // Mirror the choice into the lang cookie so pages without
+    // an authenticated user pick up the change immediately.
+    let cookie = {
+        let mut c = axum_extra::extract::cookie::Cookie::new(
+            crate::handlers::LANG_COOKIE,
+            lang_to_store.unwrap_or("").to_owned(),
+        );
+        c.set_path("/");
+        c.set_same_site(axum_extra::extract::cookie::SameSite::Lax);
+        c.set_secure(app.config.server.cookie_secure);
+        if lang_to_store.is_some() {
+            c.set_max_age(cookie::time::Duration::days(365));
+        } else {
+            // "Browser default" — clear the cookie so resolution
+            // skips the cookie tier and reads Accept-Language.
+            c.set_max_age(cookie::time::Duration::seconds(0));
+        }
+        c
+    };
+    let jar = jar.add(cookie);
+    Ok((jar, Redirect::to("/admin/profile")).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProfileLangForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    #[serde(default)]
+    pub lang: String,
 }
 
 pub async fn profile_mfa_enroll_start(
@@ -969,6 +1045,7 @@ pub async fn profile_mfa_enroll_confirm(
                     last_used_at: d.last_used_at,
                 })
                 .collect(),
+            preferred_lang: user.preferred_lang.clone(),
         },
         Some(Flash {
             kind: FlashKind::Info,
@@ -1041,6 +1118,7 @@ pub async fn profile_mfa_regenerate_recovery(
                     last_used_at: d.last_used_at,
                 })
                 .collect(),
+            preferred_lang: user.preferred_lang.clone(),
         },
         Some(Flash {
             kind: FlashKind::Info,

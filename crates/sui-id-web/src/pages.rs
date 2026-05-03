@@ -250,30 +250,35 @@ pub fn render_setup_done(initialized: bool) -> String {
 
 // ---------- login ----------
 
-pub fn render_login(flash: Option<Flash>, next: Option<String>) -> String {
+pub fn render_login(
+    flash: Option<Flash>,
+    next: Option<String>,
+    lang: sui_id_i18n::Locale,
+) -> String {
     render(move || {
         let next_value = next.clone().unwrap_or_default();
+        let t = lang.strings();
         view! {
-            <crate::layout::AuthShell title="Sign in".to_string()>
-                <h1>"sui-id にログイン"</h1>
+            <crate::layout::AuthShell title=t.login_title.to_string() lang=lang>
+                <h1>{t.login_title}</h1>
                 {flash_banner(flash)}
                 <form method="post" action="/admin/login" class="stack">
                     <input type="hidden" name="next" value=next_value />
                     <div class="field">
-                        <label for="username" class="field__label">"ユーザー名またはメールアドレス"</label>
+                        <label for="username" class="field__label">{t.login_username_label}</label>
                         <input id="username" name="username" type="text"
                                required=true autocomplete="username"
                                autofocus=true />
                     </div>
                     <div class="field">
-                        <label for="password" class="field__label">"パスワード"</label>
+                        <label for="password" class="field__label">{t.login_password_label}</label>
                         <input id="password" name="password" type="password"
                                required=true autocomplete="current-password" />
                     </div>
-                    <button type="submit">"ログイン"</button>
+                    <button type="submit">{t.login_submit}</button>
                 </form>
                 <p class="muted" style="margin-top:var(--space-3);text-align:center;font-size:var(--font-size-caption)">
-                    <a href="/forgot-password">"パスワードをお忘れですか?"</a>
+                    <a href="/forgot-password">{t.login_forgot_password_link}</a>
                 </p>
             </crate::layout::AuthShell>
         }
@@ -339,6 +344,10 @@ pub struct ProfileData {
     pub fresh_recovery_codes: Option<Vec<String>>,
     /// Registered WebAuthn passkeys for this user.
     pub passkeys: Vec<PasskeyDescriptor>,
+    /// User's currently-stored language preference (BCP-47 tag).
+    /// `None` means "follow browser default" (the cookie /
+    /// Accept-Language tier of the resolution chain takes over).
+    pub preferred_lang: Option<String>,
 }
 
 pub struct PasskeyDescriptor {
@@ -355,12 +364,15 @@ pub fn render_profile(data: ProfileData, flash: Option<Flash>, csrf_token: Strin
             totp_enabled,
             fresh_recovery_codes,
             passkeys,
+            preferred_lang,
         } = data;
         let csrf_for_disable = csrf_token.clone();
         let csrf_for_regen = csrf_token.clone();
         let csrf_for_enroll = csrf_token.clone();
         let csrf_for_passkey_register = csrf_token.clone();
         let csrf_for_passkey_delete = csrf_token.clone();
+        let csrf_for_lang = csrf_token.clone();
+        let preferred_lang = preferred_lang;
         let recovery_block = fresh_recovery_codes.map(|codes| {
             let lis: Vec<_> = codes
                 .into_iter()
@@ -511,6 +523,40 @@ pub fn render_profile(data: ProfileData, flash: Option<Flash>, csrf_token: Strin
                             </div>
                             <div>
                                 <button type="submit">"パスキーを登録"</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+
+                <section class="section">
+                    <h2 class="section__title">"表示言語 / Display language"</h2>
+                    <p class="muted">
+                        "サインイン後の画面で使用する言語。「ブラウザに従う」を選ぶと "
+                        "ブラウザの設定 (Accept-Language) に応じて自動選択されます。 "
+                        "/ Choose the language sui-id uses after sign-in. "
+                        "\"Browser default\" follows your browser's language setting."
+                    </p>
+                    <div class="card">
+                        <form method="post" action="/admin/profile/lang" class="stack">
+                            <input type="hidden" name="_csrf" value=csrf_for_lang />
+                            <div class="field">
+                                <label for="lang-select" class="field__label">"言語 / Language"</label>
+                                <select id="lang-select" name="lang">
+                                    <option value="" selected=preferred_lang.is_none()>
+                                        "ブラウザに従う / Browser default"
+                                    </option>
+                                    {sui_id_i18n::Locale::ALL.iter().map(|loc| {
+                                        let tag = loc.tag();
+                                        let selected = preferred_lang.as_deref() == Some(tag);
+                                        let label = loc.native_name();
+                                        view! {
+                                            <option value=tag selected=selected>{label}</option>
+                                        }
+                                    }).collect::<Vec<_>>()}
+                                </select>
+                            </div>
+                            <div>
+                                <button type="submit">"保存 / Save"</button>
                             </div>
                         </form>
                     </div>
@@ -1922,6 +1968,14 @@ pub struct SettingsBasicData {
     pub trusted_proxies: Vec<String>,
     pub discovery_url: String,
     pub jwks_url: String,
+    /// Server-wide default UI language (BCP-47 tag, e.g. "ja").
+    /// Comes from `server_settings.default_lang`. Editable via the
+    /// form on this page; saved through `POST /admin/settings/basic/lang`.
+    pub default_lang: String,
+    /// CSRF token for the in-page edit form. Empty string when
+    /// rendered without CSRF (legacy callers); the lang form
+    /// no-ops when the token is missing.
+    pub csrf_token: String,
 }
 
 pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>) -> String {
@@ -1933,7 +1987,43 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>) -> S
             trusted_proxies,
             discovery_url,
             jwks_url,
+            default_lang,
+            csrf_token,
         } = data;
+        let csrf_for_lang = csrf_token.clone();
+        let lang_form = view! {
+            <section class="section">
+                <h2 class="section__title">"サーバーデフォルト言語 / Server default language"</h2>
+                <p class="muted">
+                    "ユーザーの言語設定とブラウザの Accept-Language が一致しない場合の "
+                    "フォールバックとして使用されます。 / Used as a fallback when no per-user "
+                    "preference is set and Accept-Language does not match a supported locale."
+                </p>
+                <div class="card">
+                    <form method="post" action="/admin/settings/basic/lang" class="stack">
+                        <input type="hidden" name="_csrf" value=csrf_for_lang />
+                        <div class="field">
+                            <label for="default-lang-select" class="field__label">
+                                "言語 / Language"
+                            </label>
+                            <select id="default-lang-select" name="default_lang">
+                                {sui_id_i18n::Locale::ALL.iter().map(|loc| {
+                                    let tag = loc.tag();
+                                    let selected = default_lang == tag;
+                                    let label = loc.native_name();
+                                    view! {
+                                        <option value=tag selected=selected>{label}</option>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </select>
+                        </div>
+                        <div>
+                            <button type="submit">"保存 / Save"</button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+        };
         let proxies_display = if trusted_proxies.is_empty() {
             "(なし — peer の IP を直接信頼)".to_owned()
         } else {
@@ -2001,6 +2091,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>) -> S
                         </table>
                     </div>
                 </div>
+                {lang_form}
             </Shell>
         }
     })

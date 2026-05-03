@@ -174,33 +174,58 @@ pub async fn request_reset(
         plaintext
     );
 
-    // Compose and dispatch the mail.
+    // Compose and dispatch the mail. The recipient's locale is
+    // their `preferred_lang` if set, otherwise the server default
+    // — we don't have a per-request browser context here (this
+    // runs inline with the POST handler but the recipient may not
+    // be the requester). Falling through to server default if the
+    // user has expressed no preference matches the resolution
+    // chain in `core::i18n::resolve`.
+    let recipient_locale = user_row
+        .preferred_lang
+        .as_deref()
+        .and_then(sui_id_i18n::Locale::parse)
+        .unwrap_or_else(|| {
+            sui_id_store::repos::server_settings::get(db)
+                .ok()
+                .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
+                .unwrap_or_default()
+        });
+    let t = recipient_locale.strings();
     let display = user_row
         .display_name
         .as_deref()
         .unwrap_or(&user_row.username);
+    let greeting = if t.email_greeting_suffix.is_empty() {
+        display.to_string()
+    } else {
+        format!("{} {}", display, t.email_greeting_suffix)
+    };
     let mail = OutgoingMail {
         to: normalized_email.clone(),
-        subject: "パスワードのリセット — sui-id".to_string(),
+        subject: t.email_subject_password_reset.to_string(),
         text_body: format!(
-            "{display} 様\n\
+            "{greeting}\n\
              \n\
-             sui-id でパスワードリセットの依頼を受け付けました。\n\
-             以下のリンクから 30 分以内に新しいパスワードを設定してください。\n\
+             {intro}\n\
              \n\
              {link}\n\
              \n\
-             このメールに心当たりがない場合は無視してください。\n\
+             {disregard}\n\
              ",
+            intro = t.email_password_reset_intro,
+            disregard = t.email_password_reset_disregard,
         ),
         html_body: Some(format!(
-            "<p>{display} 様</p>\
-             <p>sui-id でパスワードリセットの依頼を受け付けました。\
-             下のボタンから 30 分以内に新しいパスワードを設定してください。</p>\
-             <p><a href=\"{link}\">パスワードを再設定する</a></p>\
-             <p>このメールに心当たりがない場合は無視してください。</p>",
-            display = html_escape(display),
-            link = html_escape(&link),
+            "<p>{greeting_esc}</p>\
+             <p>{intro}</p>\
+             <p><a href=\"{link_esc}\">{link_label}</a></p>\
+             <p>{disregard}</p>",
+            greeting_esc = html_escape(&greeting),
+            intro = t.email_password_reset_intro,
+            link_esc = html_escape(&link),
+            link_label = t.email_password_reset_link_label,
+            disregard = t.email_password_reset_disregard,
         )),
     };
 
@@ -299,10 +324,28 @@ pub async fn consume_and_reset_password(
     );
 
     // Best-effort post-reset notification mail. Failures here do
-    // not affect the password change itself.
+    // not affect the password change itself. The recipient's
+    // locale comes from their `preferred_lang` if set, falling
+    // through to the server default.
     if let Ok(Some(user_row)) = users::find_by_id_opt(db, row.user_id) {
         if let Some(email) = user_row.email.as_deref() {
-            let _ = notify_password_changed(mailer, email, &user_row.display_name).await;
+            let recipient_locale = user_row
+                .preferred_lang
+                .as_deref()
+                .and_then(sui_id_i18n::Locale::parse)
+                .unwrap_or_else(|| {
+                    sui_id_store::repos::server_settings::get(db)
+                        .ok()
+                        .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
+                        .unwrap_or_default()
+                });
+            let _ = notify_password_changed(
+                mailer,
+                email,
+                &user_row.display_name,
+                recipient_locale,
+            )
+            .await;
         }
     }
 
@@ -313,29 +356,45 @@ pub async fn consume_and_reset_password(
 ///
 /// Best-effort: callers swallow errors and proceed. The audit
 /// chain records the underlying password-change action separately.
+///
+/// `locale` is the recipient's preferred locale — typically
+/// resolved from `user.preferred_lang` falling through to the
+/// server default. The caller is responsible for that resolution
+/// (passing in the locale rather than re-querying here keeps the
+/// function pure, testable, and free of DB access).
 pub async fn notify_password_changed(
     mailer: &dyn MailSender,
     to_email: &str,
     display_name: &Option<String>,
+    locale: sui_id_i18n::Locale,
 ) -> CoreResult<()> {
+    let t = locale.strings();
     let display = display_name.as_deref().unwrap_or("");
+    let greeting = if t.email_greeting_suffix.is_empty() {
+        display.to_string()
+    } else {
+        format!("{} {}", display, t.email_greeting_suffix)
+    };
     let mail = OutgoingMail {
         to: to_email.to_owned(),
-        subject: "パスワードが変更されました — sui-id".to_string(),
+        subject: t.email_subject_password_changed.to_string(),
         text_body: format!(
-            "{display} 様\n\
+            "{greeting}\n\
              \n\
-             sui-id のあなたのアカウントのパスワードが変更されました。\n\
-             心当たりがない場合は、すぐに /me/security から他のセッションを\n\
-             取り消し、サポートに連絡してください。\n\
-             "
+             {intro}\n\
+             {warning}\n\
+             ",
+            intro = t.email_password_changed_intro,
+            warning = t.email_password_changed_security_warning,
         ),
         html_body: Some(format!(
-            "<p>{display_esc} 様</p>\
-             <p>sui-id のあなたのアカウントのパスワードが変更されました。</p>\
-             <p>心当たりがない場合は、すぐに <a href=\"/me/security\">セキュリティ設定</a>\
-             から他のセッションを取り消し、サポートに連絡してください。</p>",
-            display_esc = html_escape(display),
+            "<p>{greeting_esc}</p>\
+             <p>{intro}</p>\
+             <p>{warning} <a href=\"/me/security\">{link_label}</a></p>",
+            greeting_esc = html_escape(&greeting),
+            intro = t.email_password_changed_intro,
+            warning = t.email_password_changed_security_warning,
+            link_label = t.email_password_changed_link_security,
         )),
     };
     mailer.send(mail).await.map(|_| ())

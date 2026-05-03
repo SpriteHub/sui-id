@@ -27,20 +27,22 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
         failed_login_count: row.get::<_, i64>(9)?,
         locked_until: row.get::<_, Option<DateTime<Utc>>>(10)?,
         email: row.get::<_, Option<String>>(11)?,
+        preferred_lang: row.get::<_, Option<String>>(12)?,
     })
 }
 
 const SELECT_USER: &str = "SELECT id, username, display_name, is_admin, is_disabled, \
                            is_deleted, created_at, updated_at, user_uuid, \
-                           failed_login_count, locked_until, email FROM users";
+                           failed_login_count, locked_until, email, preferred_lang \
+                           FROM users";
 
 pub fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
     db.with_conn(|conn| {
         conn.execute(
             "INSERT INTO users(id, username, display_name, is_admin, is_disabled, is_deleted, \
                                 created_at, updated_at, user_uuid, \
-                                failed_login_count, locked_until, email) \
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                                failed_login_count, locked_until, email, preferred_lang) \
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 user.id.to_string(),
                 user.username,
@@ -54,6 +56,7 @@ pub fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
                 user.failed_login_count,
                 user.locked_until,
                 user.email,
+                user.preferred_lang,
             ],
         )
         .map_err(|e| match e {
@@ -65,6 +68,29 @@ pub fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
             other => StoreError::from(other),
         })?;
         Ok(())
+    })
+}
+
+/// Update a user's preferred UI language. `lang` is a BCP-47 tag
+/// or `None` to clear ("no preference"). Application-layer
+/// validation should ensure the tag is one of `Locale::ALL` before
+/// calling.
+pub fn set_preferred_lang(
+    db: &Database,
+    id: UserId,
+    lang: Option<&str>,
+    now: DateTime<Utc>,
+) -> StoreResult<()> {
+    db.with_conn(|conn| {
+        let n = conn.execute(
+            "UPDATE users SET preferred_lang = ?1, updated_at = ?2 WHERE id = ?3",
+            params![lang, now, id.to_string()],
+        )?;
+        if n == 0 {
+            Err(StoreError::NotFound)
+        } else {
+            Ok(())
+        }
     })
 }
 

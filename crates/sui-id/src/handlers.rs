@@ -300,6 +300,77 @@ where
     }
 }
 
+/// Cookie name for the per-browser language preference. Set by
+/// the profile handler when a signed-in user changes their
+/// language; respected by the locale resolver as tier 2 of the
+/// chain (between user.preferred_lang and Accept-Language).
+pub const LANG_COOKIE: &str = "sui_id_lang";
+
+/// Extractor that resolves the request's UI [`sui_id_i18n::Locale`]
+/// using the four-tier chain in [`sui_id_core::i18n::resolve`]:
+/// user preference → cookie → Accept-Language → server default.
+///
+/// The extractor reads the session cookie to determine the
+/// signed-in user (if any); otherwise the user-tier is skipped
+/// and the chain proceeds with cookie/header/default. It never
+/// fails — on any DB error or missing input, it falls back to the
+/// hard-coded default ([`sui_id_i18n::Locale::default`]).
+#[derive(Debug, Clone, Copy)]
+pub struct RequestLocale(pub sui_id_i18n::Locale);
+
+impl<S> axum::extract::FromRequestParts<S> for RequestLocale
+where
+    S: Send + Sync,
+    AppState: axum::extract::FromRef<S>,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        let app: AppState = AppState::from_ref(state);
+
+        // Pull the cookie jar manually so the extractor can be
+        // composed alongside other cookie-using extractors without
+        // moving the request body.
+        let jar = axum_extra::extract::cookie::CookieJar::from_headers(&parts.headers);
+
+        // Tier 1: signed-in user's preference. Best-effort —
+        // we don't validate session expiry here (the locale path
+        // is read-only and a stale session-id pointing at a real
+        // user is fine). Auth gating happens in dedicated
+        // extractors elsewhere.
+        let user_id = jar
+            .get(crate::handlers::SESSION_COOKIE)
+            .and_then(|c| c.value().parse().ok())
+            .and_then(|sid| {
+                sui_id_store::repos::sessions::get(&app.db, sid)
+                    .ok()
+                    .map(|row| row.user_id)
+            });
+
+        // Tier 2: cookie.
+        let cookie_lang = jar.get(LANG_COOKIE).map(|c| c.value().to_owned());
+
+        // Tier 3: Accept-Language header.
+        let accept_language = parts
+            .headers
+            .get(axum::http::header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+
+        let inputs = sui_id_core::i18n::LocaleInputs {
+            user_id,
+            cookie: cookie_lang.as_deref(),
+            accept_language: accept_language.as_deref(),
+        };
+        let locale = sui_id_core::i18n::resolve(&app.db, &inputs)
+            .unwrap_or_default();
+        Ok(RequestLocale(locale))
+    }
+}
+
 /// Enforce CSRF on a state-changing admin POST. Returns Err(403) when the
 /// cookie is missing or does not match the form's `_csrf` field.
 ///

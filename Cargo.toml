@@ -6,10 +6,11 @@ members = [
     "crates/sui-id-store",
     "crates/sui-id-web",
     "crates/sui-id-shared",
+    "crates/sui-id-i18n",
 ]
 
 [workspace.package]
-version = "0.22.0"
+version = "0.23.0"
 edition = "2024"
 rust-version = "1.91"
 license = "Apache-2.0"

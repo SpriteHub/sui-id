@@ -163,6 +163,7 @@ mod tests {
                 failed_login_count: 0,
                 locked_until: None,
                 email: None,
+                preferred_lang: None,
             },
         )
         .expect("create user");
