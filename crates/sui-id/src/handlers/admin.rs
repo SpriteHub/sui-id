@@ -281,6 +281,7 @@ pub async fn dashboard(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
     jar: CookieJar,
+    axum::extract::Query(q): axum::extract::Query<DashboardQuery>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let admin = users::get(&app.db, admin_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
@@ -290,15 +291,63 @@ pub async fn dashboard(
     let clients_n = clients::list(&app.db)
         .map(|v| v.len())
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
+
+    // Range comes from ?range=24h|7d|30d. Unknown / missing falls
+    // back to the default (Last7Days).
+    let range = q
+        .range
+        .as_deref()
+        .and_then(sui_id_core::dashboard::SparklineRange::from_query)
+        .unwrap_or_default();
+    let activity = sui_id_core::dashboard::login_activity(&app.db, &app.clock, range)
+        .map_err(HttpError::html)?;
+
+    // Format bucket labels per the bucket size — 1-hour buckets get
+    // a hour-precision label, day buckets get a date-only label.
+    let label_fmt = match range {
+        sui_id_core::dashboard::SparklineRange::Last24Hours => "%Y-%m-%d %H:%M",
+        _ => "%Y-%m-%d",
+    };
+    let buckets: Vec<sui_id_web::DashboardSparkBucket> = activity
+        .buckets
+        .iter()
+        .map(|b| sui_id_web::DashboardSparkBucket {
+            label: b.bucket_start.format(label_fmt).to_string(),
+            success: b.success,
+            failure: b.failure,
+        })
+        .collect();
+
+    let range_options = sui_id_core::dashboard::SparklineRange::all()
+        .iter()
+        .map(|r| (r.as_query().to_string(), r.label_ja().to_string()))
+        .collect::<Vec<_>>();
+
+    let sparkline = sui_id_web::DashboardSparkline {
+        active_range_query: range.as_query().to_string(),
+        range_options,
+        total_success: activity.total_success,
+        total_failure: activity.total_failure,
+        buckets,
+    };
+
     let data = DashboardData {
         admin_username: admin.username,
         user_count: users_n,
         client_count: clients_n,
         issuer: app.issuer().to_owned(),
+        sparkline,
     };
     let token = crate::csrf::ensure_token(&jar);
     let resp = Html(render_dashboard(data, None)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+#[derive(Debug, serde::Deserialize, Default)]
+pub struct DashboardQuery {
+    /// `?range=24h` / `?range=7d` / `?range=30d`. Anything else
+    /// (or absence) means "use the default".
+    pub range: Option<String>,
 }
 
 // ---------- users ----------

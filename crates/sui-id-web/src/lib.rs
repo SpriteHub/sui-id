@@ -21,6 +21,7 @@ pub use pages::{
     render_audit, render_client_edit, render_clients, render_dashboard, render_error,
     render_login, render_me_security, render_mfa_challenge, render_mfa_setup,
     render_password_change, render_profile, render_setup, render_signing_keys, render_users,
-    ClientEditData, Flash, FlashKind, MeAuditEntry, MeSecurityData, MeSessionDescriptor,
-    MfaSetupData, PasskeyDescriptor, PasswordChangeData, ProfileData,
+    ClientEditData, DashboardData, DashboardSparkBucket, DashboardSparkline, Flash, FlashKind,
+    MeAuditEntry, MeSecurityData, MeSessionDescriptor, MfaSetupData, PasskeyDescriptor,
+    PasswordChangeData, ProfileData,
 };

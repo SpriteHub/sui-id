@@ -54,6 +54,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 10,
         sql: include_str!("./migrations/0010_session_step_up.sql"),
     },
+    Migration {
+        version: 11,
+        sql: include_str!("./migrations/0011_audit_log_at_action_index.sql"),
+    },
 ];
 
 /// The highest schema version this build of sui-id-store knows how to

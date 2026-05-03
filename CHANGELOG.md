@@ -5,6 +5,111 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.2] - 2026-05-01
+
+Dashboard sparkline. The admin dashboard now shows the
+distribution of sign-in attempts over the recent past — both
+successes and failures, stacked, with a hover tooltip per
+bucket. The operator can switch between a 24-hour, 7-day, or
+30-day view at the top of the chart. The implementation needs
+no JavaScript: the sparkline is inline SVG, the tooltips are
+native `<title>` elements, the range tabs are anchors with
+`?range=` query params.
+
+### Added
+
+#### Audit-log time-window query
+
+- `audit::count_by_action_in_window(actions, since, until,
+  bucket_minutes)` returns rows of `(bucket_start, action,
+  count)` for any list of actions and any bucket size, grouping
+  by Unix-epoch-aligned bucket boundaries. The alignment is
+  important: two requests landing at 09:00 and 17:00 produce
+  buckets at the same wall-clock moments, so the dashboard
+  doesn't shift visibly each time it's reopened.
+- `ActionCountBucket { bucket_start, action, count }` carries
+  one such row.
+
+#### Migration 0011: composite index
+
+- `idx_audit_log_at_action ON audit_log (at, action)`. The
+  `at`-leading order matches every dashboard query (range scan
+  on `at`, then refine on `action` via `IN`) and covers the
+  existing `audit::recent` / `recent_for_user` queries that
+  only filter on time. `MAX_SCHEMA_VERSION` rolls to 11.
+
+#### `sui-id-core::dashboard`
+
+- `SparklineRange::{Last24Hours, Last7Days, Last30Days}` with
+  `as_query` / `from_query` for the URL round-trip,
+  `bucket_minutes` / `bucket_count` so handlers don't have to
+  remember which range pairs with which bucket size, and a
+  Japanese label per range. Default is `Last7Days`.
+- `LoginActivity { range, buckets, total_success, total_failure }`
+  — the dense bucket array (zero-filled missing buckets) plus
+  range totals.
+- `LoginActivityBucket { bucket_start, success, failure }` for
+  one column of the chart.
+- `login_activity(db, clock, range)` does the heavy lifting:
+  asks the audit-log query for the right window, fills the
+  dense array on the same Unix-epoch grid the SQL used, and
+  computes totals.
+- 6 unit tests covering: empty database, bucket alignment, rows
+  in window are counted into the right bucket, rows outside
+  window are ignored, unrelated actions are never counted,
+  range query strings round-trip.
+
+#### Sparkline view (in `sui-id-web`)
+
+- `DashboardSparkline { active_range_query, range_options,
+  total_success, total_failure, buckets }` — the data shape the
+  view consumes.
+- `DashboardSparkBucket { label, success, failure }` — one
+  pre-formatted bucket. The handler decides the label format
+  (1-hour buckets get `YYYY-MM-DD HH:MM`, day buckets get
+  `YYYY-MM-DD`) so the renderer is bucket-size agnostic.
+- Inline SVG sparkline, `viewBox="0 0 200 60"`, stacked bars
+  per bucket. Failures sit on the bottom (so a streak of red
+  is visible regardless of the success count above it),
+  successes stack on top. Each bar carries a transparent
+  full-height hover-target rect so the tooltip fires even
+  when both counts are zero. Per-bucket `<title>` element
+  delivers the tooltip natively — no JS, no CSP relaxation.
+- The "成功" / "失敗" totals appear next to the chart, coloured
+  to match the bars (`var(--accent-default)` and
+  `var(--danger-default)` respectively).
+
+#### Dashboard handler & range tabs
+
+- `dashboard(...)` now takes `Query<DashboardQuery>` and reads
+  `?range=24h|7d|30d`. Anything else (or absent) falls back to
+  `SparklineRange::default()` — no 400 for a typo, just the
+  default view.
+- Range tabs render as `.app-nav__link` anchors at the top of
+  the sparkline section, with `aria-current="page"` on the
+  active one.
+
+#### E2E tests (3)
+
+- `dashboard_sparkline_renders_with_default_range`: GET
+  `/admin` shows the sparkline section, default-range label,
+  the SVG with its aria-label, and tooltip-formatted bucket
+  text.
+- `dashboard_sparkline_honours_explicit_range_query`: each of
+  `?range=24h|7d|30d` produces a 200 with the matching anchor
+  href in the response body.
+- `dashboard_sparkline_falls_back_to_default_on_garbage_range`:
+  `?range=banana` returns 200 with the default range, not 400.
+
+### Notes
+
+- The sparkline uses CSS variables for colours (`--accent-default`,
+  `--danger-default`) so it picks up dark-mode automatically
+  through the existing `[data-theme]` cascade.
+- Range persistence is currently URL-only. A future revision can
+  layer a localStorage-backed default on top by reusing the same
+  early-inline-script pattern the theme toggle already uses.
+
 ## [0.20.1] - 2026-04-30
 
 Per-screen design pass for the **non-core** pages. This is a

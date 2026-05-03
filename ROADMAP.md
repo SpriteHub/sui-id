@@ -159,6 +159,15 @@ v0.10.1 / v0.10.2.
   copy changes (one substring update each, plus a more robust
   secret-key extraction that anchors on "秘密鍵:" and walks past
   the inline-styled span).
+- Dashboard sign-in sparkline (v0.20.2). Stacked-area chart of
+  `auth.login.success` and `auth.login.failure` over the last
+  24h / 7d / 30d, switchable from URL query. Inline SVG, no JS,
+  per-bucket `<title>` tooltips. Migration 0011 adds a composite
+  `audit_log(at, action)` index so the underlying time-window
+  GROUP BY is a range scan even after the audit log grows into
+  the millions. Range option default is 7 days; persistence is
+  URL-only for now (localStorage layering is a small follow-up
+  if we want it).
 
 ## Explicitly **not** on the roadmap
 

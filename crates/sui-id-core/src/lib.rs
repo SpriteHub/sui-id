@@ -19,6 +19,7 @@ pub mod authorize;
 pub mod session;
 pub mod setup;
 pub mod admin;
+pub mod dashboard;
 pub mod me_security;
 pub mod step_up;
 pub mod time;

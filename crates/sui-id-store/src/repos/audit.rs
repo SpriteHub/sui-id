@@ -364,3 +364,111 @@ pub fn recent_for_user(
         Ok(rows)
     })
 }
+
+/// One bucket of a counted audit-action time series.
+///
+/// `bucket_start` is the inclusive start of the bucket window (in
+/// UTC). `action` is the audit action name (e.g. `auth.login.success`).
+/// `count` is how many rows in `audit_log` matched the action and
+/// fell inside the bucket. Buckets with zero hits are *not* returned
+/// — callers fill those in client-side, since an empty SELECT row
+/// from SQLite is usually cheaper to synthesise than to LEFT JOIN
+/// against a generated calendar.
+#[derive(Debug, Clone)]
+pub struct ActionCountBucket {
+    pub bucket_start: chrono::DateTime<chrono::Utc>,
+    pub action: String,
+    pub count: i64,
+}
+
+/// Count audit-log rows matching any of the given `actions`,
+/// occurring in `[since, until)`, grouped into time buckets of
+/// `bucket_minutes` minutes.
+///
+/// Used by the dashboard sparkline: caller passes
+/// `["auth.login.success", "auth.login.failure"]` and a 7-day window
+/// in 24*60-minute buckets, gets back up to `7 * 2 = 14` rows,
+/// fills the missing combinations with zeros, and feeds the result
+/// into an SVG renderer.
+///
+/// SQLite alignment: buckets are aligned to the Unix epoch — for any
+/// fixed `bucket_minutes`, two queries with different `since` values
+/// will produce buckets at the same absolute time boundaries, so the
+/// dashboard's 7d view shows the same per-day points whether you
+/// open it at 09:00 or 17:00. The `at` column in `audit_log` is
+/// stored as ISO-8601 text (chrono's default), so the alignment uses
+/// `unixepoch()` to convert to a numeric.
+///
+/// Performance: with the v0.20.2 composite index on
+/// `audit_log (at, action)`, this query is a range scan over the
+/// `at` window with an `IN (...)` filter on `action`, and a final
+/// GROUP BY on the bucket expression. For a busy IdP with millions
+/// of audit rows the query is bounded by the *width of the window*,
+/// not the size of the table.
+pub fn count_by_action_in_window(
+    db: &Database,
+    actions: &[&str],
+    since: chrono::DateTime<chrono::Utc>,
+    until: chrono::DateTime<chrono::Utc>,
+    bucket_minutes: i64,
+) -> StoreResult<Vec<ActionCountBucket>> {
+    if actions.is_empty() || bucket_minutes <= 0 || until <= since {
+        return Ok(Vec::new());
+    }
+    let bucket_seconds = bucket_minutes * 60;
+    // Build a parameter placeholder list of the right shape:
+    // ?3, ?4, ?5, … one per action. Indices ?1 / ?2 are reserved
+    // for since / until.
+    let action_placeholders: Vec<String> =
+        (0..actions.len()).map(|i| format!("?{}", i + 3)).collect();
+    let action_list = action_placeholders.join(", ");
+    let sql = format!(
+        "SELECT
+             (CAST(unixepoch(at) AS INTEGER) / {bucket_seconds}) * {bucket_seconds} AS bucket_unix,
+             action,
+             COUNT(*) AS n
+         FROM audit_log
+         WHERE at >= ?1 AND at < ?2
+           AND action IN ({action_list})
+         GROUP BY bucket_unix, action
+         ORDER BY bucket_unix ASC, action ASC"
+    );
+    db.with_conn(|conn| {
+        let mut stmt = conn.prepare(&sql)?;
+        // rusqlite's params! macro doesn't take a slice directly;
+        // we build a Vec<&dyn ToSql> by hand.
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(2 + actions.len());
+        params.push(&since);
+        params.push(&until);
+        for a in actions {
+            params.push(a);
+        }
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                let bucket_unix: i64 = row.get(0)?;
+                let action: String = row.get(1)?;
+                let count: i64 = row.get(2)?;
+                let bucket_start = chrono::DateTime::<chrono::Utc>::from_timestamp(
+                    bucket_unix,
+                    0,
+                )
+                .ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Integer,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "bucket_unix out of range",
+                        )),
+                    )
+                })?;
+                Ok(ActionCountBucket {
+                    bucket_start,
+                    action,
+                    count,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    })
+}
