@@ -5,6 +5,113 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.1] - 2026-04-30
+
+Per-screen design pass for the **non-core** pages. This is a
+visual-only release: no handler logic, no storage schema, no
+authentication or authorization changes. Every page now uses
+the same component vocabulary (page-header, card, .field,
+.table-wrap, badge, flash) that the core path picked up in
+v0.20.0, and the Japanese localisation extended uniformly to
+the rest of the admin surface.
+
+### Changed — page rebuilds
+
+- **`render_setup`** — moved to `AuthShell` + `.auth-card` so it
+  shares the centred narrow layout with login. Field hints
+  ("起動ログに 1 度だけ出力された値" / "12 文字以上") added.
+  Heading is now "sui-id へようこそ".
+- **`render_mfa_challenge`** — `AuthShell` + `.field`. Passkey
+  block lives below a `.divider`. Headings and labels in
+  Japanese.
+- **`render_profile`** — full rebuild: `page-header`, two
+  `<section>`s (TOTP and passkeys), each managing state via
+  `.card` + `.card__footer`. TOTP status shown as a `badge--ok`
+  / `badge--warn` rather than prose. Passkey table is in a
+  `.table-wrap`. New passkey registration is a `.card`-wrapped
+  form with `.field` + `.field__hint`.
+- **`render_mfa_setup`** — three `.card`s in sequence (手順 / QR
+  と秘密鍵 / 確認), each scoped to one task. The QR `<svg>` keeps
+  its inline `max-width:240px` since it's a one-off raster size.
+- **`render_client_edit`** — `page-header` + two `.card`s. The
+  immutable "基本情報" card surfaces Client ID, type, and status
+  with badges; the "設定" card holds the form. Each `.field`
+  has a `.field__hint` explaining what the operator can put in
+  it.
+- **`render_audit`** — `page-header` + `.table-wrap`. The
+  `result` column shows a `badge--ok` for `ok`, `badge--danger`
+  for `fail` / `error` / `denied`, and a neutral `.badge` for
+  anything else. Row count is surfaced in the lede ("直近 N 件").
+- **`render_signing_keys`** — `page-header` + a "キーローテー
+  ション" `.card` with the rotate button in `card__footer`, plus
+  a `.table-wrap` of all keys. Status uses `badge--ok` for
+  active, neutral `.badge` for retired.
+- **`render_error`** — moved to `AuthShell`. The error message is
+  the `.flash.error` banner; the request id sits in a `.muted`
+  paragraph below; and the recovery link is a `.button.secondary`.
+- **`render_me_security`** — `page-header` + three `<section>`s
+  (二段階認証, サインイン中の場所, 最近のアクティビティ). 2FA
+  state collapses to a single `badge--ok` line ("認証アプリ /
+  パスキー N 件") when on, or a `.flash.warn` when off. Recent
+  activity rows render their `result` as a badge.
+- **`render_password_change`** — `page-header` + a single `.card`
+  containing the form. `.field` + `.field__hint` for each input.
+  Submit and Cancel sit in a `.row`.
+
+### Changed — copy
+
+All headings, section titles, button labels, form labels, field
+hints, and confirmation dialogs on the rebuilt pages translate
+to Japanese, matching the screen-design memo and the v0.20.0
+core-path treatment. Technical strings (Client ID, Key ID, JWT,
+hashes) stay in Latin and live inside `.code` for monospace
+legibility. Operator-facing audit verbs (`Revoke`, `ok`, `fail`,
+`denied`) stay in Latin since they are also the wire-protocol
+strings recorded in the audit log.
+
+### Changed — tests
+
+Three e2e tests had to follow the copy:
+
+- `me_security_page_renders_for_authenticated_user` — section
+  headings updated to "アカウントセキュリティ", "サインイン中の
+  場所", "最近のアクティビティ".
+- `mfa_enroll_then_login_with_totp_succeeds` — the secret-key
+  extraction logic now anchors on the Japanese label "秘密鍵:"
+  and skips past the inline-styled `<span class="code"
+  style="...">` to read the secret. The previous "Secret key:
+  <span class="code">" needle no longer matches.
+- `me_password_change_form_renders` — substring match changed to
+  "パスワードを変更".
+
+No other tests required changes — the rest match on form `name=`
+attributes, CSS class names, and structural HTML, all of which
+are stable across the design pass.
+
+### Items deferred to v0.20.2+
+
+- Dashboard sparkline ("過去 7 日間のサインイン数") — the next
+  visible-feature pass on the dashboard. Needs a time-window
+  count over `audit_log` (e.g. `audit::count_by_action_in_window`)
+  bucketed per day, then a small inline SVG sparkline rendered
+  next to the existing stat cards.
+- Settings page tabbed structure (基本 / セキュリティ / 認証 /
+  ログ / その他). Currently the operator-facing settings live in
+  a flat list; v0.20.3 reorganises into the five tabs the
+  screen-design memo asks for.
+- Setup multi-step wizard (ようこそ → 管理者作成 → 暗号化設定 →
+  完了). The setup token + admin creation are still a single page
+  in this release; v0.20.4 splits them into the four-step flow
+  per screens 1–4 of the design figure.
+- Authorize / consent screen visual rework, per screen 11. The
+  page is functionally complete but still uses the v0.19.0
+  layout. v0.20.5 brings it on to the new components.
+- Step-up auth (v0.21.0). The schema groundwork (migration 0010,
+  `sessions.last_step_up_at`) is already in place; v0.21.0
+  rebuilds the core logic from scratch and wires it into
+  sensitive actions (password change, bulk revoke, signing-key
+  rotation, etc.).
+
 ## [0.20.0] - 2026-04-29
 
 Design language overhaul. The Lavender-Jade palette, an 8/16/24/32
@@ -1685,11 +1792,15 @@ to brute-forcing a regular password.
 Internal cleanup. No functional changes.
 
 ### Changed
+- Crate authorship and contact: now `nabbisen <nabbisen@scqr.net>` for all
+  five workspace crates (was `sui-id contributors`).
 - Repository / homepage URLs across the workspace: now
   `https://github.com/nabbisen/sui-id` (was `sui-id/sui-id`). Updated
   in workspace `Cargo.toml`, every crate's `README.md`, the docs
   under `docs/`, the `.github/` files, `PUBLISHING.md`, `ROADMAP.md`,
   and `TERMS_OF_USE.md`.
+- The `LICENSE` file's copyright line is now
+  `Copyright 2026 nabbisen <nabbisen@scqr.net>`.
 - `sui-id` (the binary crate) no longer keeps its own copy of `README.md`
   or `CHANGELOG.md`. Its `Cargo.toml` now sets `readme = "../../README.md"`,
   which `cargo publish` resolves to the workspace root's README — the

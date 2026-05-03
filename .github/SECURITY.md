@@ -9,7 +9,7 @@ If you believe you have found a security issue in sui-id:
 1. **Do not file a public GitHub issue.** Public issues become indexable
    immediately and put other operators at risk.
 2. **Open a [private security advisory](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)**
-   on the repository.
+   on the repository: https://github.com/nabbisen/sui-id/security/advisories/new
 3. Include enough information for the maintainers to reproduce: version
    (`sui-id --version` once that flag exists; for now the git SHA),
    configuration, and a minimal example.

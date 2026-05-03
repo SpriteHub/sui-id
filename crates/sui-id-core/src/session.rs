@@ -12,11 +12,11 @@
 use crate::errors::{CoreError, CoreResult};
 use crate::password::verify_password;
 use crate::time::SharedClock;
-use chrono::Duration;
-use sui_id_shared::ids::{SessionId, UserId};
-use sui_id_store::Database;
+use chrono::{DateTime, Duration, Utc};
 use sui_id_store::models::{AuditLogRow, SessionRow};
 use sui_id_store::repos::{audit, credentials, sessions, users};
+use sui_id_store::Database;
+use sui_id_shared::ids::{SessionId, UserId};
 
 const SESSION_LIFETIME_HOURS: i64 = 12;
 

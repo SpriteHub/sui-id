@@ -148,6 +148,17 @@ v0.10.1 / v0.10.2.
   strategy locked in: system-ui only, no web fonts shipped, CJK
   via Unicode font fallback to OS-native fonts — distributed
   binary size unchanged.
+- Per-screen design pass for the **non-core** pages (v0.20.1).
+  setup / mfa-challenge / profile / mfa-setup / client-edit /
+  audit / signing-keys / error / me/security /
+  me/security/password rebuilt on the same component vocabulary
+  as v0.20.0. Visual-only release: no handler logic, no schema,
+  no auth changes. Japanese copy extended uniformly to the rest
+  of the admin surface; operator-facing audit verbs and
+  technical IDs stay in Latin. Three e2e tests followed the
+  copy changes (one substring update each, plus a more robust
+  secret-key extraction that anchors on "秘密鍵:" and walks past
+  the inline-styled span).
 
 ## Explicitly **not** on the roadmap
 

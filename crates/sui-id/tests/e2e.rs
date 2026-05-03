@@ -1252,13 +1252,20 @@ async fn enroll_mfa_for(state: &AppState, session: &str) -> (String, Vec<String>
     assert_eq!(resp.status(), StatusCode::OK, "enroll start failed");
     let body = read_body(resp.into_body()).await;
     let html = String::from_utf8_lossy(&body).to_string();
-    // Pull the Base32 secret out of the page.
+    // Pull the Base32 secret out of the page. The label is in
+    // Japanese ("秘密鍵:") and the surrounding span carries an
+    // inline style after the v0.20.1 design refresh, so we anchor
+    // on the label and skip past the next `<span class="code"` to
+    // the `>` that closes the opening tag.
     let secret_b32 = {
-        let needle = "Secret key: <span class=\"code\">";
-        let start = html.find(needle).expect("secret rendered");
-        let rest = &html[start + needle.len()..];
-        let end = rest.find("</span>").expect("secret end");
-        rest[..end].to_owned()
+        let label_at = html.find("秘密鍵:").expect("secret label rendered");
+        let rest = &html[label_at..];
+        let span_at = rest.find("<span class=\"code\"").expect("secret span");
+        let after_open = &rest[span_at..];
+        let gt = after_open.find('>').expect("span open close");
+        let inner = &after_open[gt + 1..];
+        let end = inner.find("</span>").expect("secret end");
+        inner[..end].to_owned()
     };
     let secret = decode_b32(&secret_b32);
     let now = chrono::Utc::now().timestamp();
@@ -3077,9 +3084,9 @@ async fn me_security_page_renders_for_authenticated_user() {
     // The page must mention what we expect to be there: the
     // section headings, the username, and the "current session"
     // marker for the row that matches the cookie.
-    assert!(body.contains("Account security"), "missing heading");
-    assert!(body.contains("Where you're signed in"), "missing sessions section");
-    assert!(body.contains("Recent activity"), "missing audit section");
+    assert!(body.contains("アカウントセキュリティ"), "missing heading");
+    assert!(body.contains("サインイン中の場所"), "missing sessions section");
+    assert!(body.contains("最近のアクティビティ"), "missing audit section");
     assert!(body.contains("current session"), "current session not marked");
 }
 
@@ -3389,7 +3396,7 @@ async fn me_password_change_form_renders() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = read_body(resp.into_body()).await;
     let s = String::from_utf8_lossy(&body);
-    assert!(s.contains("Change password"));
+    assert!(s.contains("パスワードを変更"));
     assert!(s.contains(r#"name="current_password""#));
     assert!(s.contains(r#"name="new_password""#));
     assert!(s.contains(r#"name="confirm_password""#));
