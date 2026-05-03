@@ -48,12 +48,13 @@ fn smtp_required_or_404(active: bool) -> Result<(), HttpError> {
 
 pub async fn forgot_password_get(
     state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     smtp_required_or_404(smtp_active(&app.db).await?)?;
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_forgot_password(token.clone(), None);
+    let html = sui_id_web::render_forgot_password(token.clone(), None, lang);
     Ok(with_csrf_cookie(Html(html).into_response(), &app, &token))
 }
 
@@ -69,6 +70,7 @@ pub struct ForgotPasswordForm {
 pub async fn forgot_password_post(
     state_ext: AppStateExt,
     ClientIp(ip): ClientIp,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
     jar: CookieJar,
     axum::Form(form): axum::Form<ForgotPasswordForm>,
 ) -> Result<Response, HttpError> {
@@ -96,7 +98,7 @@ pub async fn forgot_password_post(
 
     // Always return the same neutral acknowledgement.
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_forgot_password_sent();
+    let html = sui_id_web::render_forgot_password_sent(lang);
     Ok(with_csrf_cookie(Html(html).into_response(), &app, &token))
 }
 
@@ -110,6 +112,7 @@ pub struct ResetTokenQuery {
 
 pub async fn reset_password_get(
     state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
     jar: CookieJar,
     Query(q): Query<ResetTokenQuery>,
 ) -> Result<Response, HttpError> {
@@ -117,16 +120,17 @@ pub async fn reset_password_get(
     smtp_required_or_404(smtp_active(&app.db).await?)?;
     let token = csrf::ensure_token(&jar);
     if q.token.is_empty() {
-        let html = sui_id_web::render_reset_password_invalid();
+        let html = sui_id_web::render_reset_password_invalid(lang);
         return Ok(with_csrf_cookie(Html(html).into_response(), &app, &token));
     }
     match sui_id_core::forgot_password::validate_token(&app.db, &app.clock, &q.token) {
         Ok(_user_id) => {
-            let html = sui_id_web::render_reset_password(q.token.clone(), token.clone(), None);
+            let html =
+                sui_id_web::render_reset_password(q.token.clone(), token.clone(), None, lang);
             Ok(with_csrf_cookie(Html(html).into_response(), &app, &token))
         }
         Err(_) => {
-            let html = sui_id_web::render_reset_password_invalid();
+            let html = sui_id_web::render_reset_password_invalid(lang);
             Ok(with_csrf_cookie(Html(html).into_response(), &app, &token))
         }
     }
@@ -146,23 +150,26 @@ pub struct ResetPasswordForm {
 pub async fn reset_password_post(
     state_ext: AppStateExt,
     ClientIp(ip): ClientIp,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
     jar: CookieJar,
     axum::Form(form): axum::Form<ResetPasswordForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     smtp_required_or_404(smtp_active(&app.db).await?)?;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    let t = lang.strings();
 
     if form.password != form.confirm_password {
         let token = csrf::ensure_token(&jar);
         let flash = Flash {
             kind: FlashKind::Warn,
-            text: "パスワードと確認用パスワードが一致しません。".into(),
+            text: t.password_mismatch_flash.into(),
         };
         let html = sui_id_web::render_reset_password(
             form.token.clone(),
             token.clone(),
             Some(flash),
+            lang,
         );
         return Ok(with_csrf_cookie(
             (axum::http::StatusCode::BAD_REQUEST, Html(html)).into_response(),
@@ -184,19 +191,20 @@ pub async fn reset_password_post(
     {
         Ok(()) => Ok(Redirect::to("/admin/login?reset=ok").into_response()),
         Err(CoreError::InvalidCredentials) => {
-            let html = sui_id_web::render_reset_password_invalid();
+            let html = sui_id_web::render_reset_password_invalid(lang);
             Ok((axum::http::StatusCode::BAD_REQUEST, Html(html)).into_response())
         }
         Err(other) => {
             let token = csrf::ensure_token(&jar);
             let flash = Flash {
                 kind: FlashKind::Warn,
-                text: friendly(&other),
+                text: friendly(&other, lang),
             };
             let html = sui_id_web::render_reset_password(
                 form.token.clone(),
                 token.clone(),
                 Some(flash),
+                lang,
             );
             Ok(with_csrf_cookie(
                 (axum::http::StatusCode::BAD_REQUEST, Html(html)).into_response(),
@@ -207,9 +215,10 @@ pub async fn reset_password_post(
     }
 }
 
-fn friendly(e: &CoreError) -> String {
+fn friendly(e: &CoreError, lang: sui_id_i18n::Locale) -> String {
+    let t = lang.strings();
     match e {
         CoreError::BadRequest(msg) => msg.clone(),
-        _ => "パスワードの再設定に失敗しました。もう一度お試しください。".into(),
+        _ => t.reset_password_failed_flash.into(),
     }
 }

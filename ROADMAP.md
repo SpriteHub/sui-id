@@ -457,6 +457,19 @@ rather than new auth primitives.
   operational knobs relaxed with operator-visible
   warnings (`cookie_secure off`, `hibp_mode off`,
   `lockout relaxed`).
+- i18n auth-flow translations (v0.29.0). Phase 1 of the
+  i18n scope expansion. Setup wizard (welcome / admin /
+  done / not-yet-complete), forgot-password (request /
+  sent / reset / invalid), and step-up re-authentication
+  screens are now rendered through the typed `Strings`
+  table and respect the user's resolved locale. Two new
+  string keys (`back_to_login`, `setup_hibp_blocked`).
+  Locale resolution chain unchanged from v0.23.0.
+  Remaining UI areas (`/me/security`, admin dashboard /
+  users / clients / signing-keys / audit log, settings
+  tabs beyond Basic / Security, error pages, email
+  templates) are scheduled for later v0.29.x patch
+  releases — each a self-contained chunk of 2-5 screens.
 
 ## Explicitly **not** on the roadmap
 

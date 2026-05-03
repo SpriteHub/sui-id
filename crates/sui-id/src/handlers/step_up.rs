@@ -82,6 +82,7 @@ pub struct ReturnToQuery {
 pub async fn get(
     state_ext: AppStateExt,
     ctx: SessionContext,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
     jar: CookieJar,
     Query(q): Query<ReturnToQuery>,
 ) -> Result<Response, HttpError> {
@@ -90,7 +91,8 @@ pub async fn get(
     let token = csrf::ensure_token(&jar);
     let has_passkey = sui_id_core::webauthn::has_credentials(&app.db, ctx.user_id)
         .map_err(HttpError::html)?;
-    let html = sui_id_web::render_step_up(&return_to, token.clone(), has_passkey, None);
+    let html =
+        sui_id_web::render_step_up(&return_to, token.clone(), has_passkey, None, lang);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -107,12 +109,14 @@ pub struct StepUpForm {
 pub async fn post(
     state_ext: AppStateExt,
     ctx: SessionContext,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
     jar: CookieJar,
     axum::Form(form): axum::Form<StepUpForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     enforce_csrf(&jar, Some(&form.csrf))?;
     let return_to = sanitise_return_to(&form.return_to);
+    let t = lang.strings();
 
     match sui_id_core::step_up::verify_totp_code(
         &app.db,
@@ -134,13 +138,14 @@ pub async fn post(
                     .map_err(HttpError::html)?;
             let flash = Flash {
                 kind: FlashKind::Error,
-                text: "コードが正しくありません。もう一度入力してください。".into(),
+                text: t.step_up_code_invalid.into(),
             };
             let html = sui_id_web::render_step_up(
                 &return_to,
                 token.clone(),
                 has_passkey,
                 Some(flash),
+                lang,
             );
             let resp = (axum::http::StatusCode::BAD_REQUEST, Html(html)).into_response();
             Ok(with_csrf_cookie(resp, &app, &token))

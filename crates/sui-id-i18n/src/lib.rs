@@ -208,6 +208,13 @@ pub struct Strings {
     pub setup_password_mismatch: &'static str,
     pub setup_already_initialized: &'static str,
     pub setup_invalid_token: &'static str,
+    /// Flash text shown by the setup wizard when HIBP is in
+    /// `Block` mode and the supplied password is found in the
+    /// breach corpus.
+    pub setup_hibp_blocked: &'static str,
+    /// Generic fallback flash text for an otherwise-unmapped
+    /// setup-wizard error (e.g. an internal storage failure).
+    pub setup_generic_failure: &'static str,
 
     // ---- Step-up auth ----
     pub step_up_title: &'static str,
@@ -237,6 +244,10 @@ pub struct Strings {
     pub reset_password_invalid_request_again: &'static str,
     pub password_mismatch_flash: &'static str,
     pub reset_password_failed_flash: &'static str,
+    /// Common navigational link from forgot-password / reset-password
+    /// flows back to the login screen. Reused across multiple
+    /// auth-flow views.
+    pub back_to_login: &'static str,
 
     // ---- Settings hub ----
     pub settings_title: &'static str,
@@ -383,6 +394,8 @@ pub static STRINGS_JA: Strings = Strings {
     setup_password_mismatch: "パスワードと確認用パスワードが一致しません。",
     setup_already_initialized: "サーバーは既に初期化されています。",
     setup_invalid_token: "セットアップトークンが正しくありません。",
+    setup_hibp_blocked: "このパスワードは過去のデータ漏洩で確認されています。別のものを選んでください。",
+    setup_generic_failure: "セットアップに失敗しました。フォームを確認して再度お試しください。",
 
     // Step-up auth
     step_up_title: "再認証",
@@ -412,6 +425,7 @@ pub static STRINGS_JA: Strings = Strings {
     reset_password_invalid_request_again: "再度リクエストする",
     password_mismatch_flash: "パスワードと確認用パスワードが一致しません。",
     reset_password_failed_flash: "パスワードの再設定に失敗しました。もう一度お試しください。",
+    back_to_login: "ログインに戻る",
 
     // Settings hub
     settings_title: "設定",
@@ -558,6 +572,8 @@ pub static STRINGS_EN: Strings = Strings {
     setup_password_mismatch: "The password and the confirmation do not match.",
     setup_already_initialized: "The server is already initialized.",
     setup_invalid_token: "The setup token is incorrect.",
+    setup_hibp_blocked: "This password appears in a known breach. Please choose a different one.",
+    setup_generic_failure: "Setup failed. Please review the form and try again.",
 
     // Step-up auth
     step_up_title: "Re-authenticate",
@@ -587,6 +603,7 @@ pub static STRINGS_EN: Strings = Strings {
     reset_password_invalid_request_again: "Request a new link",
     password_mismatch_flash: "The password and the confirmation do not match.",
     reset_password_failed_flash: "Password reset failed. Please try again.",
+    back_to_login: "Back to log in",
 
     // Settings hub
     settings_title: "Settings",

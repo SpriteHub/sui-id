@@ -119,23 +119,18 @@ fn setup_step_indicator(active: usize) -> impl IntoView {
 }
 
 /// Step 1 of 3 — welcome.
-pub fn render_setup_welcome(flash: Option<Flash>) -> String {
+pub fn render_setup_welcome(flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         view! {
-            <crate::layout::AuthShell title="セットアップ — ようこそ".to_string()>
+            <crate::layout::AuthShell title=t.setup_welcome_title.to_string() lang=lang>
                 {setup_step_indicator(0)}
-                <h1>"sui-id へようこそ"</h1>
-                <p class="muted">
-                    "このサーバーはまだ初期化されていません。"
-                    "数分で完了するセットアップを始めましょう。"
-                </p>
-                <p class="muted">
-                    "次の画面で最初の管理者アカウントを作成します。"
-                    "サーバー起動時に出力されたセットアップトークンをお手元にご準備ください。"
-                </p>
+                <h1>{t.setup_welcome_title}</h1>
+                <p class="muted">{t.setup_welcome_lede}</p>
+                <p class="muted">{t.setup_welcome_lede2}</p>
                 {flash_banner(flash)}
                 <p style="margin-top:var(--space-4)">
-                    <a href="/setup/admin" class="button">"セットアップを始める"</a>
+                    <a href="/setup/admin" class="button">{t.setup_welcome_begin}</a>
                 </p>
             </crate::layout::AuthShell>
         }
@@ -143,53 +138,50 @@ pub fn render_setup_welcome(flash: Option<Flash>) -> String {
 }
 
 /// Step 2 of 3 — admin form.
-pub fn render_setup_admin(flash: Option<Flash>) -> String {
+pub fn render_setup_admin(flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         view! {
-            <crate::layout::AuthShell title="セットアップ — 管理者作成".to_string()>
+            <crate::layout::AuthShell title=t.setup_admin_title.to_string() lang=lang>
                 {setup_step_indicator(1)}
-                <h1>"管理者アカウントの作成"</h1>
-                <p class="muted">
-                    "サーバー起動時に出力されたセットアップトークンと、新しい管理者アカウントの情報を入力してください。"
-                </p>
+                <h1>{t.setup_admin_title}</h1>
+                <p class="muted">{t.setup_admin_lede}</p>
                 {flash_banner(flash)}
                 <form method="post" action="/setup/admin" class="stack" autocomplete="off">
                     <div class="field">
-                        <label for="token" class="field__label">"セットアップトークン"</label>
+                        <label for="token" class="field__label">{t.setup_admin_token_label}</label>
                         <input id="token" name="setup_token" type="password"
                                required=true autocomplete="off" autofocus=true />
-                        <span class="field__hint">"起動ログに 1 度だけ出力された値"</span>
+                        <span class="field__hint">{t.setup_admin_token_hint}</span>
                     </div>
                     <div class="field">
-                        <label for="username" class="field__label">"ユーザー名"</label>
+                        <label for="username" class="field__label">{t.setup_admin_username_label}</label>
                         <input id="username" name="username" type="text"
                                required=true autocomplete="username" />
                     </div>
                     <div class="field">
-                        <label for="email" class="field__label">"メールアドレス(任意)"</label>
+                        <label for="email" class="field__label">{t.setup_admin_email_label}</label>
                         <input id="email" name="email" type="email" autocomplete="email" />
-                        <span class="field__hint">
-                            "通知やパスワードリセットに使用します(将来機能)。後から変更できます。"
-                        </span>
+                        <span class="field__hint">{t.setup_admin_email_hint}</span>
                     </div>
                     <div class="field">
-                        <label for="display" class="field__label">"表示名(任意)"</label>
+                        <label for="display" class="field__label">{t.setup_admin_display_label}</label>
                         <input id="display" name="display_name" type="text" autocomplete="name" />
                     </div>
                     <div class="field">
-                        <label for="password" class="field__label">"パスワード"</label>
+                        <label for="password" class="field__label">{t.setup_admin_password_label}</label>
                         <input id="password" name="password" type="password"
                                required=true minlength="12" autocomplete="new-password" />
-                        <span class="field__hint">"12 文字以上"</span>
+                        <span class="field__hint">{t.setup_admin_password_hint}</span>
                     </div>
                     <div class="field">
-                        <label for="confirm_password" class="field__label">"パスワード(確認)"</label>
+                        <label for="confirm_password" class="field__label">{t.setup_admin_confirm_label}</label>
                         <input id="confirm_password" name="confirm_password" type="password"
                                required=true minlength="12" autocomplete="new-password" />
                     </div>
                     <div class="row">
-                        <a href="/setup" class="button secondary">"戻る"</a>
-                        <button type="submit">"管理者を作成"</button>
+                        <a href="/setup" class="button secondary">{t.button_back}</a>
+                        <button type="submit">{t.setup_admin_submit}</button>
                     </div>
                 </form>
             </crate::layout::AuthShell>
@@ -204,42 +196,37 @@ pub fn render_setup_admin(flash: Option<Flash>) -> String {
 /// `initialized` flag is false and the page shows a "not yet"
 /// notice with a link back to step 1 instead of the success
 /// message.
-pub fn render_setup_done(initialized: bool) -> String {
+pub fn render_setup_done(initialized: bool, lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         if initialized {
             view! {
-                <crate::layout::AuthShell title="セットアップ — 完了".to_string()>
+                <crate::layout::AuthShell title=t.setup_done_title.to_string() lang=lang>
                     {setup_step_indicator(2)}
-                    <h1>"セットアップ完了"</h1>
-                    <p class="muted">
-                        "管理者アカウントの作成と初期署名キーの発行が完了しました。"
-                        "管理画面からシステムの設定を確認できます。"
-                    </p>
+                    <h1>{t.setup_done_title}</h1>
+                    <p class="muted">{t.setup_done_lede}</p>
                     <div class="card">
-                        <h3 class="card__title">"次のステップ"</h3>
+                        <h3 class="card__title">{t.setup_done_next_steps_title}</h3>
                         <ul class="muted" style="margin:0;padding-left:var(--space-4)">
-                            <li>"OIDC クライアントを登録する。"</li>
-                            <li>"パスキーや認証アプリで 2 段階認証を有効にする。"</li>
-                            <li>"設定タブで現在の有効な設定を確認する。"</li>
+                            <li>{t.setup_done_next_step_register_clients}</li>
+                            <li>{t.setup_done_next_step_enable_mfa}</li>
+                            <li>{t.setup_done_next_step_review_settings}</li>
                         </ul>
                     </div>
                     <p style="margin-top:var(--space-4)">
-                        <a href="/admin" class="button">"管理画面へ進む"</a>
+                        <a href="/admin" class="button">{t.setup_done_enter_admin}</a>
                     </p>
                 </crate::layout::AuthShell>
             }
             .into_any()
         } else {
             view! {
-                <crate::layout::AuthShell title="セットアップ — まだ完了していません".to_string()>
+                <crate::layout::AuthShell title=t.setup_not_complete_title.to_string() lang=lang>
                     {setup_step_indicator(0)}
-                    <h1>"セットアップは完了していません"</h1>
-                    <p class="muted">
-                        "管理者アカウントの作成がまだ完了していません。"
-                        "セットアップを最初から始めてください。"
-                    </p>
+                    <h1>{t.setup_not_complete_title}</h1>
+                    <p class="muted">{t.setup_not_complete_lede}</p>
                     <p style="margin-top:var(--space-4)">
-                        <a href="/setup" class="button">"セットアップを始める"</a>
+                        <a href="/setup" class="button">{t.setup_welcome_begin}</a>
                     </p>
                 </crate::layout::AuthShell>
             }
@@ -2566,22 +2553,24 @@ pub fn render_step_up(
     csrf_token: String,
     has_passkey: bool,
     flash: Option<Flash>,
+    lang: sui_id_i18n::Locale,
 ) -> String {
     let return_to = return_to.to_owned();
     render(move || {
+        let t = lang.strings();
         let return_to_for_input = return_to.clone();
         let csrf_for_passkey = csrf_token.clone();
         let return_to_for_passkey = return_to.clone();
         let passkey_block = if has_passkey {
             view! {
                 <hr class="divider" />
-                <p class="muted">"または、パスキーで再認証:"</p>
+                <p class="muted">{format!("{}:", t.step_up_passkey_alt)}</p>
                 <form id="step-up-passkey-form" method="post"
                       action="/me/security/step-up/webauthn/start"
                       class="stack">
                     <input type="hidden" name="_csrf" value=csrf_for_passkey />
                     <input type="hidden" name="return_to" value=return_to_for_passkey />
-                    <button type="submit" class="secondary">"パスキーで再認証"</button>
+                    <button type="submit" class="secondary">{t.step_up_passkey_button}</button>
                 </form>
                 <script src="/static/step-up-webauthn.js"></script>
             }
@@ -2590,33 +2579,28 @@ pub fn render_step_up(
             view! { <></> }.into_any()
         };
         view! {
-            <Shell title="Step-up authentication".to_string() show_nav=false current=None>
+            <Shell title=t.step_up_title.to_string() show_nav=false current=None lang=lang>
                 <div class="auth-page">
                     <div class="auth-card">
-                        <h1>"再認証"</h1>
-                        <p class="muted">
-                            "セキュリティ上重要な操作を行う前に、認証アプリのコードで本人確認をお願いします。"
-                            "短時間(5 分間)有効です。"
-                        </p>
+                        <h1>{t.step_up_title}</h1>
+                        <p class="muted">{t.step_up_lede}</p>
                         {flash_banner(flash)}
                         <form method="post" action="/me/security/step-up"
                               autocomplete="off" class="stack">
                             <input type="hidden" name="_csrf" value=csrf_token />
                             <input type="hidden" name="return_to" value=return_to_for_input />
                             <div class="field">
-                                <label for="code" class="field__label">"確認コード"</label>
+                                <label for="code" class="field__label">{t.step_up_code_label}</label>
                                 <input id="code" name="code" type="text"
                                        required=true
                                        autocomplete="one-time-code"
                                        inputmode="text"
                                        autofocus=true />
-                                <span class="field__hint">
-                                    "認証アプリの 6 桁コード、またはリカバリーコード。"
-                                </span>
+                                <span class="field__hint">{t.step_up_code_hint}</span>
                             </div>
                             <div class="row">
-                                <button type="submit">"確認"</button>
-                                <a href="/me/security" class="button secondary">"キャンセル"</a>
+                                <button type="submit">{t.button_confirm}</button>
+                                <a href="/me/security" class="button secondary">{t.button_cancel}</a>
                             </div>
                         </form>
                         {passkey_block}
@@ -2629,26 +2613,28 @@ pub fn render_step_up(
 
 // ---------- /forgot-password & /reset-password (v0.22.0) ----------
 
-pub fn render_forgot_password(csrf_token: String, flash: Option<Flash>) -> String {
+pub fn render_forgot_password(
+    csrf_token: String,
+    flash: Option<Flash>,
+    lang: sui_id_i18n::Locale,
+) -> String {
     render(move || {
+        let t = lang.strings();
         view! {
-            <crate::layout::AuthShell title="パスワードを忘れた場合".to_string()>
-                <h1>"パスワードのリセット"</h1>
-                <p class="muted">
-                    "登録メールアドレスを入力してください。"
-                    "リセット用のリンクをお送りします。"
-                </p>
+            <crate::layout::AuthShell title=t.forgot_password_title.to_string() lang=lang>
+                <h1>{t.forgot_password_title}</h1>
+                <p class="muted">{t.forgot_password_lede}</p>
                 {flash_banner(flash)}
                 <form method="post" action="/forgot-password" class="stack">
                     <input type="hidden" name="_csrf" value=csrf_token />
                     <div class="field">
-                        <label for="email" class="field__label">"メールアドレス"</label>
+                        <label for="email" class="field__label">{t.forgot_password_email_label}</label>
                         <input id="email" name="email" type="email"
                                required=true autocomplete="email" autofocus=true />
                     </div>
                     <div class="row">
-                        <button type="submit">"リセットリンクを送信"</button>
-                        <a href="/admin/login" class="button secondary">"ログインに戻る"</a>
+                        <button type="submit">{t.forgot_password_submit}</button>
+                        <a href="/admin/login" class="button secondary">{t.back_to_login}</a>
                     </div>
                 </form>
             </crate::layout::AuthShell>
@@ -2656,21 +2642,16 @@ pub fn render_forgot_password(csrf_token: String, flash: Option<Flash>) -> Strin
     })
 }
 
-pub fn render_forgot_password_sent() -> String {
+pub fn render_forgot_password_sent(lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         view! {
-            <crate::layout::AuthShell title="メールを送信しました".to_string()>
-                <h1>"確認のメールをお送りしました"</h1>
-                <p class="muted">
-                    "入力されたアドレスに対応するアカウントが存在する場合、"
-                    "30 分以内に有効なリセットリンクを記載したメールが届きます。"
-                </p>
-                <p class="muted">
-                    "メールが届かない場合は、迷惑メールフォルダや、"
-                    "アカウントに登録したアドレスをご確認ください。"
-                </p>
+            <crate::layout::AuthShell title=t.forgot_password_sent_title.to_string() lang=lang>
+                <h1>{t.forgot_password_sent_title}</h1>
+                <p class="muted">{t.forgot_password_sent_lede}</p>
+                <p class="muted">{t.forgot_password_sent_lede2}</p>
                 <p style="margin-top:var(--space-4)">
-                    <a href="/admin/login" class="button">"ログインに戻る"</a>
+                    <a href="/admin/login" class="button">{t.back_to_login}</a>
                 </p>
             </crate::layout::AuthShell>
         }
@@ -2681,47 +2662,47 @@ pub fn render_reset_password(
     token: String,
     csrf_token: String,
     flash: Option<Flash>,
+    lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
+        let t = lang.strings();
         view! {
-            <crate::layout::AuthShell title="パスワードの再設定".to_string()>
-                <h1>"新しいパスワードを設定"</h1>
-                <p class="muted">"新しいパスワードを 2 回入力してください。"</p>
+            <crate::layout::AuthShell title=t.reset_password_title.to_string() lang=lang>
+                <h1>{t.reset_password_title}</h1>
+                <p class="muted">{t.reset_password_lede}</p>
                 {flash_banner(flash)}
                 <form method="post" action="/reset-password" class="stack" autocomplete="off">
                     <input type="hidden" name="_csrf" value=csrf_token />
                     <input type="hidden" name="token" value=token />
                     <div class="field">
-                        <label for="password" class="field__label">"新しいパスワード"</label>
+                        <label for="password" class="field__label">{t.reset_password_new_label}</label>
                         <input id="password" name="password" type="password"
                                required=true minlength="12"
                                autocomplete="new-password" autofocus=true />
-                        <span class="field__hint">"12 文字以上"</span>
+                        <span class="field__hint">{t.reset_password_new_hint}</span>
                     </div>
                     <div class="field">
-                        <label for="confirm_password" class="field__label">"確認のためもう一度"</label>
+                        <label for="confirm_password" class="field__label">{t.reset_password_confirm_label}</label>
                         <input id="confirm_password" name="confirm_password" type="password"
                                required=true minlength="12"
                                autocomplete="new-password" />
                     </div>
-                    <button type="submit">"パスワードを変更"</button>
+                    <button type="submit">{t.reset_password_submit}</button>
                 </form>
             </crate::layout::AuthShell>
         }
     })
 }
 
-pub fn render_reset_password_invalid() -> String {
+pub fn render_reset_password_invalid(lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         view! {
-            <crate::layout::AuthShell title="リンクが無効です".to_string()>
-                <h1>"このリンクは無効です"</h1>
-                <p class="muted">
-                    "リセットリンクが期限切れ、すでに使用済み、または無効です。"
-                    "もう一度リクエストしてください。"
-                </p>
+            <crate::layout::AuthShell title=t.reset_password_invalid_title.to_string() lang=lang>
+                <h1>{t.reset_password_invalid_title}</h1>
+                <p class="muted">{t.reset_password_invalid_lede}</p>
                 <p style="margin-top:var(--space-4)">
-                    <a href="/forgot-password" class="button">"再度リクエストする"</a>
+                    <a href="/forgot-password" class="button">{t.reset_password_invalid_request_again}</a>
                 </p>
             </crate::layout::AuthShell>
         }

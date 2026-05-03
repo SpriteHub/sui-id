@@ -55,6 +55,7 @@ use sui_id_web::{
 
 pub async fn welcome_get(
     state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
 ) -> Result<axum::response::Response, HttpError> {
     let axum::extract::State(app) = state_ext;
     let initialized =
@@ -65,13 +66,14 @@ pub async fn welcome_get(
         // mistake or via an old link.
         return Ok(Redirect::to("/admin/login").into_response());
     }
-    Ok(Html(render_setup_welcome(None)).into_response())
+    Ok(Html(render_setup_welcome(None, lang)).into_response())
 }
 
 // ---------- 画面 2 — admin form ----------
 
 pub async fn admin_get(
     state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
 ) -> Result<axum::response::Response, HttpError> {
     let axum::extract::State(app) = state_ext;
     let initialized =
@@ -79,7 +81,7 @@ pub async fn admin_get(
     if initialized {
         return Ok(Redirect::to("/admin/login").into_response());
     }
-    Ok(Html(render_setup_admin(None)).into_response())
+    Ok(Html(render_setup_admin(None, lang)).into_response())
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +99,7 @@ pub struct SetupAdminForm {
 pub async fn admin_post(
     state_ext: AppStateExt,
     crate::handlers::ClientIp(ip): crate::handlers::ClientIp,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
     jar: CookieJar,
     Form(form): Form<SetupAdminForm>,
 ) -> Result<axum::response::Response, HttpError> {
@@ -108,6 +111,7 @@ pub async fn admin_post(
         ip,
         crate::handlers::ErrorAs::Html,
     )?;
+    let t = lang.strings();
 
     // Form-level checks first so we can surface them as friendly
     // flash banners without consuming the setup token (which would
@@ -115,11 +119,11 @@ pub async fn admin_post(
     if form.password != form.confirm_password {
         let flash = Flash {
             kind: FlashKind::Warn,
-            text: "パスワードと確認用パスワードが一致しません。".into(),
+            text: t.setup_password_mismatch.into(),
         };
         return Ok((
             axum::http::StatusCode::BAD_REQUEST,
-            Html(render_setup_admin(Some(flash))),
+            Html(render_setup_admin(Some(flash), lang)),
         )
             .into_response());
     }
@@ -162,13 +166,11 @@ pub async fn admin_post(
             sui_id_core::hibp::HibpEnforcement::Blocked { count: _ } => {
                 let flash = Flash {
                     kind: FlashKind::Warn,
-                    text: "このパスワードは過去のデータ漏洩で確認されています。\
-                           別のものを選んでください。"
-                        .into(),
+                    text: t.setup_hibp_blocked.into(),
                 };
                 return Ok((
                     axum::http::StatusCode::BAD_REQUEST,
-                    Html(render_setup_admin(Some(flash))),
+                    Html(render_setup_admin(Some(flash), lang)),
                 )
                     .into_response());
             }
@@ -214,12 +216,12 @@ pub async fn admin_post(
                     CoreError::AlreadyInitialized | CoreError::Forbidden => FlashKind::Error,
                     _ => FlashKind::Warn,
                 },
-                text: friendly_error_text(&e),
+                text: friendly_error_text(&e, lang),
             };
             tracing::warn!(error = %e, "setup form rejected");
             Ok((
                 axum::http::StatusCode::BAD_REQUEST,
-                Html(render_setup_admin(Some(flash))),
+                Html(render_setup_admin(Some(flash), lang)),
             )
                 .into_response())
         }
@@ -230,11 +232,12 @@ pub async fn admin_post(
 
 pub async fn done_get(
     state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
 ) -> Result<axum::response::Response, HttpError> {
     let axum::extract::State(app) = state_ext;
     let initialized =
         state::is_initialized(&app.db).map_err(|e| HttpError::html(CoreError::from(e)))?;
-    Ok(Html(render_setup_done(initialized)).into_response())
+    Ok(Html(render_setup_done(initialized, lang)).into_response())
 }
 
 // ---------- helpers ----------
@@ -248,12 +251,13 @@ fn trimmed_or_none(s: &str) -> Option<&str> {
     }
 }
 
-fn friendly_error_text(e: &CoreError) -> String {
+fn friendly_error_text(e: &CoreError, lang: sui_id_i18n::Locale) -> String {
+    let t = lang.strings();
     match e {
-        CoreError::AlreadyInitialized => "サーバーは既に初期化されています。".into(),
-        CoreError::Forbidden => "セットアップトークンが正しくありません。".into(),
+        CoreError::AlreadyInitialized => t.setup_already_initialized.into(),
+        CoreError::Forbidden => t.setup_invalid_token.into(),
         CoreError::Conflict(msg) => msg.clone(),
         CoreError::BadRequest(msg) => msg.clone(),
-        _ => "セットアップに失敗しました。フォームを確認して再度お試しください。".into(),
+        _ => t.setup_generic_failure.into(),
     }
 }

@@ -5,6 +5,135 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.0] - 2026-05-04
+
+i18n scope expansion, phase 1: the auth-flow screens. Setup
+wizard (welcome / admin form / done / not-yet-complete),
+forgot-password (request / sent / reset / invalid), and step-up
+re-authentication are now rendered through the typed
+`Strings` table from `sui-id-i18n` and respect the user's
+preferred locale.
+
+### Why phase 1, not all-at-once
+
+The auth flow is the smallest closed piece of the UI: the eight
+screens here are reachable without a session, talk only to each
+other, and cover the moments where a non-Japanese-reading
+operator is most likely to bounce off the product (first install,
+password reset, MFA challenge). Translating them in one
+release moves the bilingual experience from "login screen" to
+"every screen you see before you can navigate away from a
+problem", which is the highest-leverage step for the smallest
+amount of risk.
+
+The remaining UI areas (profile / `/me/security`, admin
+dashboard / users / clients / signing-keys / audit log,
+settings tabs beyond Basic / Security, error pages) follow in
+later v0.29.x patch releases. The sui-id-i18n string table is
+shaped so adding more screens is a series of small, isolated
+edits, not a re-architecture.
+
+### Locale resolution chain (unchanged)
+
+The resolution chain established in v0.23.0 still holds:
+
+1. `users.preferred_lang` (when authenticated).
+2. `Cookie: sui_id_lang=…` (when set, e.g. by the language
+   picker).
+3. `Accept-Language` header.
+4. `server_settings.default_lang` (admin-set).
+5. Hardcoded `Locale::Ja`.
+
+The new auth-flow handlers thread this resolved locale through
+to the view functions; nothing about how it is computed has
+changed.
+
+### Added
+
+#### View functions now take a `lang: sui_id_i18n::Locale` parameter
+
+- `render_setup_welcome(flash, lang)`
+- `render_setup_admin(flash, lang)`
+- `render_setup_done(initialized, lang)`
+- `render_step_up(return_to, csrf, has_passkey, flash, lang)`
+- `render_forgot_password(csrf, flash, lang)`
+- `render_forgot_password_sent(lang)`
+- `render_reset_password(token, csrf, flash, lang)`
+- `render_reset_password_invalid(lang)`
+
+The `<html lang="…">` attribute on each rendered page reflects
+the resolved locale.
+
+#### Handler-side `RequestLocale` extractor wiring
+
+- `handlers::setup::welcome_get`
+- `handlers::setup::admin_get`
+- `handlers::setup::admin_post` (also threads `lang` into the
+  flash messages it constructs in-line)
+- `handlers::setup::done_get`
+- `handlers::forgot_password::forgot_password_get`
+- `handlers::forgot_password::forgot_password_post`
+- `handlers::forgot_password::reset_password_get`
+- `handlers::forgot_password::reset_password_post`
+- `handlers::step_up::step_up_get`
+- `handlers::step_up::step_up_post`
+
+#### New translation keys
+
+- `back_to_login` — navigational link from forgot-password and
+  forgot-password-sent back to the login screen. Reused across
+  multiple auth-flow views.
+- `setup_hibp_blocked` — flash text shown by the setup wizard
+  when HIBP `Block` mode rejects a chosen password.
+
+These plug into the existing `Strings` struct without touching
+any other key.
+
+### Tests
+
+- 6 new e2e tests in `tests/e2e.rs`:
+  - `setup_welcome_renders_in_en` — `Accept-Language: en` →
+    `<html lang="en">` + English wording.
+  - `setup_welcome_renders_in_ja` — `Accept-Language: ja` →
+    `<html lang="ja">` + Japanese wording. Pins the
+    resolution chain so a future change cannot accidentally
+    flip the default.
+  - `setup_admin_form_renders_in_en` — admin form labels in
+    English.
+  - `forgot_password_renders_in_en` — forgot-password form in
+    English (with SMTP enabled, since the endpoint 404s
+    otherwise).
+  - `reset_password_invalid_renders_in_en` — invalid-link
+    page in English.
+  - `locale_cookie_overrides_accept_language` — confirms the
+    documented chain: `sui_id_lang=en` cookie wins over
+    `Accept-Language: ja`.
+- All 134+ existing e2e tests and 194 lib tests continue to
+  pass without modification.
+
+### Notes — what's not in this release
+
+- **`/me/security`** still has Japanese-hardcoded labels.
+  Scheduled for v0.29.x next.
+- **Admin dashboard / users / clients / signing-keys / audit
+  log** likewise. Each is a self-contained chunk that lands
+  in its own patch release.
+- **Settings tabs beyond Basic / Security** (Authentication,
+  Logs, Email, Other) — these have headings in i18n but the
+  body labels are still Japanese-hardcoded.
+- **Error pages** (404 / 500 / rate-limited) — small but
+  visible; landing in a separate v0.29.x.
+- **Email templates** (password-changed notification, reset
+  link) — translation requires per-recipient locale lookup
+  in `core::mail`; this needs a small refactor that we don't
+  want bundled with the auth-flow rewrite.
+
+The point of slicing this way is that each subsequent v0.29.x
+release adds 2-5 screens of translation, no schema changes, no
+new dependencies, and a small batch of e2e tests pinning
+`Accept-Language: en` against the new screens. Reviewing one
+should take a few minutes rather than a few hours.
+
 ## [0.28.0] - 2026-05-04
 
 Dev mode: a `--dev` flag that brings up a fully working OIDC IdP
