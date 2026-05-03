@@ -55,6 +55,21 @@ pub fn build_router(app: AppState) -> Router {
             "/admin/login/mfa",
             get(admin::mfa_challenge_get).post(admin::mfa_challenge_post),
         )
+        // ---------- forgot-password (since v0.22.0) ----------
+        // Forgot-password lives under the public path, not /admin/*,
+        // because the user is by definition not signed in. Both the
+        // form and the post are publicly reachable; rate-limiting
+        // and constant-time response handle abuse.
+        .route(
+            "/forgot-password",
+            get(crate::handlers::forgot_password::forgot_password_get)
+                .post(crate::handlers::forgot_password::forgot_password_post),
+        )
+        .route(
+            "/reset-password",
+            get(crate::handlers::forgot_password::reset_password_get)
+                .post(crate::handlers::forgot_password::reset_password_post),
+        )
         .route("/admin/logout", post(admin::logout).get(admin::logout))
         .route("/admin/profile", get(admin::profile_get))
         .route(
@@ -139,6 +154,15 @@ pub fn build_router(app: AppState) -> Router {
         .route(
             "/admin/settings/other",
             get(crate::handlers::settings::other_get),
+        )
+        .route(
+            "/admin/settings/email",
+            get(crate::handlers::settings::email_get)
+                .post(crate::handlers::settings::email_post),
+        )
+        .route(
+            "/admin/settings/email/test",
+            post(crate::handlers::settings::email_test),
         )
         // ---------- self-service security (since v0.18.0) ----------
         // These routes require an authenticated session but do *not*

@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::ipnet::Cidr;
 use crate::ratelimit::Limiters;
 use std::sync::Arc;
+use sui_id_core::mail::MailSender;
 use sui_id_core::time::{system_clock, SharedClock};
 use sui_id_core::tokens::TokenLifetimes;
 use sui_id_store::Database;
@@ -16,13 +17,20 @@ pub struct AppState {
     pub setup_token: Arc<String>,
     pub limiters: Arc<Limiters>,
     pub trusted_proxies: Arc<Vec<Cidr>>,
+    /// Outbound mail sender. Production code constructs an
+    /// `SmtpMailSender`; tests use `InMemoryMailSender`. Cloning
+    /// the `AppState` clones the `Arc`; the underlying sender is
+    /// shared.
+    pub mailer: Arc<dyn MailSender>,
 }
 
 impl AppState {
-    pub fn new(db: Database, config: Config, setup_token: String) -> Self {
-        // CIDRs were validated at config load time; an unwrap_or_default
-        // here is defensive: even if validation regressed, we degrade to
-        // "trust nobody" rather than crash.
+    pub fn new(
+        db: Database,
+        config: Config,
+        setup_token: String,
+        mailer: Arc<dyn MailSender>,
+    ) -> Self {
         let trusted_proxies: Vec<Cidr> = config
             .server
             .trusted_proxies
@@ -36,6 +44,7 @@ impl AppState {
             setup_token: Arc::new(setup_token),
             limiters: Arc::new(Limiters::default()),
             trusted_proxies: Arc::new(trusted_proxies),
+            mailer,
         }
     }
 

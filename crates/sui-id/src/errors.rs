@@ -49,6 +49,15 @@ impl HttpError {
         }
     }
 
+    /// Convenience for handlers that want to render a 404 inside
+    /// the HTML chrome (used by feature-gated routes like the
+    /// forgot-password endpoints when SMTP is unconfigured).
+    pub fn not_found_html() -> Self {
+        let mut e = Self::html(CoreError::NotFound);
+        e.force_status(StatusCode::NOT_FOUND);
+        e
+    }
+
     pub fn request_id(&self) -> &str {
         &self.request_id
     }

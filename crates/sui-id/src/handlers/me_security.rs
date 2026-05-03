@@ -379,5 +379,38 @@ pub async fn password_change_post(
     .map_err(HttpError::html)?;
 
     let _ = report; // counts are in the audit event already; nothing to surface
+
+    // Post-change notification mail (best-effort). The user just
+    // changed their password from a known-authenticated session;
+    // sending a confirmation to their email is the standard
+    // self-defence against an attacker who silently cycled
+    // someone else's password. Failures here do not roll the
+    // change back — the audit log records both the change and
+    // the notification outcome separately.
+    //
+    // Sent inline (await the result rather than tokio::spawn).
+    // Inline keeps the test path deterministic and also means a
+    // notification timeout is bounded by our SMTP timeout
+    // (single-digit seconds in production), which is
+    // operationally fine for a self-service action that already
+    // holds a database write.
+    if let Ok(Some(user_row)) =
+        sui_id_store::repos::users::find_by_id_opt(&app.db, user_id)
+    {
+        if let Some(email) = user_row.email.as_deref() {
+            if let Err(e) = sui_id_core::forgot_password::notify_password_changed(
+                app.mailer.as_ref(),
+                email,
+                &user_row.display_name,
+            )
+            .await
+            {
+                tracing::warn!(
+                    error = %e,
+                    "failed to send password-change notification"
+                );
+            }
+        }
+    }
     Ok(Redirect::to("/me/security?msg=password_changed").into_response())
 }

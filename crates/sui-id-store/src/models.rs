@@ -247,3 +247,78 @@ impl WebauthnPendingKind {
         }
     }
 }
+
+// ---------- SMTP configuration (v0.22.0) ----------
+
+/// Connection-level TLS mode for the SMTP submission relay.
+///
+/// `wasm-smtp` requires TLS at the API surface, so a true "plain"
+/// option is not exposed here. The two values map directly to the
+/// adapter's two connect helpers:
+/// `TokioTlsTransport::connect_implicit_tls` for `Implicit`, and
+/// `TokioPlainTransport::connect` followed by
+/// `SmtpClient::connect_starttls` for `StartTls`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SmtpTlsMode {
+    /// TLS-from-the-start, port 465. The transport handshakes TLS
+    /// before any SMTP byte is exchanged.
+    Implicit,
+    /// Plaintext greeting then upgrade in-place after STARTTLS,
+    /// port 587. The transport switches to TLS mid-session.
+    StartTls,
+}
+
+impl SmtpTlsMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Implicit => "implicit",
+            Self::StartTls => "starttls",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "implicit" => Some(Self::Implicit),
+            "starttls" => Some(Self::StartTls),
+            _ => None,
+        }
+    }
+}
+
+/// Singleton row in `smtp_config`. The primary key is hard-coded
+/// to `'singleton'` — there is only ever one effective SMTP
+/// configuration. See migration 0014 for full rationale.
+#[derive(Debug, Clone)]
+pub struct SmtpConfigRow {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub tls_mode: SmtpTlsMode,
+    pub username: Option<String>,
+    /// Sealed XChaCha20-Poly1305 ciphertext over the SMTP
+    /// password. AAD = `b"smtp.password"`. `None` when the
+    /// relay does not require authentication.
+    pub password_enc: Option<Vec<u8>>,
+    pub from_address: String,
+    pub from_name: Option<String>,
+    /// Public origin sui-id is reachable at, used for
+    /// constructing absolute URLs in outgoing mail (e.g. the
+    /// password-reset link).
+    pub base_url: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+// ---------- Password reset tokens (v0.22.0) ----------
+
+/// One row in `password_reset_tokens`. The plaintext token never
+/// touches the database; only its SHA-256 hash. See migration 0015.
+#[derive(Debug, Clone)]
+pub struct PasswordResetTokenRow {
+    pub id: sui_id_shared::ids::PasswordResetTokenId,
+    pub user_id: sui_id_shared::ids::UserId,
+    pub token_hash: Vec<u8>,
+    pub issued_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub consumed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub requester_ip: Option<String>,
+}

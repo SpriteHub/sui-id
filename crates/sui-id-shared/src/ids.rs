@@ -66,6 +66,10 @@ define_id!(
     WebauthnCredentialId,
     "Identifier of a registered WebAuthn passkey (sui-id-side row id, not the authenticator's credential id)."
 );
+define_id!(
+    PasswordResetTokenId,
+    "Identifier of a forgot-password reset token row. The token *value* itself is a 32-byte secret stored hashed; this id is the row's primary key."
+);
 
 #[cfg(test)]
 mod tests;

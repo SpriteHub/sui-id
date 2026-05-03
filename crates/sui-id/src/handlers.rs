@@ -16,6 +16,7 @@ use sui_id_shared::ids::{SessionId, UserId};
 use sui_id_store::repos::users;
 
 pub mod admin;
+pub mod forgot_password;
 pub mod index;
 pub mod me_security;
 pub mod oauth_token;
@@ -336,6 +337,7 @@ pub fn enforce_rate_limit(
         RateLimitKey::Login => &limiters.login,
         RateLimitKey::Token => &limiters.token,
         RateLimitKey::Setup => &limiters.setup,
+        RateLimitKey::ForgotPassword => &limiters.forgot_password,
     };
     let decision = limiter.check(key.as_str(), ip, clock.now());
     if decision.allowed {
@@ -365,6 +367,7 @@ pub enum RateLimitKey {
     Login,
     Token,
     Setup,
+    ForgotPassword,
 }
 
 impl RateLimitKey {
@@ -373,6 +376,7 @@ impl RateLimitKey {
             Self::Login => "login",
             Self::Token => "token",
             Self::Setup => "setup",
+            Self::ForgotPassword => "forgot_password",
         }
     }
 }

@@ -272,6 +272,9 @@ pub fn render_login(flash: Option<Flash>, next: Option<String>) -> String {
                     </div>
                     <button type="submit">"ログイン"</button>
                 </form>
+                <p class="muted" style="margin-top:var(--space-3);text-align:center;font-size:var(--font-size-caption)">
+                    <a href="/forgot-password">"パスワードをお忘れですか?"</a>
+                </p>
             </crate::layout::AuthShell>
         }
     })
@@ -1832,6 +1835,7 @@ pub enum SettingsTab {
     Security,
     Authentication,
     Logs,
+    Email,
     Other,
 }
 
@@ -1842,6 +1846,7 @@ impl SettingsTab {
             Self::Security => "security",
             Self::Authentication => "authentication",
             Self::Logs => "logs",
+            Self::Email => "email",
             Self::Other => "other",
         }
     }
@@ -1857,6 +1862,7 @@ fn settings_tabs(active: SettingsTab) -> impl IntoView {
             "/admin/settings/authentication",
         ),
         (SettingsTab::Logs, "ログ", "/admin/settings/logs"),
+        (SettingsTab::Email, "メール", "/admin/settings/email"),
         (SettingsTab::Other, "その他", "/admin/settings/other"),
     ];
     let active_key = active.key();
@@ -2460,6 +2466,247 @@ pub fn render_step_up(
                         </form>
                         {passkey_block}
                     </div>
+                </div>
+            </Shell>
+        }
+    })
+}
+
+// ---------- /forgot-password & /reset-password (v0.22.0) ----------
+
+pub fn render_forgot_password(csrf_token: String, flash: Option<Flash>) -> String {
+    render(move || {
+        view! {
+            <crate::layout::AuthShell title="パスワードを忘れた場合".to_string()>
+                <h1>"パスワードのリセット"</h1>
+                <p class="muted">
+                    "登録メールアドレスを入力してください。"
+                    "リセット用のリンクをお送りします。"
+                </p>
+                {flash_banner(flash)}
+                <form method="post" action="/forgot-password" class="stack">
+                    <input type="hidden" name="_csrf" value=csrf_token />
+                    <div class="field">
+                        <label for="email" class="field__label">"メールアドレス"</label>
+                        <input id="email" name="email" type="email"
+                               required=true autocomplete="email" autofocus=true />
+                    </div>
+                    <div class="row">
+                        <button type="submit">"リセットリンクを送信"</button>
+                        <a href="/admin/login" class="button secondary">"ログインに戻る"</a>
+                    </div>
+                </form>
+            </crate::layout::AuthShell>
+        }
+    })
+}
+
+pub fn render_forgot_password_sent() -> String {
+    render(move || {
+        view! {
+            <crate::layout::AuthShell title="メールを送信しました".to_string()>
+                <h1>"確認のメールをお送りしました"</h1>
+                <p class="muted">
+                    "入力されたアドレスに対応するアカウントが存在する場合、"
+                    "30 分以内に有効なリセットリンクを記載したメールが届きます。"
+                </p>
+                <p class="muted">
+                    "メールが届かない場合は、迷惑メールフォルダや、"
+                    "アカウントに登録したアドレスをご確認ください。"
+                </p>
+                <p style="margin-top:var(--space-4)">
+                    <a href="/admin/login" class="button">"ログインに戻る"</a>
+                </p>
+            </crate::layout::AuthShell>
+        }
+    })
+}
+
+pub fn render_reset_password(
+    token: String,
+    csrf_token: String,
+    flash: Option<Flash>,
+) -> String {
+    render(move || {
+        view! {
+            <crate::layout::AuthShell title="パスワードの再設定".to_string()>
+                <h1>"新しいパスワードを設定"</h1>
+                <p class="muted">"新しいパスワードを 2 回入力してください。"</p>
+                {flash_banner(flash)}
+                <form method="post" action="/reset-password" class="stack" autocomplete="off">
+                    <input type="hidden" name="_csrf" value=csrf_token />
+                    <input type="hidden" name="token" value=token />
+                    <div class="field">
+                        <label for="password" class="field__label">"新しいパスワード"</label>
+                        <input id="password" name="password" type="password"
+                               required=true minlength="12"
+                               autocomplete="new-password" autofocus=true />
+                        <span class="field__hint">"12 文字以上"</span>
+                    </div>
+                    <div class="field">
+                        <label for="confirm_password" class="field__label">"確認のためもう一度"</label>
+                        <input id="confirm_password" name="confirm_password" type="password"
+                               required=true minlength="12"
+                               autocomplete="new-password" />
+                    </div>
+                    <button type="submit">"パスワードを変更"</button>
+                </form>
+            </crate::layout::AuthShell>
+        }
+    })
+}
+
+pub fn render_reset_password_invalid() -> String {
+    render(move || {
+        view! {
+            <crate::layout::AuthShell title="リンクが無効です".to_string()>
+                <h1>"このリンクは無効です"</h1>
+                <p class="muted">
+                    "リセットリンクが期限切れ、すでに使用済み、または無効です。"
+                    "もう一度リクエストしてください。"
+                </p>
+                <p style="margin-top:var(--space-4)">
+                    <a href="/forgot-password" class="button">"再度リクエストする"</a>
+                </p>
+            </crate::layout::AuthShell>
+        }
+    })
+}
+
+// ---------- /admin/settings/email (v0.22.0) ----------
+
+pub struct SettingsEmailData {
+    pub configured: bool,
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub tls_mode: String,
+    pub username: String,
+    pub has_password: bool,
+    pub from_address: String,
+    pub from_name: String,
+    pub base_url: String,
+}
+
+pub fn render_settings_email(
+    data: SettingsEmailData,
+    csrf_token: String,
+    flash: Option<Flash>,
+) -> String {
+    render(move || {
+        let SettingsEmailData {
+            configured: _,
+            enabled,
+            host,
+            port,
+            tls_mode,
+            username,
+            has_password,
+            from_address,
+            from_name,
+            base_url,
+        } = data;
+        let csrf_save = csrf_token.clone();
+        let csrf_test = csrf_token.clone();
+        let port_str = port.to_string();
+        let pw_placeholder = if has_password {
+            "(変更する場合のみ入力)"
+        } else {
+            "(認証不要の場合は空欄)"
+        };
+        let enabled_attr = if enabled { Some("checked") } else { None };
+        let tls_implicit = if tls_mode == "implicit" { Some("selected") } else { None };
+        let tls_starttls = if tls_mode == "starttls" { Some("selected") } else { None };
+
+        view! {
+            <Shell title="設定 — メール".to_string() show_nav=true current=Some("settings".to_string())>
+                <header class="page-header">
+                    <div>
+                        <h1 class="page-header__title">"設定"</h1>
+                        <p class="page-header__lede">
+                            "メール送信(SMTP)設定。パスワードリセットや変更通知の送信に使用します。"
+                        </p>
+                    </div>
+                </header>
+                {flash_banner(flash)}
+                {settings_tabs(SettingsTab::Email)}
+
+                <div class="card">
+                    <h3 class="card__title">"SMTP 接続"</h3>
+                    <form method="post" action="/admin/settings/email" class="stack">
+                        <input type="hidden" name="_csrf" value=csrf_save />
+                        <div class="field">
+                            <label class="field__label">
+                                <input type="checkbox" name="enabled" value="on" checked=enabled_attr />
+                                " メール機能を有効化"
+                            </label>
+                            <span class="field__hint">
+                                "オフの場合、forgot-password などのメール送信エンドポイントは無効になります。"
+                            </span>
+                        </div>
+                        <div class="field">
+                            <label for="host" class="field__label">"SMTP ホスト"</label>
+                            <input id="host" name="host" type="text" required=true value=host />
+                        </div>
+                        <div class="field">
+                            <label for="port" class="field__label">"ポート"</label>
+                            <input id="port" name="port" type="number" min="1" max="65535"
+                                   required=true value=port_str />
+                            <span class="field__hint">"587(STARTTLS)または 465(暗黙 TLS)が一般的です。"</span>
+                        </div>
+                        <div class="field">
+                            <label for="tls_mode" class="field__label">"TLS モード"</label>
+                            <select id="tls_mode" name="tls_mode">
+                                <option value="starttls" selected=tls_starttls>"STARTTLS (587)"</option>
+                                <option value="implicit" selected=tls_implicit>"暗黙 TLS (465)"</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="username" class="field__label">"ユーザー名(任意)"</label>
+                            <input id="username" name="username" type="text"
+                                   autocomplete="off" value=username />
+                        </div>
+                        <div class="field">
+                            <label for="password" class="field__label">"パスワード"</label>
+                            <input id="password" name="password" type="password"
+                                   autocomplete="off" placeholder=pw_placeholder />
+                            <span class="field__hint">
+                                "保存済みのパスワードを変更する場合のみ入力してください。空欄の場合は既存値を保持します。"
+                            </span>
+                        </div>
+                        <hr class="divider" />
+                        <div class="field">
+                            <label for="from_address" class="field__label">"送信元アドレス"</label>
+                            <input id="from_address" name="from_address" type="email"
+                                   required=true value=from_address />
+                        </div>
+                        <div class="field">
+                            <label for="from_name" class="field__label">"送信元表示名(任意)"</label>
+                            <input id="from_name" name="from_name" type="text" value=from_name />
+                        </div>
+                        <div class="field">
+                            <label for="base_url" class="field__label">"公開 Base URL"</label>
+                            <input id="base_url" name="base_url" type="url"
+                                   required=true value=base_url
+                                   placeholder="https://idp.example.com" />
+                            <span class="field__hint">
+                                "リセットメールに記載する URL のベース。Issuer URL とは別に明示できます。"
+                            </span>
+                        </div>
+                        <button type="submit">"設定を保存"</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3 class="card__title">"接続テスト"</h3>
+                    <p class="muted">
+                        "現在の設定で SMTP サーバーへの接続と認証を試みます。"
+                        "メールは送信されません。"
+                    </p>
+                    <form method="post" action="/admin/settings/email/test" class="stack">
+                        <input type="hidden" name="_csrf" value=csrf_test />
+                        <button type="submit" class="secondary">"接続をテスト"</button>
+                    </form>
                 </div>
             </Shell>
         }

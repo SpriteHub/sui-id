@@ -126,6 +126,102 @@ If you need to rotate the master key, that's a planned future
 operation, performed offline against the database file with the
 `sui-id admin` CLI.
 
+## Email features
+
+Since v0.22.0, sui-id can send a small set of transactional
+emails:
+
+- a **password-reset link** when a user submits the
+  `/forgot-password` form;
+- a **password-change notification** when any user (including
+  the admin) changes their password — both via the self-service
+  `/me/security/password` page and via a successful
+  `/reset-password` flow.
+
+Email is **opt-in**. Until it's configured, the four endpoints
+that depend on it (`/forgot-password`, `/reset-password`,
+`/admin/settings/email/test`, and the inbound email-related
+admin pages) behave as if the feature doesn't exist (404 or no
+notification mail). Existing functionality is unaffected.
+
+### Configuring SMTP
+
+Configuration lives in the database, not in `sui-id.toml`. Sign
+in as an admin and visit **Settings → メール**
+(`/admin/settings/email`). The form asks for:
+
+| Field          | Notes                                                                                  |
+|----------------|----------------------------------------------------------------------------------------|
+| `host`         | SMTP relay hostname.                                                                   |
+| `port`         | 465 for implicit-TLS, 587 for STARTTLS. The two are the only modes we support.         |
+| `tls_mode`     | `Implicit` (TLS from the start, port 465) or `STARTTLS` (plain greeting then upgrade). |
+| `username`     | Optional; leave empty when the relay does not require authentication.                  |
+| `password`     | Optional; sealed with the master key before storing. Empty value keeps the existing.   |
+| `from_address` | The envelope and visible `From:` address.                                              |
+| `from_name`    | Optional display name (e.g. "Acme Corp Identity").                                     |
+| `base_url`     | Public origin sui-id is reachable at. Used to build the reset-link URL.                |
+
+`base_url` is **separate from the OIDC issuer URL** because the
+two are sometimes different (the issuer can be a back-channel
+URL while users browse from a different origin). Always use an
+`https://` URL in production.
+
+Why DB-stored, not TOML? We picked the database so:
+
+- Config changes apply without a restart.
+- A `Test Connection` button can run a real EHLO/STARTTLS/AUTH
+  dance against the relay and surface the result inline.
+- Credentials live alongside the rest of the encrypted columns
+  (sealed with the master key).
+- Setting changes feed the audit chain (`auth.smtp_config.changed`).
+
+The `Test Connection` button is your friend: SMTP delivery
+problems are notoriously hard to debug post-hoc, and getting an
+immediate `550 5.7.1 relay denied` or `auth failed` in the UI
+saves a lot of time vs poring over logs.
+
+### Operational model
+
+Sends are **inline**. When a user submits `/forgot-password`,
+the handler awaits the SMTP exchange, logs the outcome, and
+returns the same neutral 200 response regardless of success or
+failure. Reasons:
+
+- Volume is tiny (one mail per forgot-password / password-change
+  event).
+- A persistent outbox + retry worker would be more code to
+  maintain than the savings justify at this scale.
+- The user-enumeration neutralisation works equally well with
+  inline as with queued sends, since the outer response is
+  always the same.
+
+If you need at-least-once delivery semantics — e.g. you're
+deploying to a flaky network where SMTP attempts routinely
+transient-fail — that's the future "persistent email outbox"
+work in the ROADMAP. We don't believe it's needed at v1.0.
+
+### Token model
+
+Reset tokens are 32 bytes from `OsRng`, base64url-encoded for
+the URL. Only the SHA-256 hash hits the database; the plaintext
+exists in the user's email and on their machine, never on the
+server after issue.
+
+- Tokens expire 30 minutes after issue.
+- They're single-use: redemption sets `consumed_at` and replays
+  collapse to `InvalidCredentials` (same response shape as a
+  bogus token, so a probe can't tell them apart).
+- A user can have at most 3 outstanding (unconsumed,
+  unexpired) tokens at a time. Above the ceiling we silently
+  stop issuing new ones — the response remains 200 so the
+  endpoint still doesn't reveal account state.
+
+### Disabling the feature
+
+Set `enabled = 0` (or remove the row) in the
+`/admin/settings/email` page. The four feature-gated endpoints
+return 404 immediately; in-flight sessions are unaffected.
+
 ## Backup and restore
 
 A working backup contains three things: a SQLite snapshot of the

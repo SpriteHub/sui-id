@@ -120,8 +120,29 @@ pub fn prepare(cfg: Config) -> Result<Startup> {
     }
 
     let listen_addr = cfg.server.listen_addr.clone();
-    let state = AppState::new(db, cfg, setup_token);
+    // Build the production mail sender. It captures references to
+    // the database and the master key (cloned, both Arc-shaped
+    // internally) so it can read the live `smtp_config` row on
+    // every send.
+    let mailer: std::sync::Arc<dyn sui_id_core::mail::MailSender> = std::sync::Arc::new(
+        sui_id_core::mail::SmtpMailSender::new(
+            db.clone(),
+            ehlo_hostname_from_issuer(&cfg.server.issuer),
+        ),
+    );
+    let state = AppState::new(db, cfg, setup_token, mailer);
     Ok(Startup { state, listen_addr })
+}
+
+fn ehlo_hostname_from_issuer(issuer: &str) -> String {
+    // Best-effort: parse the issuer URL and pick its host. If it
+    // doesn't parse, fall back to the issuer string itself —
+    // wrong-looking but harmless (the SMTP server logs it; no
+    // delivery decision rests on it for plain SMTP relays).
+    url::Url::parse(issuer)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "sui-id.local".to_owned())
 }
 
 fn generate_setup_token() -> String {

@@ -132,6 +132,40 @@ pub enum SecurityEvent {
     Logout {
         user_id: UserId,
     },
+    /// `POST /forgot-password` was received and processed. Emitted
+    /// regardless of whether an account was matched (user-enumeration
+    /// neutral); the `note` field carries the internal disposition
+    /// (matched=true / matched=false / etc).
+    PasswordResetRequested {
+        /// `Some(uid)` when the email matched a user; `None` for
+        /// non-matches (so an attacker probing the endpoint cannot
+        /// derive matched-vs-unmatched from the actor column).
+        user_id: Option<UserId>,
+    },
+    /// A reset request landed on a user that already has the
+    /// configured ceiling of outstanding tokens. We silently
+    /// stop issuing new ones; this event records that.
+    PasswordResetThrottled {
+        user_id: UserId,
+        outstanding: i64,
+    },
+    /// The reset-link mail dispatched successfully (SMTP relay
+    /// accepted it). Subsequent delivery is the relay's problem.
+    PasswordResetEmailSent {
+        user_id: UserId,
+    },
+    /// The reset-link mail could not be dispatched (SMTP
+    /// connect / auth / send failed, or SMTP is unconfigured).
+    /// `reason` carries a short tag so the audit log distinguishes
+    /// `reason=smtp_unconfigured` from `reason=connect_refused`.
+    PasswordResetEmailFailed {
+        user_id: UserId,
+        reason: String,
+    },
+    /// User redeemed a reset token and a new password is in place.
+    PasswordResetCompleted {
+        user_id: UserId,
+    },
 }
 
 impl SecurityEvent {
@@ -154,6 +188,11 @@ impl SecurityEvent {
             Self::TokenIntrospected { .. } => "oauth.token.introspected",
             Self::TokenRevoked { .. } => "oauth.token.revoked",
             Self::Logout { .. } => "auth.logout",
+            Self::PasswordResetRequested { .. } => "auth.password.reset_requested",
+            Self::PasswordResetThrottled { .. } => "auth.password.reset_throttled",
+            Self::PasswordResetEmailSent { .. } => "auth.password.reset_email_sent",
+            Self::PasswordResetEmailFailed { .. } => "auth.password.reset_email_failed",
+            Self::PasswordResetCompleted { .. } => "auth.password.reset_completed",
         }
     }
 
@@ -182,6 +221,11 @@ impl SecurityEvent {
             Self::TokenIntrospected { client_id, .. } | Self::TokenRevoked { client_id, .. } => {
                 Some(client_id.clone())
             }
+            Self::PasswordResetRequested { user_id } => user_id.map(|u| u.to_string()),
+            Self::PasswordResetThrottled { user_id, .. }
+            | Self::PasswordResetEmailSent { user_id }
+            | Self::PasswordResetEmailFailed { user_id, .. }
+            | Self::PasswordResetCompleted { user_id } => Some(user_id.to_string()),
         }
     }
 
@@ -196,10 +240,15 @@ impl SecurityEvent {
             | Self::TokenIssued { .. }
             | Self::TokenRefreshed { .. }
             | Self::TokenRevoked { .. }
-            | Self::Logout { .. } => Outcome::Ok,
+            | Self::Logout { .. }
+            | Self::PasswordResetRequested { .. }
+            | Self::PasswordResetEmailSent { .. }
+            | Self::PasswordResetCompleted { .. } => Outcome::Ok,
             Self::LoginPasswordFailure { .. }
             | Self::MfaFailure { .. }
-            | Self::AuthorizeRejected { .. } => Outcome::Failure,
+            | Self::AuthorizeRejected { .. }
+            | Self::PasswordResetThrottled { .. }
+            | Self::PasswordResetEmailFailed { .. } => Outcome::Failure,
             Self::TokenIntrospected { outcome, .. } => *outcome,
         }
     }
@@ -229,6 +278,16 @@ impl SecurityEvent {
                 if *totp_removed { "removed" } else { "absent" },
                 passkeys_removed
             )),
+            Self::PasswordResetRequested { user_id } => Some(format!(
+                "matched={}",
+                user_id.is_some()
+            )),
+            Self::PasswordResetThrottled { outstanding, .. } => {
+                Some(format!("outstanding={outstanding}"))
+            }
+            Self::PasswordResetEmailFailed { reason, .. } => {
+                Some(format!("reason={reason}"))
+            }
             _ => None,
         }
     }

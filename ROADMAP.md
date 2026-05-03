@@ -17,9 +17,16 @@ authentication and authorization surface is, for v0.x, broadly
 complete; the natural next steps are operability and quality work
 rather than new auth primitives.
 
-The Medium term list is now empty — the items previously here
-(`cargo audit` integration, the deployment guide) shipped in
-v0.10.1 / v0.10.2.
+- **Persistent email outbox + retry worker.** v0.22.0 sends mail
+  inline with the request that triggered it; failures land in
+  the audit log but the message itself is lost. For deployments
+  where bounce rates are sensitive (password-reset to a flaky
+  webmail provider) we'd add an `email_outbox` table with
+  `queued / sending / sent / failed` states, a small in-process
+  worker, and an exponential-backoff retry policy. Not needed
+  at the current scale (sui-id sends ~1 mail per
+  forgot-password / password-change), but a clear future
+  enhancement once a deployment hits delivery problems.
 
 ## Longer term, less certain
 
@@ -267,6 +274,25 @@ v0.10.1 / v0.10.2.
   (`/me/security/step-up/webauthn/start` and `/finish`),
   a per-ceremony pending-id cookie, and a small
   `step-up-webauthn.js` driver complete the user-facing flow.
+- Email features (v0.22.0). Forgot-password reset flow plus
+  password-change notification emails. SMTP configuration
+  lives in the database (singleton row, password sealed with
+  the master key) so admins can change it without restarting
+  and the settings page can offer a `Test Connection` button
+  that runs a live EHLO/STARTTLS/AUTH dance against the
+  configured relay. Reset tokens are 32 random bytes; only
+  their SHA-256 hash is stored, single-use, 30-minute TTL.
+  Sends are inline (the handler awaits the SMTP exchange);
+  failures land in the audit log without affecting the
+  user-enumeration-neutral response shape. Migrations 0014
+  (`smtp_config`) and 0015 (`password_reset_tokens`) added.
+  When SMTP is unconfigured / disabled, the email-related
+  endpoints all 404 — the feature is opt-in.
+
+  Built on `wasm-smtp` 0.9.3 (with `mail-builder` feature) and
+  `wasm-smtp-tokio` 0.9. The integration was clean enough that
+  the matching CHANGELOG entry contains a small list of
+  upstream suggestions rather than complaints.
 
 ## Explicitly **not** on the roadmap
 

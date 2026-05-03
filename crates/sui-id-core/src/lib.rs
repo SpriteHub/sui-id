@@ -28,5 +28,7 @@ pub mod mfa;
 pub mod webauthn;
 pub mod oauth_token;
 pub mod events;
+pub mod mail;
+pub mod forgot_password;
 
 pub use errors::{CoreError, CoreResult};

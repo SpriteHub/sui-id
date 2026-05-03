@@ -84,6 +84,13 @@ pub struct Limiters {
     pub login: Limiter,
     pub token: Limiter,
     pub setup: Limiter,
+    /// Per-IP throttle on `POST /forgot-password`. The flow is
+    /// safe-by-design (constant-time response, audit log records
+    /// real outcome, single-use 30-minute tokens, outstanding-token
+    /// ceiling per user) but a per-IP limiter still blunts a
+    /// would-be enumeration scanner before it generates audit-log
+    /// noise.
+    pub forgot_password: Limiter,
 }
 
 impl Default for Limiters {
@@ -94,6 +101,11 @@ impl Default for Limiters {
             login: Limiter::new(10, 60),
             token: Limiter::new(60, 60),
             setup: Limiter::new(20, 60),
+            // Forgot-password is a heavier operation (it sends an
+            // email per request when matched). Half the login
+            // budget is plenty for a real user mistyping their
+            // address a few times.
+            forgot_password: Limiter::new(5, 60),
         }
     }
 }

@@ -96,6 +96,39 @@ pub fn find_by_username(db: &Database, username: &str) -> StoreResult<UserRow> {
     })
 }
 
+/// Find a user by email address. Returns `Ok(None)` when no user
+/// matches; `Ok(Some(row))` otherwise. Email lookup is
+/// case-sensitive by the partial unique index from migration 0012;
+/// callers that want case-insensitivity should normalise (lowercase)
+/// before calling.
+pub fn find_by_email(db: &Database, email: &str) -> StoreResult<Option<UserRow>> {
+    db.with_conn(|conn| {
+        let mut stmt = conn.prepare(&format!("{SELECT_USER} WHERE email = ?1"))?;
+        let res = stmt.query_row([email], map_row);
+        match res {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    })
+}
+
+/// Like `get` but returns `Ok(None)` instead of `Err(NotFound)`.
+/// Convenience for callers (notably the post-password-reset
+/// notification path) that legitimately want to no-op on a missing
+/// row instead of treating it as an error.
+pub fn find_by_id_opt(db: &Database, id: UserId) -> StoreResult<Option<UserRow>> {
+    db.with_conn(|conn| {
+        let mut stmt = conn.prepare(&format!("{SELECT_USER} WHERE id = ?1"))?;
+        let res = stmt.query_row([id.to_string()], map_row);
+        match res {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    })
+}
+
 pub fn list(db: &Database) -> StoreResult<Vec<UserRow>> {
     db.with_conn(|conn| {
         let mut stmt = conn.prepare(&format!("{SELECT_USER} ORDER BY created_at ASC"))?;

@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.21.1"
+version = "0.22.0"
 edition = "2024"
 rust-version = "1.91"
 license = "Apache-2.0"
@@ -77,6 +77,24 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 url = { version = "2.5", features = ["serde"] }
 percent-encoding = "2.3"
+
+# Email — wasm-smtp v0.9 family.
+# - core (`wasm-smtp`) drives the SMTP state machine, message parsing and
+#   error classification, and is runtime-agnostic. We enable `mail-builder`
+#   so `SmtpClient::send_message` accepts a `mail_builder::MessageBuilder`
+#   directly (the alternative is hand-rolling RFC 5322 + MIME boundaries).
+# - The tokio adapter (`wasm-smtp-tokio`) wires the core crate up to a
+#   native tokio + rustls socket. Default features:
+#   - `native-roots` — system trust store (works in our container; switch
+#     to `webpki-roots` for distroless if needed)
+#   - `aws-lc-rs` — default rustls crypto provider; no rustflags needed
+#     for the native target (only the wasm32 target needs the special
+#     `getrandom_backend="wasm_js"` cfg).
+# - `mail-builder` is a small, no-required-deps RFC 5322 / MIME composer
+#   from Stalwart Labs. `wasm-smtp`'s docs explicitly recommend it.
+wasm-smtp = { version = "0.9", features = ["mail-builder"] }
+wasm-smtp-tokio = "0.9"
+mail-builder = "0.4"
 
 # UI (Leptos used in SSR-only mode for the admin panel; no WASM/JS bundle is shipped
 #  in line with the project's minimal-runtime philosophy).

@@ -5,6 +5,213 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0] - 2026-05-02
+
+Email features. Two user-facing flows land:
+
+- **Forgot-password / reset**: `/forgot-password` form, token-link
+  email, `/reset-password?token=…` form, single-use 30-minute
+  tokens whose plaintext never touches the database.
+- **Password-change notification**: any password change (via
+  `/me/security/password` or `/reset-password`) sends a
+  notification email when the user has an email on file.
+
+Plus the operator-facing settings UI to configure SMTP, with a
+`Test Connection` button that runs a real EHLO/STARTTLS/AUTH
+dance against the configured relay without sending a message.
+
+### Why these design choices
+
+#### SMTP config in the database, not `sui-id.toml`
+
+- Operators can change settings without restarting (matters when
+  troubleshooting delivery).
+- The settings page can offer a `Test Connection` button — debug
+  value of this is large, mail delivery is one of the hardest
+  things to debug after-the-fact.
+- Credentials sit alongside our other encrypted columns
+  (XChaCha20-Poly1305 sealing via the master key). TOML would
+  either store the password plaintext or push the operator into
+  env-var juggling.
+- Setting changes feed the audit chain naturally
+  (`auth.smtp_config.changed`).
+
+#### Inline send + audit-log on failure
+
+The forgot-password handler awaits the SMTP send; failures
+record an `auth.password.reset_email_failed` event and the
+exterior response stays neutral (200 + same acknowledgement
+page) so the endpoint cannot be a user-enumeration oracle.
+
+We don't queue. The volume is tiny, the latency is acceptable,
+and the simplest implementation that survives a process crash
+is "do it inline, log if it fails". A persistent outbox + worker
+is a clear future enhancement (ROADMAP) but not necessary at
+this scope.
+
+#### Email opt-in
+
+When `smtp_config` has no row or the row's `enabled = 0`:
+
+- `/forgot-password` and `/reset-password` return 404.
+- `/me/security/password` continues to work; the post-change
+  notification is skipped silently.
+
+The forgot-password endpoint does not exist when SMTP isn't
+configured. Better than rendering a form that silently no-ops.
+
+### Added
+
+#### Schema
+
+- **migration 0014 (`smtp_config`)**: singleton row keyed
+  `'singleton'`. `tls_mode` is `'implicit'` (port-465 TLS-from-the-
+  start) or `'starttls'` (port-587 plaintext-then-upgrade); we
+  do not expose a plain-text mode. `password_enc` is
+  XChaCha20-Poly1305 sealed with AAD `b"smtp.password"`.
+- **migration 0015 (`password_reset_tokens`)**: stores SHA-256
+  hashes only; plaintext tokens never touch the database.
+  Single-use, 30-minute TTL, unique index on `token_hash`.
+- `MAX_SCHEMA_VERSION` rolls to 15.
+
+#### Models
+
+- `SmtpTlsMode { Implicit, StartTls }` with `as_str()` / `parse()`.
+- `SmtpConfigRow`, `PasswordResetTokenRow`.
+- `PasswordResetTokenId` typed id in `sui-id-shared`.
+
+#### Repos
+
+- `repos::smtp_config::{get, upsert, decrypt_password, seal_password,
+  SMTP_PASSWORD_AAD}`.
+- `repos::password_reset_tokens::{insert, find_by_hash,
+  mark_consumed, delete_expired, count_active_for_user}`.
+- `repos::users::find_by_email`, `find_by_id_opt`.
+
+#### Core
+
+- `core::mail::{MailSender, OutgoingMail, MailSendOutcome,
+  SmtpMailSender, InMemoryMailSender}`.
+  - `SmtpMailSender` reads the live `smtp_config` row on every
+    send so config changes apply without restart.
+  - `SmtpMailSender::test_connection()` runs the protocol dance
+    without sending a message, suitable for the admin UI test
+    button.
+- `core::forgot_password::{request_reset, validate_token,
+  consume_and_reset_password, notify_password_changed,
+  DEFAULT_TOKEN_TTL}`.
+  - 32 random bytes via `OsRng` → URL-safe base64 → SHA-256 hash.
+  - `request_reset` always returns `Ok(())` externally; internal
+    outcomes (no match, throttled, mail failed, etc) are only
+    visible in the audit log.
+  - `MAX_OUTSTANDING_TOKENS_PER_USER = 3` ceiling per user
+    prevents inbox spam.
+- `events::SecurityEvent` gains five reset variants:
+  `PasswordResetRequested`, `PasswordResetThrottled`,
+  `PasswordResetEmailSent`, `PasswordResetEmailFailed`,
+  `PasswordResetCompleted`.
+
+#### HTTP
+
+- `handlers::forgot_password`: 4 endpoints
+  (`forgot_password_get` / `_post` / `reset_password_get` /
+  `_post`). All return 404 when SMTP isn't enabled.
+- `handlers::settings::{email_get, email_post, email_test}`.
+- `RateLimitKey::ForgotPassword` + `Limiters.forgot_password`.
+- `HttpError::not_found_html()` for feature-gated routes.
+- `AppState.mailer: Arc<dyn MailSender>` threaded through
+  `AppState::new` — production constructs `SmtpMailSender`,
+  tests `InMemoryMailSender`.
+
+#### Web
+
+- `pages::render_forgot_password` / `render_forgot_password_sent` /
+  `render_reset_password` / `render_reset_password_invalid` /
+  `render_settings_email`.
+- `SettingsTab::Email` variant; the settings hub now has 6 tabs.
+- The admin login page gains a "パスワードをお忘れですか?" link
+  pointed at `/forgot-password` (only useful when SMTP is
+  enabled, but the link is unconditional — pointing at a 404 is
+  better than dynamically hiding the link based on whether
+  someone happens to need it).
+
+#### Password-change handler integration
+
+`me_security::password_change_post` now invokes
+`forgot_password::notify_password_changed` inline (awaited)
+when the user has an email on file. We initially drafted this
+as `tokio::spawn` ("fire and forget") so the user's redirect
+isn't gated on the SMTP relay's latency; we switched to inline
+because the test path needs deterministic ordering and because
+the production SMTP timeout is small (single-digit seconds),
+which is acceptable for a self-service action that already
+holds a database write. Notification failures `tracing::warn!`
+but do not roll the password change back.
+
+### Tests
+
+- 10 new e2e tests:
+  - `forgot_password_get_404_when_smtp_disabled`
+  - `forgot_password_get_renders_form_when_smtp_enabled`
+  - `forgot_password_post_neutral_response_for_unknown_email`
+  - `forgot_password_post_sends_mail_for_known_email`
+  - `reset_password_get_invalid_for_unknown_token`
+  - `reset_password_full_flow_changes_password_and_sends_notification`
+  - `settings_email_get_renders_for_admin`
+  - `settings_email_get_requires_admin`
+  - `password_change_sends_notification_mail_when_email_is_set`
+  - `password_change_sends_no_mail_when_email_is_unset`
+- All existing e2e (100+) continue to pass without changes.
+- All lib tests (153) continue to pass.
+
+### Notes — wasm-smtp v0.9.3 integration
+
+We use the `wasm-smtp` core crate with the `mail-builder`
+feature, the `wasm-smtp-tokio` adapter for our axum runtime, and
+`mail-builder` 0.4 for RFC 5322 + MIME composition.
+
+The crate's design surfaced several decisions worth highlighting
+because they removed work for sui-id:
+
+- TLS modes are surfaced as two distinct connect functions
+  (`connect_implicit_tls`, `connect_starttls`) — type-level
+  separation, not a string discriminator. We mirrored that in
+  our own `SmtpTlsMode`.
+- `mail-builder` produces `multipart/alternative` automatically
+  when both `text_body` and `html_body` are set, so our reset
+  email gets HTML and plain-text variants for free.
+- `ProtocolError::UnexpectedCode { actual, enhanced }` exposes
+  the SMTP reply code and parsed RFC 3463 enhanced status code,
+  so transient (4xx) vs permanent (5xx) classification is
+  one-line.
+- Cargo features use `compile_error!` to make crypto-provider /
+  trust-store choices mutually exclusive — wrong combinations
+  fail at build time, not runtime.
+- `StartTlsBufferResidue` as an explicit error variant
+  protects us against the RFC 3207 §5 buffer-injection class
+  of attack without us implementing the check ourselves.
+
+A short list of suggestions we'd send back upstream:
+
+- **Capture the SMTP relay's "queue" string from the 250 OK
+  reply**. Many relays (Postfix, Sendmail) include a
+  `queued as XXX` token; surfacing it in the send return value
+  would let consumers correlate sui-id's audit log with the
+  relay's logs.
+- **`tracing` feature** that emits `trace!`/`debug!` at major
+  protocol transitions (EHLO, STARTTLS, AUTH, MAIL FROM, …)
+  would make debugging delivery problems much easier than
+  reading-error-or-nothing today.
+- **DKIM signing hook** — a closure/trait taking the serialized
+  RFC 5322 message before it goes on the wire, allowing a
+  consumer to inject a `DKIM-Signature` header via a separate
+  crate (e.g. `mail-auth`) without forking message construction.
+- **`IoError::is_timeout()` / `is_connection_refused()`
+  helpers** so retry logic doesn't have to walk `source` chains.
+
+These are wishes rather than complaints — the existing API is
+clean and the integration was straightforward.
+
 ## [0.21.1] - 2026-05-02
 
 WebAuthn step-up. Users with passkeys but no TOTP enrolled can

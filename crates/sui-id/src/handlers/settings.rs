@@ -196,3 +196,213 @@ pub async fn other_get(
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
+
+// ---------- メール (v0.22.0) ----------
+
+#[derive(Debug, serde::Deserialize)]
+pub struct EmailSettingsForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    #[serde(default)]
+    pub enabled: Option<String>,
+    pub host: String,
+    pub port: u16,
+    pub tls_mode: String,
+    #[serde(default)]
+    pub username: String,
+    /// New password value. Empty string means "keep the existing
+    /// stored password". `None` (form field absent) is treated the
+    /// same as empty for resilience against missing fields.
+    #[serde(default)]
+    pub password: String,
+    pub from_address: String,
+    #[serde(default)]
+    pub from_name: String,
+    pub base_url: String,
+}
+
+pub async fn email_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(_admin_id): CurrentAdmin,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let cfg_row = sui_id_store::repos::smtp_config::get(&app.db)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let data = build_email_data(cfg_row.as_ref());
+    let token = csrf::ensure_token(&jar);
+    let html = sui_id_web::render_settings_email(data, token.clone(), None);
+    let resp = Html(html).into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+pub async fn email_post(
+    state_ext: AppStateExt,
+    CurrentAdmin(admin_id): CurrentAdmin,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<EmailSettingsForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+
+    let tls_mode = sui_id_store::models::SmtpTlsMode::parse(&form.tls_mode).ok_or_else(|| {
+        HttpError::html(CoreError::BadRequest(format!(
+            "unknown tls_mode: {}",
+            form.tls_mode
+        )))
+    })?;
+    if !form.base_url.starts_with("http://") && !form.base_url.starts_with("https://") {
+        return Err(HttpError::html(CoreError::BadRequest(
+            "base_url must start with http:// or https://".into(),
+        )));
+    }
+
+    let now = app.clock.now();
+    let username = if form.username.trim().is_empty() {
+        None
+    } else {
+        Some(form.username.trim().to_owned())
+    };
+    let from_name = if form.from_name.trim().is_empty() {
+        None
+    } else {
+        Some(form.from_name.trim().to_owned())
+    };
+    let enabled = form
+        .enabled
+        .as_deref()
+        .map(|v| matches!(v, "true" | "on" | "1"))
+        .unwrap_or(false);
+
+    // Password handling: empty string means "keep existing".
+    let existing = sui_id_store::repos::smtp_config::get(&app.db)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let password_enc = if form.password.is_empty() {
+        existing.as_ref().and_then(|r| r.password_enc.clone())
+    } else {
+        Some(
+            sui_id_store::repos::smtp_config::seal_password(&form.password, app.db.key())
+                .map_err(|e| HttpError::html(CoreError::from(e)))?,
+        )
+    };
+    let created_at = existing.map(|r| r.created_at).unwrap_or(now);
+
+    let row = sui_id_store::models::SmtpConfigRow {
+        enabled,
+        host: form.host.trim().to_owned(),
+        port: form.port,
+        tls_mode,
+        username,
+        password_enc,
+        from_address: form.from_address.trim().to_owned(),
+        from_name,
+        base_url: form.base_url.trim().trim_end_matches('/').to_owned(),
+        created_at,
+        updated_at: now,
+    };
+    sui_id_store::repos::smtp_config::upsert(&app.db, &row)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+
+    let _ = sui_id_store::repos::audit::append(
+        &app.db,
+        &sui_id_store::models::AuditLogRow {
+            at: now,
+            actor: Some(admin_id),
+            action: "auth.smtp_config.changed".into(),
+            target: None,
+            result: "ok".into(),
+            note: Some(format!(
+                "enabled={enabled} host={} port={} tls={}",
+                row.host,
+                row.port,
+                row.tls_mode.as_str()
+            )),
+        },
+    );
+
+    Ok(Redirect::to("/admin/settings/email").into_response())
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct EmailTestForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+}
+
+pub async fn email_test(
+    state_ext: AppStateExt,
+    CurrentAdmin(_admin_id): CurrentAdmin,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<EmailTestForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+
+    // Run an isolated SmtpMailSender pointed at the same DB so it
+    // reads the persisted config. This intentionally does not use
+    // `app.mailer` — that one is the trait object and doesn't
+    // expose `test_connection`.
+    let probe = sui_id_core::mail::SmtpMailSender::new(
+        app.db.clone(),
+        ehlo_hostname_from_issuer(&app.config.server.issuer),
+    );
+    let result = probe.test_connection().await;
+
+    let cfg_row = sui_id_store::repos::smtp_config::get(&app.db)
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let data = build_email_data(cfg_row.as_ref());
+    let token = csrf::ensure_token(&jar);
+    let flash = match &result {
+        Ok(()) => Some(sui_id_web::Flash {
+            kind: sui_id_web::FlashKind::Info,
+            text: "SMTP 接続テストが成功しました。".into(),
+        }),
+        Err(sui_id_core::CoreError::BadRequest(msg)) => Some(sui_id_web::Flash {
+            kind: sui_id_web::FlashKind::Error,
+            text: format!("SMTP 接続テストに失敗しました: {msg}"),
+        }),
+        Err(e) => Some(sui_id_web::Flash {
+            kind: sui_id_web::FlashKind::Error,
+            text: format!("SMTP 接続テストに失敗しました: {e}"),
+        }),
+    };
+    let html = sui_id_web::render_settings_email(data, token.clone(), flash);
+    let resp = Html(html).into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+fn build_email_data(cfg: Option<&sui_id_store::models::SmtpConfigRow>) -> sui_id_web::SettingsEmailData {
+    match cfg {
+        Some(row) => sui_id_web::SettingsEmailData {
+            configured: true,
+            enabled: row.enabled,
+            host: row.host.clone(),
+            port: row.port,
+            tls_mode: row.tls_mode.as_str().to_owned(),
+            username: row.username.clone().unwrap_or_default(),
+            has_password: row.password_enc.is_some(),
+            from_address: row.from_address.clone(),
+            from_name: row.from_name.clone().unwrap_or_default(),
+            base_url: row.base_url.clone(),
+        },
+        None => sui_id_web::SettingsEmailData {
+            configured: false,
+            enabled: false,
+            host: String::new(),
+            port: 587,
+            tls_mode: "starttls".into(),
+            username: String::new(),
+            has_password: false,
+            from_address: String::new(),
+            from_name: String::new(),
+            base_url: String::new(),
+        },
+    }
+}
+
+fn ehlo_hostname_from_issuer(issuer: &str) -> String {
+    url::Url::parse(issuer)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "sui-id.local".to_owned())
+}
