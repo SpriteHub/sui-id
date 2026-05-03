@@ -220,6 +220,14 @@ pub struct WebauthnPendingRow {
 pub enum WebauthnPendingKind {
     Register,
     Authenticate,
+    /// A WebAuthn assertion ceremony driven from `/me/security/step-up`
+    /// — the user is already signed in, and a successful finish
+    /// stamps the session's `last_step_up_at` rather than minting a
+    /// new session. Distinct from `Authenticate` so a pending row
+    /// can never cross flows by accident. Stored as the literal
+    /// string `step_up` in the `webauthn_pending.kind` column —
+    /// migration 0013 widens the CHECK constraint to allow it.
+    StepUp,
 }
 
 impl WebauthnPendingKind {
@@ -227,12 +235,14 @@ impl WebauthnPendingKind {
         match self {
             Self::Register => "register",
             Self::Authenticate => "authenticate",
+            Self::StepUp => "step_up",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "register" => Some(Self::Register),
             "authenticate" => Some(Self::Authenticate),
+            "step_up" => Some(Self::StepUp),
             _ => None,
         }
     }

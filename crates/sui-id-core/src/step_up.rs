@@ -37,7 +37,7 @@
 //!   is the action's authorisation context already, and an extra
 //!   token is one more piece of state to lose.
 
-use crate::errors::CoreResult;
+use crate::errors::{CoreError, CoreResult};
 use crate::time::SharedClock;
 use crate::webauthn;
 use chrono::{DateTime, Duration};
@@ -149,7 +149,6 @@ pub fn verify_totp_code(
     session_id: SessionId,
     code_input: &str,
 ) -> CoreResult<()> {
-    use crate::errors::CoreError;
     use crate::mfa;
     use crate::totp;
     use zeroize::Zeroize;
@@ -184,6 +183,173 @@ pub fn verify_totp_code(
 
     touch_step_up(db, clock, session_id)?;
     Ok(())
+}
+
+// ---------- WebAuthn-driven step-up ----------
+//
+// The TOTP / recovery-code path above covers users with an
+// authenticator app. Users whose only second factor is a passkey
+// also need a way to satisfy a step-up gate. The webauthn-rs
+// assertion flow is already split into pure start / finish halves
+// (see `webauthn::start_authentication` / `finish_authentication`),
+// so the step-up versions are thin wrappers: same low-level
+// ceremony, different bookkeeping. The ceremony-state row is tagged
+// with `WebauthnPendingKind::StepUp` so a pending login-MFA row
+// can never satisfy a step-up gate (and vice versa) even if a
+// pending_id ever leaked across contexts.
+//
+// The handler-side flow is:
+//
+//   1. POST /me/security/step-up/webauthn/start
+//      → step_up::start_webauthn(...) → returns (challenge_json, pending_id)
+//      → handler streams challenge_json to JS, sets pending_id in
+//        a short-lived cookie
+//   2. JS calls navigator.credentials.get(...) and POSTs the
+//      assertion back to
+//      POST /me/security/step-up/webauthn/finish
+//      → step_up::finish_webauthn(...) → on success, last_step_up_at
+//        is set
+//      → handler clears the pending_id cookie and 303s back to
+//        return_to
+
+/// Output of [`start_webauthn`].
+pub struct WebauthnStepUpStart {
+    /// JSON the browser hands to navigator.credentials.get().
+    pub challenge_json: String,
+    /// Opaque id of the pending row that holds the auth state.
+    /// The handler stuffs this into a short-lived cookie.
+    pub pending_id: sui_id_shared::ids::WebauthnPendingId,
+}
+
+/// Begin a WebAuthn step-up ceremony for an already-signed-in user.
+///
+/// Wraps [`crate::webauthn::start_authentication`] with the
+/// step-up-specific bookkeeping: the resulting pending row is tagged
+/// `kind = StepUp`. The user must already have at least one
+/// passkey enrolled; an empty credential list returns
+/// `BadRequest` with the same message the login flow uses.
+pub fn start_webauthn(
+    db: &Database,
+    clock: &SharedClock,
+    issuer_url: &str,
+    user_id: UserId,
+) -> CoreResult<WebauthnStepUpStart> {
+    use crate::webauthn;
+    use sui_id_store::models::{WebauthnPendingKind, WebauthnPendingRow};
+    use sui_id_store::repos::webauthn_pending;
+
+    // Reuse the existing start function — it does the heavy
+    // lifting (collect passkeys, build the challenge). Then we
+    // peel its pending row out and re-tag it with our kind.
+    let started = webauthn::start_authentication(db, clock, issuer_url, user_id)?;
+    // start_authentication wrote a `kind = Authenticate` row.
+    // Read it, replace it with a `kind = StepUp` row at the same
+    // id, so the finish path can demand the right kind. This is
+    // a tiny re-write, but the alternative — duplicating
+    // start_authentication's body — would mean two places to keep
+    // in sync if webauthn-rs ever changes shape.
+    let row = webauthn_pending::get(db, started.pending_id)?
+        .ok_or(CoreError::Internal)?;
+    let stepped = WebauthnPendingRow {
+        id: row.id,
+        kind: WebauthnPendingKind::StepUp,
+        user_id: row.user_id,
+        state_json: row.state_json,
+        expires_at: row.expires_at,
+        created_at: row.created_at,
+    };
+    webauthn_pending::delete(db, row.id)?;
+    webauthn_pending::insert(db, &stepped)?;
+
+    Ok(WebauthnStepUpStart {
+        challenge_json: started.challenge_json,
+        pending_id: started.pending_id,
+    })
+}
+
+/// Finish a WebAuthn step-up ceremony.
+///
+/// Reads the pending row, refuses if its `kind` isn't `StepUp` (so a
+/// stale login-MFA pending row can never satisfy a step-up gate),
+/// runs the assertion verify, and on success bumps the session's
+/// `last_step_up_at`. The pending row is consumed in either branch.
+///
+/// Failures collapse to `InvalidCredentials` for the same
+/// information-hiding reason the TOTP path does — a step-up form
+/// must look the same to a typo as to an attacker probing.
+pub fn finish_webauthn(
+    db: &Database,
+    clock: &SharedClock,
+    issuer_url: &str,
+    user_id: UserId,
+    session_id: SessionId,
+    pending_id: sui_id_shared::ids::WebauthnPendingId,
+    credential_json: &str,
+) -> CoreResult<()> {
+    use crate::webauthn;
+    use sui_id_store::models::WebauthnPendingKind;
+    use sui_id_store::repos::webauthn_pending;
+    use webauthn_rs::prelude::PublicKeyCredential;
+
+    // Verify the kind *before* we burn the row, so a wrong-kind
+    // pending row's failure doesn't also delete it (the legitimate
+    // login-MFA flow that owns the row should still be able to
+    // complete). The invariant we want: a step-up finish on a
+    // login-MFA pending row is a no-op for the row.
+    let pending = webauthn_pending::get(db, pending_id)?
+        .ok_or(CoreError::InvalidCredentials)?;
+    if pending.kind != WebauthnPendingKind::StepUp {
+        return Err(CoreError::InvalidCredentials);
+    }
+    if pending.user_id != Some(user_id) {
+        // pending row belongs to someone else — refuse without
+        // burning it (so the rightful owner's parallel flow can
+        // still complete) and don't reveal the mismatch.
+        return Err(CoreError::InvalidCredentials);
+    }
+
+    let credential: PublicKeyCredential = serde_json::from_str(credential_json)
+        .map_err(|_| CoreError::InvalidCredentials)?;
+
+    // Hand off to the existing finish function — it consumes the
+    // pending row on success or expiry, runs the webauthn-rs
+    // verify, and updates the credential's signature counter.
+    // Because we already validated the kind above, finish_authentication
+    // sees a well-formed Authenticate-shaped row from its perspective:
+    // the kind check inside webauthn::finish_authentication compares
+    // against `Authenticate`, so we have to swap the kind back
+    // momentarily.
+    //
+    // The cleanest way is to re-write the row to Authenticate, then
+    // delegate. The pending row's id and state_json are unchanged.
+    {
+        use sui_id_store::models::WebauthnPendingRow;
+        let switched = WebauthnPendingRow {
+            id: pending.id,
+            kind: WebauthnPendingKind::Authenticate,
+            user_id: pending.user_id,
+            state_json: pending.state_json.clone(),
+            expires_at: pending.expires_at,
+            created_at: pending.created_at,
+        };
+        webauthn_pending::delete(db, pending.id)?;
+        webauthn_pending::insert(db, &switched)?;
+    }
+
+    match webauthn::finish_authentication(
+        db,
+        clock,
+        issuer_url,
+        pending_id,
+        user_id,
+        &credential,
+    ) {
+        Ok(()) => {
+            touch_step_up(db, clock, session_id)?;
+            Ok(())
+        }
+        Err(_) => Err(CoreError::InvalidCredentials),
+    }
 }
 
 #[cfg(test)]
@@ -399,5 +565,125 @@ mod tests {
         // Same error shape as a wrong code: a step-up form should
         // not leak whether MFA is enrolled.
         assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
+    }
+
+    #[test]
+    fn finish_webauthn_refuses_pending_with_wrong_kind() {
+        // A pending row tagged `Authenticate` (i.e. a login-MFA
+        // ceremony) must NOT satisfy a step-up gate, even if the
+        // user_id matches and the row hasn't expired. This test
+        // pins that invariant — the kind check is the *whole*
+        // reason migration 0013 widened the CHECK constraint.
+        use sui_id_store::models::{WebauthnPendingKind, WebauthnPendingRow};
+        use sui_id_store::repos::webauthn_pending;
+        use sui_id_shared::ids::WebauthnPendingId;
+
+        let db = fresh_db();
+        let clock = crate::time::system_clock();
+        let uid = create_user(&db);
+        let session_id = fresh_session(&db, &clock, uid);
+        let pending_id = WebauthnPendingId::new();
+        let now = clock.now();
+        webauthn_pending::insert(
+            &db,
+            &WebauthnPendingRow {
+                id: pending_id,
+                kind: WebauthnPendingKind::Authenticate, // wrong kind
+                user_id: Some(uid),
+                state_json: "{}".into(),
+                expires_at: now + Duration::seconds(60),
+                created_at: now,
+            },
+        )
+        .expect("insert");
+
+        let issuer = "https://test.example";
+        // The credential JSON is moot — the kind check fails first.
+        let result = finish_webauthn(
+            &db,
+            &clock,
+            issuer,
+            uid,
+            session_id,
+            pending_id,
+            r#"{"id":"x","rawId":"x","type":"public-key","response":{}}"#,
+        );
+        assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
+
+        // The pending row is intact — refusing a step-up finish on
+        // an Authenticate row must not consume it, so the legitimate
+        // login-MFA flow that owns the row can still complete.
+        let still_there = webauthn_pending::get(&db, pending_id)
+            .expect("query")
+            .expect("row preserved");
+        assert_eq!(still_there.kind, WebauthnPendingKind::Authenticate);
+    }
+
+    #[test]
+    fn finish_webauthn_refuses_pending_for_other_user() {
+        // Even a kind = StepUp pending must be refused if it
+        // belongs to a different user. Prevents pending-id
+        // smuggling across sessions.
+        use sui_id_store::models::{WebauthnPendingKind, WebauthnPendingRow};
+        use sui_id_store::repos::webauthn_pending;
+        use sui_id_shared::ids::WebauthnPendingId;
+
+        let db = fresh_db();
+        let clock = crate::time::system_clock();
+        let real_owner = create_user(&db);
+        // Create a *different* user we'll pretend is the one
+        // signed in.
+        let imposter = {
+            let id = UserId::new();
+            let now = Utc::now();
+            users::create(
+                &db,
+                &sui_id_store::models::UserRow {
+                    id,
+                    username: "imposter".into(),
+                    display_name: None,
+                    is_admin: false,
+                    is_disabled: false,
+                    is_deleted: false,
+                    user_uuid: uuid::Uuid::new_v4(),
+                    created_at: now,
+                    updated_at: now,
+                    failed_login_count: 0,
+                    locked_until: None,
+                    email: None,
+                },
+            )
+            .expect("imposter");
+            id
+        };
+        let session_id = fresh_session(&db, &clock, imposter);
+        let pending_id = WebauthnPendingId::new();
+        let now = clock.now();
+        webauthn_pending::insert(
+            &db,
+            &WebauthnPendingRow {
+                id: pending_id,
+                kind: WebauthnPendingKind::StepUp,
+                user_id: Some(real_owner), // the rightful owner
+                state_json: "{}".into(),
+                expires_at: now + Duration::seconds(60),
+                created_at: now,
+            },
+        )
+        .expect("insert");
+
+        let result = finish_webauthn(
+            &db,
+            &clock,
+            "https://test.example",
+            imposter,
+            session_id,
+            pending_id,
+            r#"{"id":"x","rawId":"x","type":"public-key","response":{}}"#,
+        );
+        assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
+
+        // Pending row was NOT consumed — owner can still complete.
+        assert!(webauthn_pending::get(&db, pending_id).expect("query").is_some());
     }
 }

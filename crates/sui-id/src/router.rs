@@ -164,6 +164,14 @@ pub fn build_router(app: AppState) -> Router {
             "/me/security/step-up",
             get(crate::handlers::step_up::get).post(crate::handlers::step_up::post),
         )
+        .route(
+            "/me/security/step-up/webauthn/start",
+            post(crate::handlers::step_up::webauthn_start),
+        )
+        .route(
+            "/me/security/step-up/webauthn/finish",
+            post(crate::handlers::step_up::webauthn_finish),
+        )
         .route("/static/{*path}", get(crate::assets::serve))
         .with_state(app)
         // Security-headers middleware applies to *every* response,

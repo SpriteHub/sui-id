@@ -62,6 +62,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 12,
         sql: include_str!("./migrations/0012_users_email.sql"),
     },
+    Migration {
+        version: 13,
+        sql: include_str!("./migrations/0013_webauthn_step_up.sql"),
+    },
 ];
 
 /// The highest schema version this build of sui-id-store knows how to

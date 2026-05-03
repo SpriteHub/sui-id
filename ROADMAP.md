@@ -253,6 +253,20 @@ v0.10.1 / v0.10.2.
   stacking proofs without security gain. WebAuthn-based
   step-up is a follow-up; the current release supports TOTP
   and recovery codes.
+- WebAuthn step-up (v0.21.1). Closes the v0.21.0 gap for
+  passkey-only accounts: a user whose only second factor is
+  a registered passkey can now satisfy a step-up gate by
+  completing a WebAuthn assertion ceremony. Migration 0013
+  widens `webauthn_pending.kind` to allow `'step_up'`, so a
+  step-up ceremony can never be misused as a login-MFA
+  verification (and vice versa) even if a pending_id leaked
+  across contexts. Two new core functions
+  (`step_up::start_webauthn` / `finish_webauthn`) thinly wrap
+  the existing assertion-flow code in `webauthn.rs` rather
+  than duplicating it. Two new HTTP endpoints
+  (`/me/security/step-up/webauthn/start` and `/finish`),
+  a per-ceremony pending-id cookie, and a small
+  `step-up-webauthn.js` driver complete the user-facing flow.
 
 ## Explicitly **not** on the roadmap
 

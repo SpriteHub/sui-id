@@ -5,6 +5,138 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.1] - 2026-05-02
+
+WebAuthn step-up. Users with passkeys but no TOTP enrolled can
+now satisfy a step-up gate by completing a WebAuthn assertion
+ceremony, the same kind they use to sign in. The TOTP / recovery-
+code path landed in v0.21.0; this release closes the gap for
+passkey-only accounts.
+
+### Why
+
+The v0.21.0 step-up gate calls `step_up::verify_totp_code`,
+which requires TOTP enrolment. A user whose only second factor
+is a passkey would hit `InvalidCredentials` and have no path
+forward — short of registering a TOTP solely to clear the gate.
+That defeats the security model: the user's passkey is at least
+as strong as the TOTP they don't have, so it should satisfy the
+gate too.
+
+### Added
+
+#### `core::step_up::start_webauthn` / `finish_webauthn`
+
+Thin wrappers around the existing `webauthn::start_authentication`
+/ `finish_authentication` that already work as pure functions.
+Differences:
+- The pending row is tagged `WebauthnPendingKind::StepUp` so a
+  step-up ceremony can never be misused as a login-MFA
+  verification (and vice versa) even if a pending_id leaked
+  across contexts.
+- On success, `touch_step_up` is called; no new session is
+  minted.
+- `finish_webauthn` refuses pending rows whose `kind` isn't
+  `StepUp`, and refuses rows whose `user_id` doesn't match the
+  signed-in user — the wrong-shape pending row is left intact
+  in either case so the legitimate flow that owns it can still
+  complete.
+
+#### Migration 0013: `webauthn_pending.kind` widened
+
+The `kind` CHECK constraint on `webauthn_pending` originally
+allowed `'register'` and `'authenticate'`. Migration 0013
+rebuilds the table with `'step_up'` added. SQLite doesn't
+support direct CHECK alteration, so the rebuild dance: copy
+into a new table, drop the old, rename. Pending rows are
+short-lived (5-minute TTL) so any in-flight ceremony at
+migration time is no worse than a one-time retry.
+`MAX_SCHEMA_VERSION` rolls to 13.
+
+#### `WebauthnPendingKind::StepUp` enum variant
+
+Round-trips through the existing `as_str` / `parse` helpers as
+the wire string `"step_up"`.
+
+#### HTTP endpoints
+
+- `POST /me/security/step-up/webauthn/start` — verify CSRF,
+  begin the ceremony, set the pending-id in the
+  `sui_id_step_up_webauthn_pending` HTTP-only cookie, return
+  the challenge JSON.
+- `POST /me/security/step-up/webauthn/finish` — verify CSRF,
+  read the pending-id from the cookie, run
+  `step_up::finish_webauthn`. On success, clear the pending
+  cookie and 303 to `return_to`. On failure, clear the
+  pending cookie and 400 with a JSON error so the JS can
+  surface the message without navigating.
+
+The pending-id cookie is HTTP-only, SameSite=Lax, `Secure`
+when configured, 5-minute max-age. Choosing a cookie over
+returning the id in the response body ensures the browser
+can't be tricked into binding a different ceremony's id to
+the finish call.
+
+#### `/static/step-up-webauthn.js`
+
+The browser-side script that drives the ceremony. Identical
+shape to `webauthn.js`'s authentication flow — base64url
+encode/decode helpers, navigator.credentials.get(), POST to
+finish. Loaded only on `/me/security/step-up` and only when
+the user has a passkey enrolled.
+
+#### `render_step_up` gains a `has_passkey` parameter
+
+When the user has at least one registered passkey, the
+challenge page renders an additional "パスキーで再認証"
+section below a divider, with a button and the WebAuthn JS.
+When they don't, the section is omitted entirely so the JS
+asset isn't pulled in unnecessarily.
+
+#### Tests
+
+3 new core unit tests covering the negative paths that protect
+the step-up flow from cross-context misuse:
+
+- `finish_webauthn_refuses_pending_with_wrong_kind` — an
+  `Authenticate` pending row never satisfies a step-up finish,
+  and refusing it does not consume the row.
+- `finish_webauthn_refuses_pending_for_other_user` — even a
+  `StepUp` pending must belong to the requesting user.
+
+5 new e2e tests:
+
+- `step_up_form_shows_passkey_section_for_users_with_passkey`
+- `step_up_form_omits_passkey_section_for_users_without_passkey`
+- `step_up_webauthn_start_requires_csrf`
+- `step_up_webauthn_finish_without_pending_cookie_fails`
+- `step_up_webauthn_start_for_user_without_passkey_returns_bad_request`
+
+Full WebAuthn end-to-end flow (a real browser completing the
+ceremony) is not covered by tower-oneshot tests because
+webauthn-rs verifies a real cryptographic signature that needs
+a real authenticator. Manual verification with a hardware key
+or platform passkey covers that path.
+
+### Notes
+
+- The kind-swap-then-delegate trick in `finish_webauthn` (re-
+  writing the pending row from `StepUp` to `Authenticate`
+  before calling `webauthn::finish_authentication`, which kind-
+  checks against `Authenticate`) is deliberate: the
+  alternative would be duplicating the entire finish-authentication
+  body, including the credential-counter update logic, which
+  is exactly the kind of code we don't want to maintain twice.
+  The swap is internal and never observable from outside the
+  module.
+- WebAuthn credentials counter is updated by
+  `webauthn::finish_authentication` as part of the assertion,
+  so a successful step-up cycles the counter the same way a
+  login MFA cycle would.
+- The login MFA WebAuthn flow (kind = `Authenticate`) is
+  unchanged. Existing e2e and runtime behaviour for sign-in
+  with passkey is unaffected.
+
 ## [0.21.0] - 2026-05-02
 
 Step-up authentication. Sensitive admin and self-service actions

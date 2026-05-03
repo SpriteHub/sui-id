@@ -1,12 +1,18 @@
 //! Step-up challenge endpoints.
 //!
-//! Mounted at `/me/security/step-up`. Two routes:
+//! Mounted at `/me/security/step-up`. The user can satisfy the gate
+//! either by entering a TOTP / recovery code, or by completing a
+//! WebAuthn assertion against a registered passkey:
 //!
 //! - `GET  /me/security/step-up?return_to=<path>` — render the
-//!   challenge form (TOTP code or recovery code).
-//! - `POST /me/security/step-up` — verify the supplied code,
-//!   touch `sessions.last_step_up_at`, redirect back to
-//!   `return_to`.
+//!   challenge page (TOTP form + WebAuthn button when applicable).
+//! - `POST /me/security/step-up` — verify a TOTP / recovery code,
+//!   touch `sessions.last_step_up_at`, redirect back to `return_to`.
+//! - `POST /me/security/step-up/webauthn/start` — begin a WebAuthn
+//!   ceremony; returns the challenge JSON for the browser.
+//! - `POST /me/security/step-up/webauthn/finish` — verify the
+//!   browser's assertion, touch `sessions.last_step_up_at`, redirect
+//!   back to `return_to`.
 //!
 //! ## return_to validation
 //!
@@ -27,25 +33,22 @@
 //!   token, an "untrust this device" UI, and a binding policy —
 //!   all of which are independent features the simple step-up
 //!   model can be extended into later if we have a need.
-//! - We do *not* support WebAuthn here yet. The step-up TOTP /
-//!   recovery flow is enough to gate sensitive actions for any
-//!   account that has TOTP enrolled. WebAuthn-only accounts will
-//!   currently see an InvalidCredentials response on POST; the
-//!   only WebAuthn-only paths today are passkey-first sign-ins
-//!   that *also* register TOTP, which the UI strongly nudges
-//!   toward. Adding WebAuthn step-up is a follow-up that lifts
-//!   the assertion-flow code out of `webauthn.rs` into a shared
-//!   helper.
 
 use crate::errors::HttpError;
 use crate::handlers::{enforce_csrf, AppStateExt, SessionContext};
 use crate::{csrf, handlers::admin::with_csrf_cookie};
 use axum::extract::{Query, State};
-use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum_extra::extract::cookie::CookieJar;
-use serde::Deserialize;
+use axum::response::{Html, IntoResponse, Json, Redirect, Response};
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
+use serde::{Deserialize, Serialize};
 use sui_id_core::errors::CoreError;
+use sui_id_shared::ids::WebauthnPendingId;
 use sui_id_web::{Flash, FlashKind};
+
+/// Cookie name used to ferry the WebAuthn pending-ceremony id back
+/// to the finish endpoint. HTTP-only and short-lived (5 minutes,
+/// matching the pending row's TTL); cleared on success or failure.
+const WEBAUTHN_STEP_UP_COOKIE: &str = "sui_id_step_up_webauthn_pending";
 
 /// What we treat as a safe `return_to`: a path-only string that
 /// starts with `/`, doesn't double-slash (which a browser may
@@ -78,14 +81,16 @@ pub struct ReturnToQuery {
 
 pub async fn get(
     state_ext: AppStateExt,
-    _ctx: SessionContext,
+    ctx: SessionContext,
     jar: CookieJar,
     Query(q): Query<ReturnToQuery>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let return_to = sanitise_return_to(&q.return_to);
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_step_up(&return_to, token.clone(), None);
+    let has_passkey = sui_id_core::webauthn::has_credentials(&app.db, ctx.user_id)
+        .map_err(HttpError::html)?;
+    let html = sui_id_web::render_step_up(&return_to, token.clone(), has_passkey, None);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -124,14 +129,156 @@ pub async fn post(
         }
         Err(CoreError::InvalidCredentials) => {
             let token = csrf::ensure_token(&jar);
+            let has_passkey =
+                sui_id_core::webauthn::has_credentials(&app.db, ctx.user_id)
+                    .map_err(HttpError::html)?;
             let flash = Flash {
                 kind: FlashKind::Error,
                 text: "コードが正しくありません。もう一度入力してください。".into(),
             };
-            let html = sui_id_web::render_step_up(&return_to, token.clone(), Some(flash));
+            let html = sui_id_web::render_step_up(
+                &return_to,
+                token.clone(),
+                has_passkey,
+                Some(flash),
+            );
             let resp = (axum::http::StatusCode::BAD_REQUEST, Html(html)).into_response();
             Ok(with_csrf_cookie(resp, &app, &token))
         }
         Err(other) => Err(HttpError::html(other)),
+    }
+}
+
+// ---------- WebAuthn step-up ----------
+
+#[derive(Debug, Deserialize)]
+pub struct WebauthnStartForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    #[serde(default)]
+    pub return_to: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WebauthnStartResponse {
+    /// JSON the browser hands to navigator.credentials.get(). We
+    /// pass it as a string field so the client doesn't have to know
+    /// our internal representation: it just JSON.parse()s this.
+    pub challenge_json: String,
+}
+
+/// Begin a WebAuthn step-up ceremony. The handler stamps a short-
+/// lived HTTP-only cookie with the pending row id; the browser
+/// hands back the assertion to `webauthn_finish`, which reads the
+/// pending id from the same cookie. We don't return the pending id
+/// in the JSON because we don't want the browser to be able to
+/// re-bind to a different ceremony's id.
+pub async fn webauthn_start(
+    state_ext: AppStateExt,
+    ctx: SessionContext,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<WebauthnStartForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    enforce_csrf(&jar, Some(&form.csrf))?;
+    let _return_to = sanitise_return_to(&form.return_to); // validated for the
+                                                          // finish redirect, no
+                                                          // direct use here
+
+    let started = sui_id_core::step_up::start_webauthn(
+        &app.db,
+        &app.clock,
+        &app.config.server.issuer,
+        ctx.user_id,
+    )
+    .map_err(HttpError::html)?;
+
+    let pending_cookie = {
+        let mut c = Cookie::new(
+            WEBAUTHN_STEP_UP_COOKIE,
+            started.pending_id.to_string(),
+        );
+        c.set_path("/");
+        c.set_http_only(true);
+        c.set_same_site(SameSite::Lax);
+        c.set_secure(app.config.server.cookie_secure);
+        c.set_max_age(cookie::time::Duration::minutes(5));
+        c
+    };
+    let jar = jar.add(pending_cookie);
+    let body = WebauthnStartResponse {
+        challenge_json: started.challenge_json,
+    };
+    Ok((jar, Json(body)).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WebauthnFinishForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    /// The PublicKeyCredential JSON from navigator.credentials.get(),
+    /// stringified by the client.
+    pub credential: String,
+    #[serde(default)]
+    pub return_to: String,
+}
+
+pub async fn webauthn_finish(
+    state_ext: AppStateExt,
+    ctx: SessionContext,
+    jar: CookieJar,
+    axum::Form(form): axum::Form<WebauthnFinishForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    enforce_csrf(&jar, Some(&form.csrf))?;
+    let return_to = sanitise_return_to(&form.return_to);
+
+    // Pull the pending id from the cookie. If it's missing or
+    // malformed we treat the whole ceremony as failed and ask the
+    // user to start over — same shape as webauthn-rs failures.
+    let pending_id_str = jar
+        .get(WEBAUTHN_STEP_UP_COOKIE)
+        .map(|c| c.value().to_owned())
+        .ok_or_else(|| HttpError::html(CoreError::InvalidCredentials))?;
+    let pending_id: WebauthnPendingId = pending_id_str
+        .parse()
+        .map_err(|_| HttpError::html(CoreError::InvalidCredentials))?;
+
+    let result = sui_id_core::step_up::finish_webauthn(
+        &app.db,
+        &app.clock,
+        &app.config.server.issuer,
+        ctx.user_id,
+        ctx.session_id,
+        pending_id,
+        &form.credential,
+    );
+
+    // Always clear the pending cookie — success and failure alike
+    // burn the ceremony.
+    let cleared = {
+        let mut c = Cookie::new(WEBAUTHN_STEP_UP_COOKIE, "");
+        c.set_path("/");
+        c.set_http_only(true);
+        c.set_same_site(SameSite::Lax);
+        c.set_secure(app.config.server.cookie_secure);
+        c.set_max_age(cookie::time::Duration::seconds(0));
+        c
+    };
+    let jar = jar.add(cleared);
+
+    match result {
+        Ok(()) => Ok((jar, Redirect::to(&return_to)).into_response()),
+        Err(_) => {
+            // 400 with a JSON error so the client-side script can
+            // surface it ("再認証に失敗しました。もう一度お試しください。")
+            // without the page navigating away.
+            let resp = (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "step_up_failed"})),
+            )
+                .into_response();
+            Ok((jar, resp).into_response())
+        }
     }
 }

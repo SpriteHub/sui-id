@@ -2400,10 +2400,34 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>) -> S
 // user on the single thing the page is asking for: a TOTP / passkey
 // proof to unlock the next sensitive action.
 
-pub fn render_step_up(return_to: &str, csrf_token: String, flash: Option<Flash>) -> String {
+pub fn render_step_up(
+    return_to: &str,
+    csrf_token: String,
+    has_passkey: bool,
+    flash: Option<Flash>,
+) -> String {
     let return_to = return_to.to_owned();
     render(move || {
         let return_to_for_input = return_to.clone();
+        let csrf_for_passkey = csrf_token.clone();
+        let return_to_for_passkey = return_to.clone();
+        let passkey_block = if has_passkey {
+            view! {
+                <hr class="divider" />
+                <p class="muted">"または、パスキーで再認証:"</p>
+                <form id="step-up-passkey-form" method="post"
+                      action="/me/security/step-up/webauthn/start"
+                      class="stack">
+                    <input type="hidden" name="_csrf" value=csrf_for_passkey />
+                    <input type="hidden" name="return_to" value=return_to_for_passkey />
+                    <button type="submit" class="secondary">"パスキーで再認証"</button>
+                </form>
+                <script src="/static/step-up-webauthn.js"></script>
+            }
+            .into_any()
+        } else {
+            view! { <></> }.into_any()
+        };
         view! {
             <Shell title="Step-up authentication".to_string() show_nav=false current=None>
                 <div class="auth-page">
@@ -2434,6 +2458,7 @@ pub fn render_step_up(return_to: &str, csrf_token: String, flash: Option<Flash>)
                                 <a href="/me/security" class="button secondary">"キャンセル"</a>
                             </div>
                         </form>
+                        {passkey_block}
                     </div>
                 </div>
             </Shell>
