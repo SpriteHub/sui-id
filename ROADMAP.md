@@ -28,6 +28,51 @@ v0.10.1 / v0.10.2.
 - **Pluggable user backends.** A read-only LDAP shim, perhaps. The
   current storage layer assumes sui-id owns the user table.
 - **Metrics.** A Prometheus endpoint behind admin auth.
+- **Multi-tenancy.** Today every client and every user share one
+  flat namespace. A tenant column threaded through the schema,
+  with admins scoped to their tenant, would open up B2B-style
+  deployments. The existing audit chain and cross-cutting
+  policies (lockout, rate limits) all need to become
+  tenant-aware first.
+- **Outbound-facing-third-party scenarios.** sui-id today is
+  designed for the "first-party" deployment model — every
+  registered OIDC client is an application the same operator
+  also runs. If we ever want to support the *other* posture —
+  third-party developers registering clients against this IdP,
+  end-users authorising those clients with their own data —
+  several capabilities have to land together as a single
+  coherent phase rather than as separate visual or schema
+  changes:
+    - **A consent screen.** The user must see "App X wants
+      access to scopes Y and Z" and be able to approve, refine,
+      or refuse. Either always-prompt or first-time-only with a
+      stored grant; first-time-only is the usual choice (it
+      matches the GitHub OAuth Apps shape) but needs a
+      `user_consent` table, a scope-diff check on subsequent
+      authorisations, and a UI on `/me/security` for the user
+      to revoke a consent later.
+    - **Dynamic client registration (RFC 7591).** Self-service
+      registration for third-party developers. Currently on the
+      "not on the roadmap" list specifically because it pulls
+      sui-id toward this posture; if we adopt the posture, the
+      ban is lifted.
+    - **Per-client scope policy refinement.** Today
+      `allowed_scopes` is a flat string. Sub-resource scopes
+      (`read:profile` vs `write:profile`) and labelled, human-
+      readable scope descriptions become important so the
+      consent screen can show "This will let App X *read* your
+      profile" rather than `read:profile`.
+    - **Application identity.** A logo, a homepage URL, a
+      privacy-policy URL per client — surfaced on the consent
+      screen so the user has the context to decide.
+    - **Refresh-token UX.** Long-lived refresh tokens against
+      third-party clients need a per-user "Active applications"
+      section on `/me/security` to revoke a specific client.
+  Treat this whole bundle as one tagged phase ("third-party
+  posture") rather than slicing it across releases. Splitting
+  it produces a half-built consent UI that is worse than the
+  current "no consent because all clients are first-party"
+  story.
 
 ## Done
 
@@ -191,12 +236,33 @@ v0.10.1 / v0.10.2.
   `docs/operators.md`. If a master-key rotation feature lands
   later it will be a CLI command, not a UI on a running
   process.
+- Step-up authentication (v0.21.0). Sensitive admin and
+  self-service actions gate on a fresh strong-factor proof:
+  an MFA-enrolled user who hasn't completed a TOTP / recovery-
+  code challenge in the last 5 minutes is bounced through
+  `/me/security/step-up` before the action proceeds.
+  Gated handlers: `me_security::revoke_all_others`,
+  `admin::users_delete`, `admin::users_mfa_reset`,
+  `admin::clients_delete`, `admin::signing_keys_rotate`,
+  `admin::signing_keys_delete`. No-MFA users pass through
+  transparently (a password re-prompt buys nothing against an
+  attacker who has the cookie and password). Reversible
+  operations (disable user, disable client) and operations
+  whose primary credential gate is the user's own password
+  (password change) are deliberately not gated, to avoid
+  stacking proofs without security gain. WebAuthn-based
+  step-up is a follow-up; the current release supports TOTP
+  and recovery codes.
 
 ## Explicitly **not** on the roadmap
 
 - SAML.
 - Implicit or hybrid OIDC flows.
-- Dynamic client registration (RFC 7591) over the public internet.
+- Dynamic client registration (RFC 7591) over the public internet,
+  *while sui-id remains in the first-party deployment model*.
+  See the "outbound-facing-third-party scenarios" entry under
+  "Longer term, less certain" for what would have to land
+  together to lift this restriction.
 - A built-in clustering / multi-master mode.
 
 The "not" list is not a list of bad ideas. It is a list of things that pull

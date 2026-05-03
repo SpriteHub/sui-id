@@ -2392,3 +2392,51 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>) -> S
         }
     })
 }
+
+// ---------- /me/security/step-up (v0.21.0) ----------
+//
+// Step-up challenge form. Renders inside the same chrome the rest
+// of /me/* uses, but with a narrower main column to focus the
+// user on the single thing the page is asking for: a TOTP / passkey
+// proof to unlock the next sensitive action.
+
+pub fn render_step_up(return_to: &str, csrf_token: String, flash: Option<Flash>) -> String {
+    let return_to = return_to.to_owned();
+    render(move || {
+        let return_to_for_input = return_to.clone();
+        view! {
+            <Shell title="Step-up authentication".to_string() show_nav=false current=None>
+                <div class="auth-page">
+                    <div class="auth-card">
+                        <h1>"再認証"</h1>
+                        <p class="muted">
+                            "セキュリティ上重要な操作を行う前に、認証アプリのコードで本人確認をお願いします。"
+                            "短時間(5 分間)有効です。"
+                        </p>
+                        {flash_banner(flash)}
+                        <form method="post" action="/me/security/step-up"
+                              autocomplete="off" class="stack">
+                            <input type="hidden" name="_csrf" value=csrf_token />
+                            <input type="hidden" name="return_to" value=return_to_for_input />
+                            <div class="field">
+                                <label for="code" class="field__label">"確認コード"</label>
+                                <input id="code" name="code" type="text"
+                                       required=true
+                                       autocomplete="one-time-code"
+                                       inputmode="text"
+                                       autofocus=true />
+                                <span class="field__hint">
+                                    "認証アプリの 6 桁コード、またはリカバリーコード。"
+                                </span>
+                            </div>
+                            <div class="row">
+                                <button type="submit">"確認"</button>
+                                <a href="/me/security" class="button secondary">"キャンセル"</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </Shell>
+        }
+    })
+}

@@ -293,7 +293,7 @@ pub fn verify_pending_webauthn(
     Ok(session)
 }
 
-fn consume_recovery_code(
+pub(crate) fn consume_recovery_code(
     db: &Database,
     user_id: UserId,
     totp_row: &sui_id_store::models::UserTotpRow,

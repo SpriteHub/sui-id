@@ -127,6 +127,65 @@ pub fn touch_step_up(
     Ok(())
 }
 
+/// Verify a TOTP code (or single-use recovery code) entered into a
+/// step-up form by an already-signed-in user.
+///
+/// Unlike [`crate::mfa::verify_pending`], this does **not** create
+/// a new session — the user already has one. On success it updates
+/// `last_step_up_at` on the supplied session and returns
+/// `Ok(())`. On failure it returns `Err(CoreError::InvalidCredentials)`
+/// without revealing whether the code was wrong, expired, or never
+/// configured: a step-up form should look the same to a user with
+/// a typo as to an attacker probing whether MFA is enabled.
+///
+/// Recovery codes are accepted here for the same reason they're
+/// accepted on the login MFA challenge: a user who has lost their
+/// authenticator app needs *some* path to perform a destructive
+/// action. The code is consumed (single-use) on a hit.
+pub fn verify_totp_code(
+    db: &Database,
+    clock: &SharedClock,
+    user_id: UserId,
+    session_id: SessionId,
+    code_input: &str,
+) -> CoreResult<()> {
+    use crate::errors::CoreError;
+    use crate::mfa;
+    use crate::totp;
+    use zeroize::Zeroize;
+
+    let totp_row = user_totp::get(db, user_id)?
+        .ok_or(CoreError::InvalidCredentials)?;
+    if !totp_row.enabled {
+        return Err(CoreError::InvalidCredentials);
+    }
+
+    let trimmed = code_input.trim();
+    let accepted = if let Ok(digits) = trimmed.parse::<u32>() {
+        let mut secret = user_totp::decrypt_secret(db, &totp_row)?;
+        let now = clock.now().timestamp();
+        let result = totp::verify(&secret, now, digits, totp_row.last_used_step);
+        secret.zeroize();
+        match result {
+            Some(step) => {
+                user_totp::set_last_used_step(db, user_id, step)?;
+                true
+            }
+            None => false,
+        }
+    } else {
+        // Recovery code path — same shape as in `mfa::verify_pending`.
+        mfa::consume_recovery_code(db, user_id, &totp_row, trimmed)?
+    };
+
+    if !accepted {
+        return Err(CoreError::InvalidCredentials);
+    }
+
+    touch_step_up(db, clock, session_id)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,5 +318,86 @@ mod tests {
         touch_step_up(&db, &clock, session_id).expect("touch");
         let row = sessions::get(&db, session_id).expect("get");
         assert!(row.last_step_up_at.is_some());
+    }
+
+    fn fresh_session(db: &Database, clock: &SharedClock, uid: UserId) -> SessionId {
+        use sui_id_store::models::SessionRow;
+        let session_id = SessionId::new();
+        let now = clock.now();
+        sessions::insert(
+            db,
+            &SessionRow {
+                id: session_id,
+                user_id: uid,
+                expires_at: now + Duration::hours(8),
+                created_at: now,
+                revoked_at: None,
+                auth_methods: vec![sui_id_shared::AuthMethod::Pwd],
+                last_step_up_at: None,
+            },
+        )
+        .expect("insert session");
+        session_id
+    }
+
+    #[test]
+    fn verify_totp_code_with_correct_code_marks_session_fresh() {
+        use crate::totp;
+        let db = fresh_db();
+        let clock = crate::time::system_clock();
+        let uid = create_user(&db);
+        // Enrol TOTP with a known secret so we can compute the
+        // expected code locally.
+        let secret = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09";
+        user_totp::upsert_pending(&db, uid, secret).expect("pending");
+        user_totp::confirm_with_recovery(&db, uid, b"[]").expect("confirm");
+
+        let session_id = fresh_session(&db, &clock, uid);
+        let now = clock.now().timestamp();
+        let step = now / 30;
+        let code = totp::code_for_step(secret, step);
+
+        verify_totp_code(&db, &clock, uid, session_id, &code.to_string())
+            .expect("verify ok");
+
+        let row = sessions::get(&db, session_id).expect("get");
+        assert!(row.last_step_up_at.is_some(), "session should be fresh");
+    }
+
+    #[test]
+    fn verify_totp_code_with_wrong_code_does_not_touch_session() {
+        let db = fresh_db();
+        let clock = crate::time::system_clock();
+        let uid = create_user(&db);
+        let secret = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09";
+        user_totp::upsert_pending(&db, uid, secret).expect("pending");
+        user_totp::confirm_with_recovery(&db, uid, b"[]").expect("confirm");
+
+        let session_id = fresh_session(&db, &clock, uid);
+
+        // Pass a code that's almost certainly wrong (a fixed value
+        // that's unlikely to coincide with the real one — and even
+        // if it did, the next pass would still be wrong).
+        let result = verify_totp_code(&db, &clock, uid, session_id, "000000");
+        assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
+
+        let row = sessions::get(&db, session_id).expect("get");
+        assert!(
+            row.last_step_up_at.is_none(),
+            "session must NOT be marked fresh on a failed verify"
+        );
+    }
+
+    #[test]
+    fn verify_totp_code_for_user_without_totp_returns_invalid_credentials() {
+        let db = fresh_db();
+        let clock = crate::time::system_clock();
+        let uid = create_user(&db);
+        let session_id = fresh_session(&db, &clock, uid);
+
+        let result = verify_totp_code(&db, &clock, uid, session_id, "123456");
+        // Same error shape as a wrong code: a step-up form should
+        // not leak whether MFA is enrolled.
+        assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
     }
 }

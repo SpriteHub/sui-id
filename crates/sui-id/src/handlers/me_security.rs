@@ -193,19 +193,30 @@ pub async fn revoke_one(
 /// we honour the cookie.
 pub async fn revoke_all_others(
     state_ext: AppStateExt,
-    CurrentUser(user_id): CurrentUser,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Form(form): Form<RevokeAllOthersForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     enforce_csrf(&jar, Some(&form.csrf))?;
 
-    let raw_session = jar
-        .get(SESSION_COOKIE)
-        .map(|c| c.value().to_owned())
-        .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
-    let keep = SessionId::from_str(&raw_session)
-        .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
+    // Step-up gate: signing every other browser out at once is a
+    // significant action; require a fresh strong-factor proof.
+    // Users without MFA enrolled are passed through (the gate
+    // is a no-op for them — see step_up::policy_for_session
+    // doc comment for why a password re-prompt would buy
+    // nothing). After step-up the operator is bounced back to
+    // /me/security and can click the form again.
+    if let Err(redirect) = crate::handlers::require_fresh_step_up(
+        &app,
+        &ctx,
+        "/me/security",
+    ) {
+        return Ok(redirect);
+    }
+
+    let user_id = ctx.user_id;
+    let keep = ctx.session_id;
 
     let n = sessions::revoke_all_for_user_except(&app.db, user_id, keep)
         .map_err(|e| HttpError::html(e.into()))?;

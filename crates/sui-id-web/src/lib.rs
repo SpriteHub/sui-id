@@ -23,8 +23,9 @@ pub use pages::{
     render_password_change, render_profile, render_settings_authentication,
     render_settings_basic, render_settings_logs, render_settings_other, render_settings_security,
     render_setup_admin, render_setup_done, render_setup_welcome, render_signing_keys,
-    render_users, ClientEditData, DashboardData, DashboardSparkBucket, DashboardSparkline, Flash,
-    FlashKind, MeAuditEntry, MeSecurityData, MeSessionDescriptor, MfaSetupData, PasskeyDescriptor,
-    PasswordChangeData, ProfileData, SettingsAuthenticationData, SettingsBasicData,
-    SettingsChainStatus, SettingsLogsData, SettingsOtherData, SettingsSecurityData, SettingsTab,
+    render_step_up, render_users, ClientEditData, DashboardData, DashboardSparkBucket,
+    DashboardSparkline, Flash, FlashKind, MeAuditEntry, MeSecurityData, MeSessionDescriptor,
+    MfaSetupData, PasskeyDescriptor, PasswordChangeData, ProfileData, SettingsAuthenticationData,
+    SettingsBasicData, SettingsChainStatus, SettingsLogsData, SettingsOtherData,
+    SettingsSecurityData, SettingsTab,
 };

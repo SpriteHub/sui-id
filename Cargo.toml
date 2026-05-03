@@ -9,14 +9,14 @@ members = [
 ]
 
 [workspace.package]
-version = "0.20.4"
+version = "0.21.0"
 edition = "2024"
 rust-version = "1.91"
 license = "Apache-2.0"
 repository = "https://github.com/nabbisen/sui-id"
 homepage = "https://github.com/nabbisen/sui-id"
 documentation = "https://docs.rs/sui-id"
-authors = ["nabbisen"]
+authors = ["nabbisen <nabbisen@scqr.net>"]
 keywords = ["oidc", "oauth2", "idaas", "identity", "authentication"]
 categories = ["authentication", "web-programming::http-server"]
 readme = "README.md"

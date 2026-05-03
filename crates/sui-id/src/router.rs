@@ -159,6 +159,11 @@ pub fn build_router(app: AppState) -> Router {
             get(crate::handlers::me_security::password_change_get)
                 .post(crate::handlers::me_security::password_change_post),
         )
+        // ---------- step-up auth (since v0.21.0) ----------
+        .route(
+            "/me/security/step-up",
+            get(crate::handlers::step_up::get).post(crate::handlers::step_up::post),
+        )
         .route("/static/{*path}", get(crate::assets::serve))
         .with_state(app)
         // Security-headers middleware applies to *every* response,

@@ -473,12 +473,18 @@ pub struct CsrfOnlyForm {
 pub async fn users_delete(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
     Form(form): Form<CsrfOnlyForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/users")
+    {
+        return Ok(redirect);
+    }
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
     admin_uc::delete_user(&app.db, admin_id, target).map_err(HttpError::html)?;
@@ -490,12 +496,18 @@ pub async fn users_delete(
 pub async fn users_mfa_reset(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
     Form(form): Form<CsrfOnlyForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/users")
+    {
+        return Ok(redirect);
+    }
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
     admin_uc::admin_reset_mfa(&app.db, admin_id, target).map_err(HttpError::html)?;
@@ -636,12 +648,18 @@ pub async fn clients_set_disabled(
 pub async fn clients_delete(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
     Form(form): Form<CsrfOnlyForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/clients")
+    {
+        return Ok(redirect);
+    }
     let target = ClientId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
     admin_uc::delete_client(&app.db, admin_id, target).map_err(HttpError::html)?;
@@ -787,11 +805,17 @@ pub async fn signing_keys_get(
 pub async fn signing_keys_rotate(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Form(form): Form<CsrfOnlyForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/signing-keys")
+    {
+        return Ok(redirect);
+    }
     admin_uc::rotate_signing_key(&app.db, &app.clock, admin_id).map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/signing-keys").into_response())
 }
@@ -799,12 +823,18 @@ pub async fn signing_keys_rotate(
 pub async fn signing_keys_delete(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
     Form(form): Form<CsrfOnlyForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/signing-keys")
+    {
+        return Ok(redirect);
+    }
     let target = sui_id_shared::ids::SigningKeyId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid signing key id".into())))?;
     admin_uc::delete_signing_key(&app.db, admin_id, target).map_err(HttpError::html)?;

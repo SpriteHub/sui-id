@@ -7,6 +7,7 @@ use crate::errors::HttpError;
 use crate::state::AppState;
 use axum::extract::{FromRef, FromRequestParts, State};
 use axum::http::request::Parts;
+use axum::response::IntoResponse;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use std::str::FromStr;
 use sui_id_core::errors::CoreError;
@@ -21,6 +22,7 @@ pub mod oauth_token;
 pub mod oidc;
 pub mod settings;
 pub mod setup;
+pub mod step_up;
 
 /// Cookie name for the in-flight WebAuthn ceremony id (used by both
 /// registration and authentication challenges). HttpOnly because the
@@ -142,6 +144,40 @@ where
             .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
         let user_id = session::resolve(&app.db, &app.clock, id).map_err(HttpError::html)?;
         Ok(CurrentUser(user_id))
+    }
+}
+
+/// Like `CurrentUser` but also exposes the session id, so handlers
+/// that need to operate on the session itself (revoke, step-up
+/// touch) don't have to re-parse the cookie. Both fields are
+/// validated through `session::resolve`, so by the time you have a
+/// `SessionContext` the session is known to be live and to belong
+/// to a real user.
+pub struct SessionContext {
+    pub user_id: UserId,
+    pub session_id: SessionId,
+}
+
+impl<S> FromRequestParts<S> for SessionContext
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = HttpError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let app: AppState = AppState::from_ref(state);
+        let jar = CookieJar::from_headers(&parts.headers);
+        let raw = jar
+            .get(SESSION_COOKIE)
+            .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
+        let id = SessionId::from_str(raw.value())
+            .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
+        let user_id = session::resolve(&app.db, &app.clock, id).map_err(HttpError::html)?;
+        Ok(SessionContext {
+            user_id,
+            session_id: id,
+        })
     }
 }
 
@@ -353,3 +389,81 @@ use sui_id_core::time::SharedClock;
 // `cookie::time` is re-exported by the `cookie` crate which axum-extra
 // depends on. We bring it in via the public path.
 use cookie::time as cookie_time;
+
+// ---------- Step-up gate (v0.21.0) ----------
+//
+// `require_fresh_step_up` is the entry point handlers call right
+// after extracting `SessionContext` and before doing the sensitive
+// thing. It looks up the session's `last_step_up_at` and asks the
+// core policy whether it's fresh. On Allow, it returns Ok and the
+// caller proceeds. On Challenge, it returns an `Err(HttpError)`
+// whose response is a 303 redirect to `/me/security/step-up?
+// return_to=<current path>` — the user lands on the challenge form,
+// completes a TOTP / passkey verify, and is bounced back to the
+// original action.
+//
+// The freshness window default lives in `step_up::STEP_UP_FRESHNESS_SECS`
+// (5 minutes). We expose it as a function rather than a const here so
+// that an operator-controlled override can be wired in via Config
+// later without touching every call site.
+
+/// Gate the next action on a fresh step-up. Returns `Ok(())` if
+/// the session has completed a step-up challenge within the
+/// freshness window (or the user has no MFA enrolled, in which
+/// case step-up is a no-op — see `step_up::policy_for_session`).
+/// Returns `Err(Response)` carrying a 303 redirect to the
+/// challenge page otherwise — the caller's idiom is:
+///
+/// ```ignore
+/// if let Err(redirect) = require_fresh_step_up(&app, &ctx, "/me/security") {
+///     return Ok(redirect);
+/// }
+/// // ...do the sensitive thing...
+/// ```
+///
+/// We don't try to use `?` for this because the redirect isn't an
+/// error in the application sense (the handler is doing exactly
+/// what it should); it's just an alternative response.
+pub fn require_fresh_step_up(
+    app: &AppState,
+    ctx: &SessionContext,
+    return_to: &str,
+) -> Result<(), axum::response::Response> {
+    let session_row = match sui_id_store::repos::sessions::get(&app.db, ctx.session_id) {
+        Ok(r) => r,
+        Err(e) => {
+            // Genuine DB error or the session vanished. Punt to
+            // the auth-failed page rather than the step-up page —
+            // it would be confusing to offer "verify yourself"
+            // when we can't even read your session.
+            return Err(HttpError::html(CoreError::from(e)).into_response());
+        }
+    };
+    let decision = match sui_id_core::step_up::policy_for_session(
+        &app.db,
+        &app.clock,
+        ctx.user_id,
+        session_row.last_step_up_at,
+        sui_id_core::step_up::STEP_UP_FRESHNESS_SECS,
+    ) {
+        Ok(d) => d,
+        Err(e) => return Err(HttpError::html(e).into_response()),
+    };
+    match decision {
+        sui_id_core::step_up::StepUpDecision::Allow => Ok(()),
+        sui_id_core::step_up::StepUpDecision::Challenge => {
+            // We URL-encode the return path. `return_to` is a path
+            // relative to our own origin; the step-up handler
+            // validates that on the way out so a malicious
+            // `?return_to=https://attacker.example/...` can't be
+            // used to bounce a user off-site after a successful
+            // challenge.
+            let encoded: String =
+                url::form_urlencoded::byte_serialize(return_to.as_bytes()).collect();
+            let redirect = axum::response::Redirect::to(&format!(
+                "/me/security/step-up?return_to={encoded}"
+            ));
+            Err(redirect.into_response())
+        }
+    }
+}

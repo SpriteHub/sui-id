@@ -5,6 +5,154 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-05-02
+
+Step-up authentication. Sensitive admin and self-service actions
+now gate on a fresh strong-factor proof: an MFA-enrolled user
+who hasn't completed a TOTP / recovery-code challenge in the
+last 5 minutes is bounced through `/me/security/step-up` before
+the action proceeds. The schema groundwork for this landed in
+v0.17.0 (migration 0010, `sessions.last_step_up_at`); v0.21.0
+wires the gate into the HTTP layer and the affected handlers.
+
+### What "step-up" means here
+
+A regular session is fine for routine reads (the dashboard,
+profile, audit log). It is *not*, on its own, enough to authorise
+a destructive or security-relevant action — rotate a signing key,
+delete a user, force-reset another user's MFA, sign every other
+browser out at once. The threat model is **session theft**:
+someone who has stolen a cookie can navigate the UI, but
+should not be able to immediately ratchet that into permanent
+damage.
+
+The freshness window is intentionally short (5 minutes,
+`STEP_UP_FRESHNESS_SECS`). Long enough to absorb a sequence of
+related admin actions in one cleanup pass, short enough that a
+session stolen after the last step-up will be re-challenged.
+
+### Added
+
+#### `core::step_up::verify_totp_code`
+
+Verify a TOTP code (or single-use recovery code) entered into a
+step-up form by an already-signed-in user. Distinct from
+`mfa::verify_pending`:
+- Does **not** create a new session (the user already has one).
+- On success, calls `touch_step_up` to bump the session's
+  `last_step_up_at`.
+- On failure, returns `CoreError::InvalidCredentials` for both
+  "wrong code" and "user has no MFA enrolled" — a step-up form
+  must look the same to a typo as to a probe.
+- Recovery codes are accepted on the same shape as the login
+  flow, single-use; same `mfa::consume_recovery_code` helper
+  (now `pub(crate)`).
+
+3 unit tests cover correct code, wrong code (no session touch),
+and no-MFA user (same error shape).
+
+#### `handlers::SessionContext` extractor
+
+Like `CurrentUser` but also carries `session_id`. The step-up
+gate needs to read the session row for `last_step_up_at`, so
+handlers that participate in step-up extract this instead of
+`CurrentUser`.
+
+#### `handlers::require_fresh_step_up(app, ctx, return_to)`
+
+The gate. Returns `Ok(())` when the session is fresh (or the
+user has no MFA enrolled, in which case step-up is a no-op),
+or `Err(Response)` carrying a 303 redirect to the challenge
+page. Idiom:
+
+```rust
+if let Err(redirect) = require_fresh_step_up(&app, &ctx, "/admin/users") {
+    return Ok(redirect);
+}
+// ...do the sensitive thing...
+```
+
+`return_to` is URL-encoded into the challenge URL so the user is
+bounced back to the original action after a successful prove.
+
+#### `/me/security/step-up` HTTP endpoint
+
+- `GET /me/security/step-up?return_to=<path>` renders the
+  challenge form (TOTP / recovery code input) inside an
+  `AuthShell`, narrow column, focused.
+- `POST /me/security/step-up` accepts the code, calls
+  `step_up::verify_totp_code`, and on success 303-redirects
+  to the sanitised `return_to`.
+
+#### `return_to` validation (`sanitise_return_to`)
+
+A defensive whitelist on the redirect target. Refuses:
+- empty / non-`/`-leading paths;
+- `//` (protocol-relative URLs);
+- `\\`;
+- backslash, line break, or NUL anywhere;
+collapsing any of the above to `/me/security`. Off-site
+redirects after a successful prove are the worst possible
+outcome — better an undisputed safe default than a clever
+attempt at preserving the user's intent.
+
+### Changed — handlers gated on fresh step-up
+
+The handlers chosen are the irreversible / system-wide-impact
+ones. Reversible operations (disable user, disable client) and
+operations whose primary credential gate is the user's own
+password (password change) are deliberately not gated, to
+avoid stacking proofs without a meaningful security gain.
+
+| Handler | Why gated |
+|---|---|
+| `me_security::revoke_all_others` | Signs every other browser out at once; significant blast radius even though revocations aren't "irreversible", recovery cost on other devices is high. |
+| `admin::users_delete` | Irreversible. |
+| `admin::users_mfa_reset` | Strips another user's MFA factors; high-trust operation. |
+| `admin::clients_delete` | Irreversible; in-flight tokens for the client also revoked. |
+| `admin::signing_keys_rotate` | System-wide impact (changes which key signs new tokens). |
+| `admin::signing_keys_delete` | Tokens already issued under the deleted key fail to verify. |
+
+### Behaviour for no-MFA admins
+
+An admin who has never enrolled MFA (TOTP or WebAuthn) sees
+no change: `policy_for_session` returns `Allow` for them, and
+the gate is a no-op. This is deliberate — a step-up challenge
+for a password-only account would be a password re-prompt,
+which buys nothing against an attacker who already has the
+cookie *and* the password. The `admin_with_no_mfa_passes_step_up_gate_transparently`
+e2e test pins this behaviour against future refactors.
+
+### Tests
+
+- 3 new core unit tests (`verify_totp_code_*`) bringing the
+  step_up module to 8 tests total.
+- 7 new e2e tests covering the gate, the form, the `return_to`
+  sanitiser (3 cases: friendly path, off-site, protocol-
+  relative), the verify happy path, the wrong-code failure
+  shape, the gate firing on a sensitive action with stale
+  step-up, and the no-MFA pass-through.
+- All existing e2e (90+) continue to pass without changes
+  because they run with the no-MFA test admin.
+
+### Notes
+
+- WebAuthn-based step-up is **not** in this release. TOTP /
+  recovery code is enough to gate sensitive actions for any
+  account that has TOTP enrolled. WebAuthn step-up requires
+  lifting the assertion-flow code out of `webauthn.rs` into a
+  shared helper; that's a follow-up.
+- The freshness window (5 minutes) is currently a constant
+  in `step_up::STEP_UP_FRESHNESS_SECS`. If we ever expose it
+  to operators it'll go through `Config.security` so the
+  setting survives a restart.
+- A "remember this device for 30 days" flow is *not* on the
+  table. The freshness model is intentionally per-session, not
+  per-device; cross-device persistence would need a per-device
+  trust token, an "untrust this device" UI, and a binding
+  policy — three independent features the simple model can be
+  extended into later if a need lands.
+
 ## [0.20.4] - 2026-05-02
 
 3-step setup wizard at `/setup` → `/setup/admin` → `/setup/done`.
