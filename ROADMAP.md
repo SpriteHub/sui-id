@@ -428,6 +428,17 @@ rather than new auth primitives.
   tokens, TOTP secrets, TOTP recovery codes, WebAuthn
   passkeys, and the SMTP password. Hot/online rotation was
   rejected as the wrong cost-vs-complexity trade for an IdP.
+- Threat-model refresh (v0.27.0). `docs/threat-model.md`
+  rewritten from scratch to cover every defence shipped
+  through v0.26.0. Five-part structure: Foundations, twelve
+  Threat scenarios, eight Defensive properties, Detailed
+  concerns (STRIDE breakdown, account-takeover attack-tree
+  fragment, GDPR / SOC 2 / ISO 27001 / NIST 800-63B / OWASP
+  ASVS V2 compliance hints, auditor FAQ), and Known
+  limitations. Three reader profiles addressed explicitly
+  (operators / developers, security auditors, enterprise
+  adopters). Documentation-only release — no source changes,
+  all tests continue to pass.
 
 ## Explicitly **not** on the roadmap
 

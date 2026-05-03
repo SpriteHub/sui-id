@@ -5,6 +5,123 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.27.0] - 2026-05-04
+
+Threat-model document refresh. The previous `docs/threat-model.md`
+predated the v0.20.x design overhaul and the v0.21–v0.26 security
+features (step-up authentication, email flows, multilingual UI,
+HIBP integration, idle-session timeout / concurrent-session cap,
+master-key rotation). v0.27.0 replaces it with a from-scratch
+rewrite that reflects every defence shipped through v0.26.0 and
+introduces structure for three different reader profiles
+(operators / developers, security auditors, enterprise adopters).
+
+### Why a full rewrite
+
+The previous document was structured around fourteen adversaries
+in a flat list (A1–A14), each with its own defence narrative.
+Patch-style updates to it would have produced something
+increasingly hard to read: v0.21's step-up touches several
+adversaries, v0.22's email features add new attack surfaces, and
+so on. A clean rewrite lets the design philosophy that emerged
+across v0.20–v0.26 — column-encryption AAD binding, master-key
+separation, fail-open external dependencies, FIFO eviction,
+post-incident rotation — show up as architectural invariants in
+their own right.
+
+### Structure
+
+The new document is organised into five parts plus a reporting
+section:
+
+- **Part 1 — Foundations.** Scope, trust boundaries
+  (six interfaces with the outside world), adversary taxonomy
+  (N / C / L / L+K / B), asset taxonomy (six classes of
+  secret).
+- **Part 2 — Threat scenarios.** Twelve scenarios, each with a
+  consistent shape: what the attacker is trying to do, how
+  they would attempt it, the adversary class, the defences
+  that block or bound the attack, and the residual risk that
+  remains. Scenarios cover credential stuffing, token grinding,
+  session hijack, account enumeration, CSRF, stolen DB,
+  stolen DB + master key, phishing reset, hostile HIBP, SMTP
+  credential leak, intercepted backups, and signing-key
+  compromise.
+- **Part 3 — Defensive properties.** Eight architectural
+  invariants that hold across all features: master-key
+  separation, AAD binding, refresh-token theft detection,
+  audit-log hash chain, step-up freshness, user-enumeration
+  neutrality, idle-timeout throttle, and the workspace-level
+  `unsafe_code = forbid`.
+- **Part 4 — Detailed concerns.** STRIDE-style breakdown
+  (spoofing / tampering / repudiation / information disclosure
+  / denial of service / elevation of privilege), an
+  attack-tree fragment for "account takeover" mapping each
+  leaf to a Part 2 scenario or Part 3 property, compliance
+  hints for GDPR, SOC 2 type II / ISO 27001, NIST 800-63B,
+  and OWASP ASVS V2, and a short auditor FAQ. Marked as
+  "skippable for operators on first read".
+- **Part 5 — Known limitations and future work.** Adversaries
+  we don't plan for, limitations we intend to fix (with
+  pointers into ROADMAP), and things explicitly out of scope.
+- **Reporting security issues.** Channel for vulnerability
+  reports, target acknowledgement window (48 hours),
+  high-severity fix window (two weeks).
+
+### Reader-profile separation
+
+Three audiences read the document for different reasons. The
+opening paragraph spells out which parts each profile should
+read:
+
+- Operators / developers: Parts 1–3, Part 4 optional.
+- Security auditors: Parts 1–4 in order.
+- Enterprise adopters: Parts 1, 4, 5 are highest density.
+
+This keeps Part 4's STRIDE / attack-tree / compliance material
+out of the operator's path while making it easy to find for the
+auditors and enterprise reviewers who specifically come looking
+for it.
+
+### What's in the document that wasn't before
+
+- **Architectural invariants** (Part 3) as a first-class
+  section. Properties like AAD binding and the audit hash-chain
+  formula now have names callable by reference from Part 2
+  scenarios.
+- **STRIDE breakdown** (4.1) — six categories, each pointing
+  back into the Part 2 scenarios that defend against it.
+- **Attack-tree fragment** (4.2) — the "account takeover"
+  goal decomposed into 13 leaves, each annotated with the
+  scenario or property that bounds it.
+- **Compliance hints** (4.3) for GDPR, SOC 2 / ISO 27001,
+  NIST 800-63B, OWASP ASVS V2.
+- **Auditor FAQ** (4.4) — six common questions about RNG
+  source, password hashing, TLS posture, session lifetime,
+  MFA policy, and HSM integration.
+- **Coverage of every feature shipped between v0.20.0 and
+  v0.26.0**, in particular: setup wizard / email column
+  (v0.20.x), step-up authentication (v0.21.x), email flows
+  + SMTP credential storage (v0.22.0), multilingual UI
+  (v0.23.0), Pwned Passwords integration (v0.24.0), idle
+  timeout + concurrent cap (v0.25.0), master-key rotation
+  (v0.26.0).
+
+### Notes — what was removed from the previous document
+
+- The flat A1–A14 adversary list was reorganised into the
+  five adversary classes (N / C / L / L+K / B). Information
+  is preserved; the classes are referenced from each Part 2
+  scenario.
+- The old "What to monitor" section's content moved into the
+  audit / hash-chain discussion (3.4).
+- The previous reporting section's content is preserved
+  near-verbatim at the bottom of the new document.
+
+No code changes; this is a documentation-only release. Build,
+all 188 lib tests, and all e2e tests continue to pass without
+modification.
+
 ## [0.26.0] - 2026-05-04
 
 Master-key rotation CLI. Re-seal every encrypted column in the
