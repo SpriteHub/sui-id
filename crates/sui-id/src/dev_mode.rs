@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 
 use sui_id_core::admin::{create_client, create_user, CreateClientSpec, CreateUserSpec};
 use sui_id_core::setup::create_initial_admin;
-use sui_id_core::time::{system_clock, SharedClock};
+use sui_id_core::time::SharedClock;
 use sui_id_store::crypto::MasterKey;
 use sui_id_store::Database;
 

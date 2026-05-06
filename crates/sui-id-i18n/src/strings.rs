@@ -1,0 +1,308 @@
+//! Translatable string table.
+//!
+//! Adding a new translatable text means adding a field here. The
+//! exhaustive struct literal in each `static STRINGS_*` constant
+//! (see [`crate::ja`], [`crate::en`]) then fails to compile until
+//! every locale supplies a value, which is what gives us
+//! "translation completeness" as a compile-time guarantee.
+
+/// All translatable UI strings.
+///
+/// Keep field names descriptive — the field name is what shows up
+/// at every call site, and `t.login_button_submit` is much easier
+/// to grep for than `t.s127`.
+///
+/// Group fields by area with section comments. When a string has
+/// variable interpolation, expose it as a method below the struct
+/// (`impl Strings { pub fn n_outstanding_tokens(...) }`) rather
+/// than as a field.
+pub struct Strings {
+    // ---- Generic UI ----
+    pub button_save: &'static str,
+    pub button_cancel: &'static str,
+    pub button_back: &'static str,
+    pub button_continue: &'static str,
+    pub button_delete: &'static str,
+    pub button_create: &'static str,
+    pub button_confirm: &'static str,
+    pub button_test: &'static str,
+    pub badge_enabled: &'static str,
+    pub badge_disabled: &'static str,
+    pub badge_ok: &'static str,
+    pub badge_warn: &'static str,
+    pub badge_error: &'static str,
+    pub label_optional: &'static str,
+    pub label_required: &'static str,
+    pub muted_none: &'static str,
+
+    // ---- Navigation ----
+    pub nav_dashboard: &'static str,
+    pub nav_users: &'static str,
+    pub nav_clients: &'static str,
+    pub nav_signing_keys: &'static str,
+    pub nav_audit: &'static str,
+    pub nav_settings: &'static str,
+    pub nav_profile: &'static str,
+    pub nav_logout: &'static str,
+
+    // ---- Login ----
+    pub login_title: &'static str,
+    pub login_username_label: &'static str,
+    pub login_password_label: &'static str,
+    pub login_submit: &'static str,
+    pub login_passkey_button: &'static str,
+    pub login_forgot_password_link: &'static str,
+    pub login_invalid_credentials: &'static str,
+    pub login_account_locked: &'static str,
+    pub login_reset_ok_banner: &'static str,
+
+    // ---- Setup wizard ----
+    pub setup_step_welcome: &'static str,
+    pub setup_step_admin: &'static str,
+    pub setup_step_done: &'static str,
+    pub setup_welcome_title: &'static str,
+    pub setup_welcome_lede: &'static str,
+    pub setup_welcome_lede2: &'static str,
+    pub setup_welcome_begin: &'static str,
+    pub setup_admin_title: &'static str,
+    pub setup_admin_lede: &'static str,
+    pub setup_admin_token_label: &'static str,
+    pub setup_admin_token_hint: &'static str,
+    pub setup_admin_username_label: &'static str,
+    pub setup_admin_email_label: &'static str,
+    pub setup_admin_email_hint: &'static str,
+    pub setup_admin_display_label: &'static str,
+    pub setup_admin_password_label: &'static str,
+    pub setup_admin_password_hint: &'static str,
+    pub setup_admin_confirm_label: &'static str,
+    pub setup_admin_submit: &'static str,
+    pub setup_done_title: &'static str,
+    pub setup_done_lede: &'static str,
+    pub setup_done_next_steps_title: &'static str,
+    pub setup_done_next_step_register_clients: &'static str,
+    pub setup_done_next_step_enable_mfa: &'static str,
+    pub setup_done_next_step_review_settings: &'static str,
+    pub setup_done_enter_admin: &'static str,
+    pub setup_not_complete_title: &'static str,
+    pub setup_not_complete_lede: &'static str,
+    pub setup_password_mismatch: &'static str,
+    pub setup_already_initialized: &'static str,
+    pub setup_invalid_token: &'static str,
+    /// Flash text shown by the setup wizard when HIBP is in
+    /// `Block` mode and the supplied password is found in the
+    /// breach corpus.
+    pub setup_hibp_blocked: &'static str,
+    /// Generic fallback flash text for an otherwise-unmapped
+    /// setup-wizard error (e.g. an internal storage failure).
+    pub setup_generic_failure: &'static str,
+
+    // ---- Step-up auth ----
+    pub step_up_title: &'static str,
+    pub step_up_lede: &'static str,
+    pub step_up_code_label: &'static str,
+    pub step_up_code_hint: &'static str,
+    pub step_up_code_invalid: &'static str,
+    pub step_up_passkey_alt: &'static str,
+    pub step_up_passkey_button: &'static str,
+
+    // ---- MFA challenge (login flow) ----
+    pub mfa_challenge_title: &'static str,
+    pub mfa_challenge_lede: &'static str,
+    pub mfa_challenge_code_label: &'static str,
+    pub mfa_challenge_submit: &'static str,
+    pub mfa_challenge_passkey_alt: &'static str,
+    pub mfa_challenge_passkey_button: &'static str,
+    pub mfa_challenge_shell_title: &'static str,
+    /// Flash shown when the submitted TOTP / recovery code does
+    /// not verify. Same text covers both factors so the UI
+    /// doesn't leak which one the user got wrong.
+    pub mfa_challenge_failed_flash: &'static str,
+
+    // ---- Profile / self-service security (v0.29.1) ----
+    pub profile_subtitle_template: &'static str,
+    pub profile_recovery_save_now: &'static str,
+    pub profile_recovery_save_lede: &'static str,
+    pub profile_mfa_section: &'static str,
+    pub profile_mfa_totp_card_title: &'static str,
+    pub profile_mfa_status_label: &'static str,
+    pub profile_mfa_status_enabled: &'static str,
+    pub profile_mfa_status_not_configured: &'static str,
+    pub profile_mfa_regenerate_codes: &'static str,
+    pub profile_mfa_disable_confirm: &'static str,
+    pub profile_mfa_disable_button: &'static str,
+    pub profile_mfa_enroll_lede: &'static str,
+    pub profile_mfa_enroll_apps_note: &'static str,
+    pub profile_mfa_enroll_button: &'static str,
+    /// Flash shown after MFA enrolment completes successfully.
+    /// Pinned in audit-friendly wording: "now enabled" reads as a
+    /// state assertion that doubles as confirmation the action
+    /// landed.
+    pub profile_passkeys_section: &'static str,
+    pub profile_passkeys_lede: &'static str,
+    pub profile_passkeys_th_name: &'static str,
+    pub profile_passkeys_th_registered: &'static str,
+    pub profile_passkeys_th_last_used: &'static str,
+    pub profile_passkeys_last_used_never: &'static str,
+    pub profile_passkeys_delete_confirm: &'static str,
+    pub profile_passkeys_delete_button: &'static str,
+    pub profile_passkeys_empty: &'static str,
+    pub profile_passkeys_register_section: &'static str,
+    pub profile_passkeys_nickname_label: &'static str,
+    pub profile_passkeys_nickname_hint: &'static str,
+    pub profile_passkeys_register_button: &'static str,
+    pub profile_lang_section: &'static str,
+    pub profile_lang_lede: &'static str,
+    pub profile_lang_field_label: &'static str,
+    /// Flash shown after a successful TOTP enrolment confirmation.
+    pub profile_mfa_enrolled_flash: &'static str,
+    /// Flash shown after recovery codes are regenerated.
+    pub profile_recovery_regenerated_flash: &'static str,
+
+    // ---- MFA setup (TOTP enrollment) ----
+    pub mfa_setup_shell_title: &'static str,
+    pub mfa_setup_title: &'static str,
+    pub mfa_setup_lede: &'static str,
+    pub mfa_setup_steps_title: &'static str,
+    pub mfa_setup_step1: &'static str,
+    pub mfa_setup_step2: &'static str,
+    pub mfa_setup_step3: &'static str,
+    pub mfa_setup_qr_card_title: &'static str,
+    pub mfa_setup_secret_label: &'static str,
+    pub mfa_setup_otpauth_summary: &'static str,
+    pub mfa_setup_verify_card_title: &'static str,
+    pub mfa_setup_code_label: &'static str,
+    pub mfa_setup_code_hint: &'static str,
+    pub mfa_setup_confirm_button: &'static str,
+
+    // ---- Forgot password ----
+    pub forgot_password_title: &'static str,
+    pub forgot_password_lede: &'static str,
+    pub forgot_password_email_label: &'static str,
+    pub forgot_password_submit: &'static str,
+    pub forgot_password_sent_title: &'static str,
+    pub forgot_password_sent_lede: &'static str,
+    pub forgot_password_sent_lede2: &'static str,
+    pub reset_password_title: &'static str,
+    pub reset_password_lede: &'static str,
+    pub reset_password_new_label: &'static str,
+    pub reset_password_new_hint: &'static str,
+    pub reset_password_confirm_label: &'static str,
+    pub reset_password_submit: &'static str,
+    pub reset_password_invalid_title: &'static str,
+    pub reset_password_invalid_lede: &'static str,
+    pub reset_password_invalid_request_again: &'static str,
+    pub password_mismatch_flash: &'static str,
+    pub reset_password_failed_flash: &'static str,
+    /// Common navigational link from forgot-password / reset-password
+    /// flows back to the login screen. Reused across multiple
+    /// auth-flow views.
+    pub back_to_login: &'static str,
+
+    // ---- Settings hub ----
+    pub settings_title: &'static str,
+    pub settings_lede: &'static str,
+    pub settings_tab_basic: &'static str,
+    pub settings_tab_security: &'static str,
+    pub settings_tab_authentication: &'static str,
+    pub settings_tab_logs: &'static str,
+    pub settings_tab_email: &'static str,
+    pub settings_tab_other: &'static str,
+    pub settings_basic_section: &'static str,
+    pub settings_basic_oidc_section: &'static str,
+    pub settings_basic_issuer: &'static str,
+    pub settings_basic_listen_addr: &'static str,
+    pub settings_basic_cookie_secure: &'static str,
+    pub settings_basic_trusted_proxies: &'static str,
+    pub settings_basic_trusted_proxies_none: &'static str,
+    pub settings_basic_default_lang: &'static str,
+    pub settings_basic_default_lang_hint: &'static str,
+    pub settings_basic_save: &'static str,
+    pub settings_basic_saved: &'static str,
+
+    // ---- Profile ----
+    pub profile_title: &'static str,
+    pub profile_username_label: &'static str,
+    pub profile_email_label: &'static str,
+    pub profile_display_name_label: &'static str,
+    pub profile_lang_label: &'static str,
+    pub profile_lang_hint: &'static str,
+    pub profile_lang_browser_default: &'static str,
+    pub profile_save: &'static str,
+    pub profile_saved: &'static str,
+
+    // ---- Password change ----
+    pub password_change_title: &'static str,
+    pub password_change_lede: &'static str,
+    pub password_change_current_label: &'static str,
+    pub password_change_new_label: &'static str,
+    /// Hint shown under the new-password input. Reminds the user
+    /// that a long passphrase beats a short complicated string.
+    pub password_change_new_hint: &'static str,
+    pub password_change_confirm_label: &'static str,
+    pub password_change_revoke_others_label: &'static str,
+    /// Hint shown under the "sign out other sessions" checkbox.
+    pub password_change_revoke_others_hint: &'static str,
+    pub password_change_submit: &'static str,
+    pub password_change_wrong_current: &'static str,
+    pub password_change_done_flash: &'static str,
+
+    // ---- /me/security (self-service security page) ----
+    pub me_security_title: &'static str,
+    /// Lede line; rendered as `<strong>{username}</strong> {me_security_signed_in_as_suffix}`.
+    pub me_security_signed_in_as_suffix: &'static str,
+    pub me_security_admin_link: &'static str,
+    pub me_security_mfa_section: &'static str,
+    pub me_security_mfa_status_label: &'static str,
+    pub me_security_mfa_status_enabled: &'static str,
+    pub me_security_mfa_factor_totp: &'static str,
+    /// Format string fragment; the call site interpolates the
+    /// passkey count via `format!("{n} {label}")`.
+    pub me_security_mfa_factor_passkey_n: &'static str,
+    pub me_security_mfa_disabled_title: &'static str,
+    pub me_security_mfa_disabled_lede: &'static str,
+    pub me_security_mfa_manage: &'static str,
+    pub me_security_password_change_link: &'static str,
+    pub me_security_sessions_section: &'static str,
+    pub me_security_sessions_lede: &'static str,
+    pub me_security_sessions_th_started: &'static str,
+    pub me_security_sessions_th_expires: &'static str,
+    pub me_security_sessions_th_factors: &'static str,
+    pub me_security_sessions_current_badge: &'static str,
+    pub me_security_sessions_revoke: &'static str,
+    pub me_security_sessions_revoke_confirm: &'static str,
+    pub me_security_sessions_revoke_all_others: &'static str,
+    pub me_security_sessions_revoke_all_others_confirm: &'static str,
+    pub me_security_activity_section: &'static str,
+    pub me_security_activity_lede: &'static str,
+    pub me_security_activity_th_when: &'static str,
+    pub me_security_activity_th_event: &'static str,
+    pub me_security_activity_th_result: &'static str,
+    pub me_security_activity_th_note: &'static str,
+
+    // ---- Email subjects (notifications) ----
+    pub email_subject_password_reset: &'static str,
+    pub email_subject_password_changed: &'static str,
+    pub email_greeting_suffix: &'static str,
+    pub email_password_reset_intro: &'static str,
+    pub email_password_reset_link_label: &'static str,
+    pub email_password_reset_disregard: &'static str,
+    pub email_password_changed_intro: &'static str,
+    pub email_password_changed_security_warning: &'static str,
+    pub email_password_changed_link_security: &'static str,
+
+    // ---- Errors / generic ----
+    pub error_generic_title: &'static str,
+    pub error_not_found_title: &'static str,
+    pub error_not_found_lede: &'static str,
+    pub error_internal: &'static str,
+    pub error_too_many_requests_label: &'static str,
+
+    // ---- Audit log labels ----
+    pub audit_title: &'static str,
+    pub audit_col_when: &'static str,
+    pub audit_col_actor: &'static str,
+    pub audit_col_action: &'static str,
+    pub audit_col_target: &'static str,
+    pub audit_col_outcome: &'static str,
+    pub audit_col_note: &'static str,
+}

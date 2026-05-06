@@ -5,6 +5,107 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.2] - 2026-05-04
+
+Internal-improvements release per the maintainer's
+`プロジェクト構成-更新依頼書`. No functional change visible
+to operators or end users; the work is all in distribution
+hygiene and codebase shape.
+
+### Distribution refresh
+
+- Replaced (per the request bundle): `.github/CODE_OF_CONDUCT.md`,
+  `.github/CONTRIBUTING.md`, `.github/SECURITY.md`,
+  `.github/ISSUE_TEMPLATE/{bug_report,feature_request,question,config}.yml`,
+  `.vscode/extensions.json`, `.vscode/settings.json` (new),
+  `README.md`, `LICENSE`, `NOTICE`,
+  `crates/sui-id-web/README.md` (new),
+  `crates/sui-id-i18n/{Cargo.toml,README.md}` (the latter new),
+  `docs/assets/{logo.png,logo.svg}` (new). `.github/workflows/`
+  was deliberately preserved.
+- Author email removed: workspace `Cargo.toml` `authors`
+  field is now `["nabbisen"]` only. Each crate's
+  `authors.workspace = true` propagates the change.
+- README license-prose removed. The `LICENSE` and `NOTICE`
+  files plus the existing GitHub badge in the README hero
+  are sufficient signal.
+
+### README link strategy (crates.io 404 fix)
+
+crates.io renders the README as raw text and does not
+resolve repository-relative links, so logo and LICENSE
+references previously 404'd when accessed from the
+crates.io page. Resolved with a mixed strategy:
+
+- **Images** (logo): `https://raw.githubusercontent.com/nabbisen/sui-id/main/...`
+  absolute URLs. Renders inline on crates.io.
+- **File links** (LICENSE, `docs/*.md`):
+  `https://github.com/nabbisen/sui-id/blob/main/...`
+  absolute URLs. Renders as the GitHub UI page.
+
+### `.github/workflows` action versions bumped
+
+- `actions/checkout@v4` → `@v6`
+- `actions/cache@v4` → `@v5`
+- `rustsec/audit-check@v2.0.0` (already current)
+
+### Warnings cleared
+
+Two unused-import warnings resolved so `RUSTFLAGS="-D warnings"`
+in CI stays unblocked:
+
+- `crates/sui-id-core/src/session.rs`: `use chrono::{DateTime,
+  Duration, Utc};` → `use chrono::Duration;`.
+- `crates/sui-id/src/dev_mode.rs`: `use sui_id_core::time::{system_clock,
+  SharedClock};` → `use sui_id_core::time::SharedClock;`.
+
+### `sui-id-i18n` module split
+
+The 1,030-line `lib.rs` is broken into:
+
+- `lib.rs` (144 lines) — module declarations, `Locale`
+  enum, `negotiate_from_accept_language`.
+- `strings.rs` (308 lines) — the `Strings` struct.
+- `ja.rs` (274 lines) — `STRINGS_JA`.
+- `en.rs` (274 lines) — `STRINGS_EN`.
+- `tests.rs` (67 lines) — `#[cfg(test)]`-gated unit tests.
+
+All five files are under 500 effective lines (the
+maintainer's threshold for splitting). Tests are now in
+their own file rather than inline at the bottom of
+`lib.rs`, per the project convention that any meaningfully-
+sized unit-test block goes in `tests.rs` or a `tests/`
+sibling.
+
+### `tests/e2e.rs` module split
+
+The 6,947-line `tests/e2e.rs` integration test file is
+broken into 31 themed modules under `tests/e2e/`:
+
+- `tests/e2e/main.rs` — entry, `mod` declarations only.
+- `tests/e2e/common.rs` — shared helpers (`test_app`,
+  `complete_setup_and_login`, `extract_csrf_token`,
+  `enroll_mfa_for`, `decode_b32`, `urlencode`,
+  `extract_csrf_cookie`, `login_again_for_admin`, etc).
+- 30 themed `.rs` files — one per ROADMAP feature
+  (`oidc_flow.rs`, `mfa.rs`, `password_change.rs`,
+  `i18n_basic.rs`, `i18n_phase2.rs`, etc).
+
+All files are under 500 effective lines (the largest is
+`mfa.rs` at 493). The maintainer's convention of "one
+integration-test binary, even when split across many
+files" is preserved via a `[[test]] name = "e2e" path =
+"tests/e2e/main.rs"` declaration in
+`crates/sui-id/Cargo.toml`. All 148+ pre-existing tests
+plus the four v0.29.1 i18n phase-2 tests continue to
+pass.
+
+### Tests
+
+194 lib tests (shared 13 / store 15 / i18n 6 / sui-id 53 /
+core 107) and the full e2e suite continue to pass with
+no behavioural change.
+
 ## [0.29.1] - 2026-05-04
 
 i18n scope expansion, phase 2: the self-service security

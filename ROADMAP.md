@@ -139,6 +139,18 @@ rather than new auth primitives.
 
 ## Done
 
+- Internal-improvements release (v0.29.2). Distribution-asset
+  refresh per the maintainer's project-update brief: `.github/`
+  hygiene files, `.vscode/` recommendations, replacement
+  `LICENSE` / `NOTICE` / `README.md` / per-crate READMEs / logo
+  assets. README link strategy nailed down (raw-URL for images,
+  blob-URL for files, fixing crates.io 404s). `.github/workflows`
+  action versions bumped (`checkout@v6`, `cache@v5`). Two
+  unused-import warnings cleared. `sui-id-i18n` lib.rs split
+  into `lib / strings / ja / en / tests` (all under 500 lines).
+  `tests/e2e.rs` split into 31 themed modules under `tests/e2e/`,
+  unified into one integration-test binary via `[[test]]`
+  declaration. 194 lib tests + 148 e2e tests preserved.
 - Per-IP rate limiting on `/admin/login`, `/oauth2/token`, `/setup`.
 - Background GC of expired authorization codes, sessions, refresh
   tokens, pending-MFA rows, and WebAuthn ceremonies.

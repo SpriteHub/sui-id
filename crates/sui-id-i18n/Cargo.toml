@@ -10,6 +10,7 @@ authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "sui-id internationalisation (i18n) — typed string tables for UI text."
+readme = "README.md"
 
 [lints]
 workspace = true
