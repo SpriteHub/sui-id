@@ -1,23 +1,34 @@
-//! Setup wizard endpoints — 3-step flow (welcome → admin → done).
+//! Setup wizard endpoints — 5-step flow
+//! (welcome → admin → language → hibp-mode → done).
 //!
 //! ## Step structure
 //!
-//! - `GET /setup` — 画面 1 (welcome). A landing screen with a brief
+//! - `GET /setup` — Step 1: welcome. A landing screen with a brief
 //!   description of what's about to happen and a single "begin"
 //!   button that takes the operator to step 2.
-//! - `GET /setup/admin` — 画面 2 (admin form). The form that
-//!   actually creates the first administrator: setup token,
-//!   username, optional email, optional display name, password,
-//!   password confirmation.
+//! - `GET /setup/admin` — Step 2: admin form. Creates the first
+//!   administrator: setup token, username, optional email, optional
+//!   display name, password, password confirmation.
 //! - `POST /setup/admin` — consumes the form, creates the admin and
-//!   the first signing key, marks the system initialized,
-//!   auto-logs the operator in, and redirects to `/setup/done`.
-//! - `GET /setup/done` — 画面 4 (completion). Success message and
+//!   the first signing key, marks the system initialized, auto-logs
+//!   the operator in, and redirects to `/setup/lang`.
+//! - `GET /setup/lang` — Step 3: display-language picker (RFC 012).
+//! - `POST /setup/lang` — writes `server_settings.default_lang` and
+//!   redirects to `/setup/hibp`.
+//! - `GET /setup/hibp` — Step 4: HIBP policy picker (RFC 012).
+//! - `POST /setup/hibp` — writes `server_settings.hibp_mode` and
+//!   redirects to `/setup/done`.
+//! - `GET /setup/done` — Step 5: completion. Success message and
 //!   a button to enter the admin dashboard.
 //!
-//! ## What's NOT a step
+//! ## Encryption key
 //!
-//! The design memo lists a fourth screen for encryption settings.
+//! The design memo lists an "encryption settings" screen. This is
+//! intentionally absent: sui-id resolves the master key before HTTP
+//! starts (env var, key file, or generate-on-first-run), so there
+//! is no surface to plumb at wizard time. Key rotation is a CLI
+//! command (`sui-id admin rotate-key`). This is documented as a
+//! deliberate design choice, not a gap.
 //! sui-id deliberately omits it: the master key is resolved from
 //! `SUI_ID_MASTER_KEY` or `storage.key_file` *before* the HTTP
 //! server starts, so the admin process never has the option of
@@ -46,9 +57,10 @@ use axum_extra::extract::cookie::CookieJar;
 use serde::Deserialize;
 use sui_id_core::errors::CoreError;
 use sui_id_core::{session, setup};
-use sui_id_store::repos::state;
+use sui_id_store::repos::{server_settings, state};
 use sui_id_web::{
-    render_setup_admin, render_setup_done, render_setup_welcome, Flash, FlashKind,
+    render_setup_admin, render_setup_done, render_setup_hibp, render_setup_lang,
+    render_setup_welcome, Flash, FlashKind,
 };
 
 // ---------- 画面 1 — welcome ----------
@@ -208,7 +220,7 @@ pub async fn admin_post(
             let cookie =
                 session_cookie(session_row.id.to_string(), app.config.server.cookie_secure);
             let jar = jar.add(cookie);
-            Ok((jar, Redirect::to("/setup/done")).into_response())
+            Ok((jar, Redirect::to("/setup/lang")).into_response())
         }
         Err(e) => {
             let flash = Flash {
@@ -228,7 +240,101 @@ pub async fn admin_post(
     }
 }
 
-// ---------- 画面 4 — completion ----------
+// ---------- 画面 3 — language selection (RFC 012) ----------
+
+#[derive(Deserialize)]
+pub struct SetupLangForm {
+    #[serde(default)]
+    pub lang: String,
+}
+
+pub async fn lang_get(
+    state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
+) -> Result<axum::response::Response, HttpError> {
+    let axum::extract::State(app) = state_ext;
+    let initialized =
+        state::is_initialized(&app.db).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    if !initialized {
+        return Ok(Redirect::to("/setup").into_response());
+    }
+    // Pre-fill with current server default (falls back to "ja" if not yet set).
+    let current = server_settings::get(&app.db)
+        .map(|s| s.default_lang)
+        .unwrap_or_else(|_| "ja".into());
+    Ok(Html(render_setup_lang(None, &current, lang)).into_response())
+}
+
+pub async fn lang_post(
+    state_ext: AppStateExt,
+    crate::handlers::RequestLocale(_lang): crate::handlers::RequestLocale,
+    Form(form): Form<SetupLangForm>,
+) -> Result<axum::response::Response, HttpError> {
+    let axum::extract::State(app) = state_ext;
+    let initialized =
+        state::is_initialized(&app.db).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    if !initialized {
+        return Ok(Redirect::to("/setup").into_response());
+    }
+    // Validate and normalise the choice; fall back to "ja".
+    let chosen = match form.lang.as_str() {
+        "en" => "en",
+        _ => "ja",
+    };
+    // Parse as Locale to confirm it's a valid tag before writing.
+    let locale = sui_id_i18n::Locale::parse(chosen).unwrap_or_default();
+    server_settings::update_default_lang(&app.db, locale.tag(), chrono::Utc::now())
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    Ok(Redirect::to("/setup/hibp").into_response())
+}
+
+// ---------- 画面 4 — HIBP mode (RFC 012) ----------
+
+#[derive(Deserialize)]
+pub struct SetupHibpForm {
+    #[serde(default)]
+    pub hibp_mode: String,
+}
+
+pub async fn hibp_get(
+    state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
+) -> Result<axum::response::Response, HttpError> {
+    let axum::extract::State(app) = state_ext;
+    let initialized =
+        state::is_initialized(&app.db).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    if !initialized {
+        return Ok(Redirect::to("/setup").into_response());
+    }
+    let current = server_settings::get(&app.db)
+        .map(|s| s.hibp_mode.as_str().to_owned())
+        .unwrap_or_else(|_| "warn".into());
+    Ok(Html(render_setup_hibp(None, &current, lang)).into_response())
+}
+
+pub async fn hibp_post(
+    state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
+    Form(form): Form<SetupHibpForm>,
+) -> Result<axum::response::Response, HttpError> {
+    let axum::extract::State(app) = state_ext;
+    let initialized =
+        state::is_initialized(&app.db).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    if !initialized {
+        return Ok(Redirect::to("/setup").into_response());
+    }
+    let mode: sui_id_store::models::HibpMode = match form.hibp_mode.as_str() {
+        "off" => sui_id_store::models::HibpMode::Off,
+        "block" => sui_id_store::models::HibpMode::Block,
+        _ => sui_id_store::models::HibpMode::Warn,
+    };
+    server_settings::update_hibp_mode(&app.db, mode, chrono::Utc::now())
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let _ = lang; // used by future flash messages if needed
+    Ok(Redirect::to("/setup/done").into_response())
+}
+
+// ---------- 画面 5 — completion ----------
 
 pub async fn done_get(
     state_ext: AppStateExt,

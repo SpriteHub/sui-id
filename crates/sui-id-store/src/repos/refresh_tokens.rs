@@ -124,6 +124,20 @@ pub fn revoke_all_for_user(db: &Database, user_id: UserId) -> StoreResult<usize>
     })
 }
 
+/// Same as [`revoke_all_for_user`] but runs inside a caller-owned
+/// transaction, so it participates in the caller's atomicity boundary.
+pub fn revoke_all_for_user_within_tx(
+    tx: &rusqlite::Transaction<'_>,
+    user_id: UserId,
+    now: chrono::DateTime<chrono::Utc>,
+) -> StoreResult<usize> {
+    let n = tx.execute(
+        "UPDATE refresh_tokens SET revoked_at = ?1 WHERE user_id = ?2 AND revoked_at IS NULL",
+        params![now, user_id.to_string()],
+    )?;
+    Ok(n)
+}
+
 pub fn revoke_all_for_client(db: &Database, client_id: ClientId) -> StoreResult<usize> {
     db.with_conn(|conn| {
         let n = conn.execute(

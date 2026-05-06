@@ -46,6 +46,8 @@ async fn backup_then_restore_preserves_users_and_clients() {
         log: LogConfig {
             format: "fmt".into(),
             filter: "off".into(),
+            access_log: false,
+            file: None,
         },
         security: sui_id::config::SecurityConfig::default(),
     };

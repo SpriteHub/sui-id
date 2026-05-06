@@ -246,13 +246,19 @@ meant.
    ```
 
 2. Open the `/setup` URL in a browser. The setup wizard runs in
-   three steps:
+   five steps (RFC 012):
 
    - **Step 1 — welcome**: a brief description and a "begin" button.
    - **Step 2 — admin form**: paste the setup token, choose a
      username, optionally an email and display name, and pick a
      password (12 characters or more) entered twice.
-   - **Step 3 — done**: confirmation that the admin account exists
+   - **Step 3 — display language**: choose Japanese or English for
+     the admin panel and login screens (default: Japanese). You can
+     change this after setup in the admin settings.
+   - **Step 4 — password security policy**: choose an HIBP mode
+     (`off` / `warn` / `block`; default: `warn`). You can change
+     this after setup in the admin settings.
+   - **Step 5 — done**: confirmation that the admin account exists
      and the first signing key has been generated. The wizard logs
      you in automatically; the "管理画面へ進む" button lands you
      on `/admin`.

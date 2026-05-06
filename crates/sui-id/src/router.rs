@@ -5,6 +5,7 @@ use crate::security_headers::SecurityHeaderConfig;
 use crate::AppState;
 use axum::routing::{get, post};
 use axum::Router;
+use tower_http::trace::TraceLayer;
 
 pub fn build_router(app: AppState) -> Router {
     let hsts_enabled = app.config.server.cookie_secure;
@@ -29,13 +30,21 @@ pub fn build_router(app: AppState) -> Router {
         .route("/oauth2/token", post(oidc::token))
         .layer(token_cors);
 
-    Router::new()
+    let router = Router::new()
         .route("/", get(index::root))
         .route("/healthz", get(index::healthz))
         .route("/setup", get(setup::welcome_get))
         .route(
             "/setup/admin",
             get(setup::admin_get).post(setup::admin_post),
+        )
+        .route(
+            "/setup/lang",
+            get(setup::lang_get).post(setup::lang_post),
+        )
+        .route(
+            "/setup/hibp",
+            get(setup::hibp_get).post(setup::hibp_post),
         )
         .route("/setup/done", get(setup::done_get))
         .merge(public_routes)
@@ -210,7 +219,7 @@ pub fn build_router(app: AppState) -> Router {
             post(crate::handlers::step_up::webauthn_finish),
         )
         .route("/static/{*path}", get(crate::assets::serve))
-        .with_state(app)
+        .with_state(app.clone())
         // Security-headers middleware applies to *every* response,
         // including the OIDC public ones merged above. State-aware so
         // it can decide whether to emit HSTS based on cookie_secure.
@@ -222,5 +231,19 @@ pub fn build_router(app: AppState) -> Router {
         ))
         // request-id middleware runs first (outermost) so the id is
         // attached before TraceLayer's span is opened.
-        .layer(axum::middleware::from_fn(crate::request_id::middleware))
+        .layer(axum::middleware::from_fn(crate::request_id::middleware));
+
+    // RFC 016: mount TraceLayer only when access_log is enabled.
+    // In dev mode the binary sets access_log = true so every request
+    // is visible in the terminal. In production it is off by default
+    // and opt-in via `log.access_log = true` in the config file.
+    //
+    // Security invariant: TraceLayer operates at the span level; it
+    // does not log request/response bodies, cookies, or Authorization
+    // headers. No secret value reaches any log sink through this layer.
+    if app.config.log.access_log {
+        router.layer(TraceLayer::new_for_http())
+    } else {
+        router
+    }
 }

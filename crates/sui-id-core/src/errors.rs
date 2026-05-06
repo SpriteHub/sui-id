@@ -49,6 +49,11 @@ pub enum CoreError {
 
     #[error("internal failure")]
     Internal,
+
+    /// Emitted during process initialisation when a required configuration
+    /// value is invalid. Causes a fast startup abort with a clear message.
+    #[error("configuration error: {0}")]
+    ConfigError(String),
 }
 
 /// Subset of the OAuth 2.0 / OIDC error vocabulary that sui-id may emit.
@@ -100,7 +105,7 @@ impl CoreError {
             Self::Protocol { .. } => ApiErrorCode::Protocol,
             Self::Store(sui_id_store::StoreError::NotFound) => ApiErrorCode::NotFound,
             Self::Store(sui_id_store::StoreError::Conflict) => ApiErrorCode::Conflict,
-            Self::Store(_) | Self::Password | Self::Jwt | Self::Internal => ApiErrorCode::Internal,
+            Self::Store(_) | Self::Password | Self::Jwt | Self::Internal | Self::ConfigError(_) => ApiErrorCode::Internal,
         }
     }
 }

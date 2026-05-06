@@ -385,3 +385,216 @@ async fn settings_email_get_requires_admin() {
     assert_ne!(resp.status(), StatusCode::OK);
 }
 
+
+// ---------- RFC 010: forgot-password reset revokes sessions and refresh tokens ----------
+
+/// Helper: extract a password-reset token from a mail captured by the in-memory
+/// mailer. The token is embedded in the reset link inside the mail body.
+fn extract_reset_token_from_mail(mail: &sui_id_core::mail::OutgoingMail) -> String {
+    let prefix = "/reset-password?token=";
+    let start = mail.text_body.find(prefix).expect("reset link in mail") + prefix.len();
+    let end = mail.text_body[start..]
+        .find(|c: char| c == '\n' || c.is_whitespace())
+        .map(|i| start + i)
+        .unwrap_or(mail.text_body.len());
+    mail.text_body[start..end].to_owned()
+}
+
+/// Helper: issue a forgot-password request and return the captured token.
+async fn issue_reset_token(state: &AppState, mailer: &sui_id_core::mail::InMemoryMailSender, email: &str) -> String {
+    // GET for CSRF cookie.
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/forgot-password")
+                .body(Body::empty())
+                .expect("req"),
+        )
+        .await
+        .expect("GET forgot");
+    let csrf = extract_set_cookie(resp.headers(), "sui_id_csrf").expect("csrf");
+
+    let body = format!("_csrf={csrf}&email={}", urlencode(email));
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/forgot-password")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, format!("sui_id_csrf={csrf}"))
+                .body(Body::from(body))
+                .expect("req"),
+        )
+        .await
+        .expect("POST forgot");
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let mail = mailer.last().await.expect("reset mail captured");
+    extract_reset_token_from_mail(&mail)
+}
+
+/// Helper: redeem a reset token with a new password via POST /reset-password.
+async fn redeem_reset_token(state: &AppState, token: &str, new_password: &str) {
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&format!("/reset-password?token={token}"))
+                .body(Body::empty())
+                .expect("req"),
+        )
+        .await
+        .expect("GET reset");
+    let csrf = extract_set_cookie(resp.headers(), "sui_id_csrf").expect("csrf");
+
+    let body = format!(
+        "_csrf={csrf}&token={token}&password={pw}&confirm_password={pw}",
+        pw = urlencode(new_password),
+    );
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/reset-password")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, format!("sui_id_csrf={csrf}"))
+                .body(Body::from(body))
+                .expect("req"),
+        )
+        .await
+        .expect("POST reset");
+    assert!(
+        resp.status().is_redirection(),
+        "expected redirect after reset, got {}",
+        resp.status()
+    );
+}
+
+/// Count the active sessions for the user identified by `username`.
+fn count_active_sessions(state: &AppState, username: &str) -> usize {
+    let user = sui_id_store::repos::users::find_by_username(&state.db, username)
+        .expect("user row");
+    sui_id_store::repos::sessions::list_active_for_user(&state.db, user.id)
+        .expect("sessions")
+        .len()
+}
+
+/// Count the active (non-revoked) refresh tokens for the user identified by `username`.
+fn count_active_refresh_tokens(state: &AppState, username: &str) -> usize {
+    let user = sui_id_store::repos::users::find_by_username(&state.db, username)
+        .expect("user row");
+    state
+        .db
+        .with_conn(|conn| {
+            let n: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM refresh_tokens \
+                 WHERE user_id = ?1 AND revoked_at IS NULL",
+                [user.id.to_string()],
+                |r| r.get(0),
+            )?;
+            Ok(n as usize)
+        })
+        .expect("refresh count")
+}
+
+#[tokio::test]
+async fn forgot_password_reset_revokes_all_sessions_and_refresh_tokens() {
+    let (state, mailer) = test_app_with_mailer();
+
+    // Setup + sign in to create a session.
+    let session_a = complete_setup_and_login(&state).await;
+    enable_smtp_in_db(&state);
+
+    // Give the admin user an email so forgot-password can proceed.
+    let user = sui_id_store::repos::users::find_by_username(&state.db, USERNAME).expect("user");
+    state
+        .db
+        .with_conn(|conn| {
+            conn.execute(
+                "UPDATE users SET email = ?1 WHERE id = ?2",
+                rusqlite::params!["alice@reset.test", user.id.to_string()],
+            )?;
+            Ok(())
+        })
+        .expect("set email");
+
+    // Sign in again to get a second session.
+    let _session_b = login_again_for_admin(&state, USERNAME, PASSWORD).await;
+
+    // Sanity: two active sessions before the reset.
+    assert_eq!(count_active_sessions(&state, USERNAME), 2, "expected 2 active sessions before reset");
+
+    // Issue and redeem a forgot-password token.
+    let token = issue_reset_token(&state, &mailer, "alice@reset.test").await;
+    let new_pw = "totally-fresh-password-111";
+    redeem_reset_token(&state, &token, new_pw).await;
+
+    // RFC 010 assertion: zero active sessions and zero active refresh tokens
+    // after the reset, regardless of how many existed before.
+    assert_eq!(
+        count_active_sessions(&state, USERNAME),
+        0,
+        "all sessions must be revoked after forgot-password reset (RFC 010)"
+    );
+    assert_eq!(
+        count_active_refresh_tokens(&state, USERNAME),
+        0,
+        "all refresh tokens must be revoked after forgot-password reset (RFC 010)"
+    );
+
+    // The old session cookie must now be rejected.
+    // The server responds with 401 (Unauthenticated) — the HTML error
+    // handler, not a redirect — which is the correct behaviour for a
+    // revoked session presented to an HTML endpoint.
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/admin/dashboard")
+                .header(header::COOKIE, format!("sui_id_session={session_a}"))
+                .body(Body::empty())
+                .expect("req"),
+        )
+        .await
+        .expect("dashboard after reset");
+    assert!(
+        !resp.status().is_success(),
+        "stale session cookie must be rejected after forgot-password reset (got {})",
+        resp.status()
+    );
+}
+
+#[tokio::test]
+async fn forgot_password_reset_is_no_op_when_user_has_no_sessions() {
+    // Ensure revoke with no pre-existing sessions doesn't fail.
+    let (state, mailer) = test_app_with_mailer();
+    let _session = complete_setup_and_login(&state).await;
+    enable_smtp_in_db(&state);
+
+    let user = sui_id_store::repos::users::find_by_username(&state.db, USERNAME).expect("user");
+    state
+        .db
+        .with_conn(|conn| {
+            conn.execute(
+                "UPDATE users SET email = ?1 WHERE id = ?2",
+                rusqlite::params!["bob@reset.test", user.id.to_string()],
+            )?;
+            // Revoke the one session we created so we start with zero.
+            conn.execute(
+                "UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ?1",
+                [user.id.to_string()],
+            )?;
+            Ok(())
+        })
+        .expect("setup no-session state");
+
+    assert_eq!(count_active_sessions(&state, USERNAME), 0, "pre-condition: no sessions");
+
+    let token = issue_reset_token(&state, &mailer, "bob@reset.test").await;
+    // Should succeed even with no sessions to revoke.
+    redeem_reset_token(&state, &token, "fresh-pass-no-sessions-987").await;
+
+    assert_eq!(count_active_sessions(&state, USERNAME), 0);
+    assert_eq!(count_active_refresh_tokens(&state, USERNAME), 0);
+}

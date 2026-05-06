@@ -1,13 +1,14 @@
-//! `/admin/settings/*` — read-only settings overview.
+//! `/admin/settings/*` — settings overview and inline editing.
 //!
 //! These pages surface the current effective configuration: what's
 //! in `Config` (loaded from `sui-id.toml` at boot), what's in the
 //! database, and a few derived facts (the audit-chain tail check
 //! status, the schema version this binary was built for, etc).
 //!
-//! Nothing here is editable. Values change either by editing
-//! `sui-id.toml` and restarting, or via the existing dedicated admin
-//! pages (users, clients, signing keys). Where a setting belongs to
+//! Some fields are editable inline (default language, HIBP mode,
+//! idle session timeout, max concurrent sessions, SMTP config).
+//! Static config values that require a restart (listen address, DB
+//! path, key file) are shown read-only. Where a setting belongs to
 //! a more specific page we deep-link to it rather than re-implement
 //! the controls.
 //!

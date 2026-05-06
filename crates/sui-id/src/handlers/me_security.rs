@@ -372,9 +372,16 @@ pub async fn password_change_post(
     let keep = SessionId::from_str(&raw_session)
         .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
 
+    // RFC 003: load HIBP settings from the DB for this request.
+    let hibp_mode = sui_id_store::repos::server_settings::get(&app.db)
+        .map(|s| s.hibp_mode)
+        .unwrap_or_default();
+
     let report = sui_id_core::me_security::change_password_self(
         &app.db,
         &app.clock,
+        Some(app.hibp_client.as_ref()),
+        hibp_mode,
         user_id,
         &form.current_password,
         &form.new_password,

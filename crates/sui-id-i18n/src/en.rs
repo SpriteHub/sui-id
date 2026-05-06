@@ -80,6 +80,27 @@ pub static STRINGS_EN: Strings = Strings {
     setup_hibp_blocked: "This password appears in a known breach. Please choose a different one.",
     setup_generic_failure: "Setup failed. Please review the form and try again.",
 
+    // RFC 012: Setup wizard — Language step
+    setup_step_lang: "Language",
+    setup_lang_title: "Display Language",
+    setup_lang_lede: "Choose the language for the admin panel and login screens. You can change this later in the settings.",
+    setup_lang_field_label: "Display language",
+    setup_lang_default_note: "You can change this later in the admin panel settings.",
+    setup_lang_submit: "Next",
+
+    // RFC 012: Setup wizard — HIBP step
+    setup_step_hibp: "Security",
+    setup_hibp_step_title: "Password Security Policy",
+    setup_hibp_step_lede: "Use Have I Been Pwned to detect known breached passwords. Only the first 5 characters of the SHA-1 hash are sent, so your privacy is preserved.",
+    setup_hibp_option_off: "Off",
+    setup_hibp_option_off_desc: "No breach checking.",
+    setup_hibp_option_warn: "Warn (recommended)",
+    setup_hibp_option_warn_desc: "Warn about breached passwords but still allow them.",
+    setup_hibp_option_block: "Block",
+    setup_hibp_option_block_desc: "Reject passwords found in known breach data.",
+    setup_hibp_step_default_note: "You can change this later in the admin panel settings.",
+    setup_hibp_step_submit: "Next",
+
     // Step-up auth
     step_up_title: "Re-authenticate",
     step_up_lede: "Before performing this security-sensitive action, please confirm your identity with a code from your authenticator app. Valid for 5 minutes.",

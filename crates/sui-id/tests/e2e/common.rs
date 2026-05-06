@@ -48,6 +48,8 @@ pub fn test_app_with_mailer() -> (AppState, std::sync::Arc<sui_id_core::mail::In
         log: LogConfig {
             format: "fmt".into(),
             filter: "off".into(),
+            access_log: false,
+            file: None,
         },
         security: sui_id::config::SecurityConfig::default(),
     };
@@ -87,6 +89,8 @@ pub fn test_app_with_hibp() -> (
         log: LogConfig {
             format: "fmt".into(),
             filter: "off".into(),
+            access_log: false,
+            file: None,
         },
         security: sui_id::config::SecurityConfig::default(),
     };

@@ -78,6 +78,19 @@ pub struct LogConfig {
     /// `tracing-subscriber` env-filter expression.
     #[serde(default = "default_log_filter")]
     pub filter: String,
+    /// Emit one INFO line per HTTP request (method, path, status, request-id).
+    ///
+    /// Defaults to `false` in production. Set to `true` here or use
+    /// `--dev` (which enables it automatically) to see requests arrive.
+    #[serde(default)]
+    pub access_log: bool,
+    /// If set, write all log output to a daily-rotated file at this path
+    /// (in addition to stderr). The path is a directory; log files are
+    /// named `sui-id.YYYY-MM-DD.log`.
+    ///
+    /// When `None` (the default), only stderr is used.
+    #[serde(default)]
+    pub file: Option<PathBuf>,
 }
 
 fn default_log_format() -> String {
@@ -93,6 +106,8 @@ impl Default for LogConfig {
         Self {
             format: default_log_format(),
             filter: default_log_filter(),
+            access_log: false,
+            file: None,
         }
     }
 }

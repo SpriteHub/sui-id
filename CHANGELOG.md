@@ -5,6 +5,91 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.4] - 2026-05-06
+
+Security, spec-compliance, and quality release implementing the
+v0.29.3 codebase-review findings (RFCs 010, 011, 016, 003) and
+the maintainer-requested items (RFC 012, RFC 015).
+
+### Security (RFC 010 — highest priority)
+
+**Forgot-password completion now atomically revokes all sessions
+and refresh tokens.** An attacker holding a stolen session cookie
+or refresh token lost access when the account owner reset their
+password, but the email-link reset path did not revoke prior
+sessions — only admin-driven and self-service password changes
+did. The fix extends `consume_and_reset_password()` to revoke all
+sessions and refresh tokens in the same SQLite transaction as the
+credential update and token consumption. Two regression tests
+cover the revocation and the no-op case (user with no prior
+sessions).
+
+### Security / spec compliance (RFC 011)
+
+**WebAuthn now rejects non-HTTPS, non-localhost origins at
+startup.** Previously the browser enforced this; the server
+accepted any scheme/host. A misconfigured deployment now fails
+fast at process start with a clear error message rather than
+producing a mysteriously broken passkey ceremony at runtime.
+Accepted combinations: any `https://` URL, or `http://localhost`
+/ `http://127.0.0.1` / `http://::1`.
+
+### Consistency (RFC 003 — elevated to high priority)
+
+**HIBP breach check now enforced at all password-set entry
+points.** Previously only the setup wizard enforced the
+`hibp_mode` policy; self-service password change, admin-driven
+password reset, and forgot-password redemption bypassed it. All
+three now call `enforce_hibp` with the server's configured mode.
+The `PasswordChangeReport` gains an `hibp_warned` field so callers
+can surface a nudge when mode is `warn`.
+
+### Operability (RFC 016)
+
+**Server request logging.** Two concrete gaps from the maintainer:
+no HTTP access log in dev mode (operators couldn't confirm
+requests were arriving), and no file-based log option for
+production deployments. Changes:
+- `LogConfig` gains two new optional fields: `access_log` (bool,
+  default `false`) and `file` (directory path, default unset).
+- `tower-http`'s `TraceLayer` is mounted when `access_log = true`.
+- `--dev` mode sets `access_log = true` by default so every
+  request is visible in the terminal.
+- A daily-rotated file appender is started when `log.file` is set.
+  Log lines go to both stderr and the file. The returned
+  `WorkerGuard` is stored in `Startup` for the process lifetime.
+
+### Feature (RFC 012 — Position C)
+
+**Setup wizard extended to 5 steps.** The wizard now collects
+display language (Japanese / English; default Japanese) and HIBP
+policy (`off` / `warn` / `block`; default `warn`) as dedicated
+steps 3 and 4 before the completion page. The encryption key
+continues to be resolved before HTTP starts and is intentionally
+absent from the wizard. Flow:
+
+```
+Welcome → Create admin → Language → HIBP mode → Done
+```
+
+Six new e2e tests cover the full extended flow, per-step
+rendering, defaults, and explicit selections. The
+`step_indicator` component updated to 5 steps and is now
+locale-aware (labels come from `Strings`).
+
+### Documentation (RFC 015)
+
+- `README.md`: stale `crates/sui-id-bin/src/router.rs` path
+  corrected to `crates/sui-id/src/router.rs`; references to
+  non-existent `PUBLISHING.md` and `TERMS_OF_USE.md` removed.
+- `handlers/settings.rs`: module comment corrected — the handler
+  does accept POST for several settings; "read-only" was a
+  left-over from an earlier iteration.
+- `handlers/setup.rs`: module comment updated to describe the
+  new 5-step wizard flow.
+- `docs/operators.md`: wizard description updated to 5 steps with
+  descriptions of the new language and HIBP steps.
+
 ## [0.29.3] - 2026-05-05
 
 Documentation-only release. Adds `rfcs/` — a directory of design

@@ -7,7 +7,7 @@
 
 use axum::body::Body;
 use axum::http::{header, Method, Request, StatusCode};
-use sui_id::build_router;
+use sui_id::{build_router, AppState};
 
 use tower::ServiceExt;
 use super::common::*;
@@ -120,9 +120,10 @@ async fn setup_admin_post_creates_admin_with_email_and_redirects_to_done() {
         .get(header::LOCATION)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    assert_eq!(location, "/setup/done");
-    // Session cookie was set so the "次へ" button on /setup/done
-    // lands on /admin already authenticated.
+    // RFC 012: admin step now redirects to /setup/lang (language picker)
+    // instead of /setup/done.
+    assert_eq!(location, "/setup/lang");
+    // Session cookie was set so subsequent wizard steps are authenticated.
     assert!(extract_set_cookie(resp.headers(), "sui_id_session").is_some());
 
     // The email was persisted on the user row.
@@ -258,3 +259,240 @@ async fn admin_users_create_form_accepts_email() {
     assert_eq!(row.email.as_deref(), Some("bob@example.test"));
 }
 
+
+// ---------- RFC 012: Extended wizard (lang + HIBP steps) ----------
+
+/// Helper: drive the admin-creation step and return (session, redirect_location).
+async fn post_setup_admin(state: &AppState) -> String {
+    let body = format!(
+        "setup_token={SETUP_TOKEN}\
+         &username={USERNAME}\
+         &display_name=Alice\
+         &email=\
+         &password={PASSWORD}\
+         &confirm_password={PASSWORD}"
+    );
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/setup/admin")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(body))
+                .expect("req"),
+        )
+        .await
+        .expect("POST /setup/admin");
+    assert!(
+        resp.status().is_redirection(),
+        "expected redirect after admin creation, got {}",
+        resp.status()
+    );
+    // Return the session cookie that auto-login produced.
+    extract_set_cookie(resp.headers(), "sui_id_session").expect("session cookie after setup/admin")
+}
+
+#[tokio::test]
+async fn setup_wizard_lang_step_renders() {
+    let state = test_app();
+    let session = post_setup_admin(&state).await;
+
+    let resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/setup/lang")
+                .header(header::COOKIE, format!("sui_id_session={session}"))
+                .body(Body::empty())
+                .expect("req"),
+        )
+        .await
+        .expect("GET /setup/lang");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = read_body(resp.into_body()).await;
+    let body = String::from_utf8_lossy(&bytes);
+    assert!(body.contains(r#"name="lang""#), "lang radio button missing");
+    assert!(body.contains(r#"value="ja""#));
+    assert!(body.contains(r#"value="en""#));
+}
+
+#[tokio::test]
+async fn setup_wizard_lang_step_saves_selection() {
+    let state = test_app();
+    let _session = post_setup_admin(&state).await;
+
+    // POST lang = "en"
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/setup/lang")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("lang=en"))
+                .expect("req"),
+        )
+        .await
+        .expect("POST /setup/lang");
+    assert!(
+        resp.status().is_redirection(),
+        "expected redirect to /setup/hibp, got {}",
+        resp.status()
+    );
+    let loc = resp.headers().get(header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(loc, "/setup/hibp");
+
+    // Verify server_settings updated
+    let settings = sui_id_store::repos::server_settings::get(&state.db).expect("settings");
+    assert_eq!(settings.default_lang, "en", "default_lang should be 'en' after selecting English");
+}
+
+#[tokio::test]
+async fn setup_wizard_lang_step_defaults_to_ja() {
+    let state = test_app();
+    let _session = post_setup_admin(&state).await;
+
+    // POST without an explicit lang value (empty string) — should default to "ja"
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/setup/lang")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(""))
+                .expect("req"),
+        )
+        .await
+        .expect("POST /setup/lang empty");
+    assert!(resp.status().is_redirection());
+
+    let settings = sui_id_store::repos::server_settings::get(&state.db).expect("settings");
+    assert_eq!(settings.default_lang, "ja", "should default to 'ja'");
+}
+
+#[tokio::test]
+async fn setup_wizard_hibp_step_renders() {
+    let state = test_app();
+    let _session = post_setup_admin(&state).await;
+
+    let resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/setup/hibp")
+                .body(Body::empty())
+                .expect("req"),
+        )
+        .await
+        .expect("GET /setup/hibp");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = read_body(resp.into_body()).await;
+    let body = String::from_utf8_lossy(&bytes);
+    assert!(body.contains(r#"name="hibp_mode""#), "hibp_mode radio button missing");
+    assert!(body.contains(r#"value="off""#));
+    assert!(body.contains(r#"value="warn""#));
+    assert!(body.contains(r#"value="block""#));
+}
+
+#[tokio::test]
+async fn setup_wizard_hibp_step_saves_block() {
+    let state = test_app();
+    let _session = post_setup_admin(&state).await;
+
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/setup/hibp")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("hibp_mode=block"))
+                .expect("req"),
+        )
+        .await
+        .expect("POST /setup/hibp");
+    assert!(resp.status().is_redirection());
+    let loc = resp.headers().get(header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(loc, "/setup/done");
+
+    let settings = sui_id_store::repos::server_settings::get(&state.db).expect("settings");
+    assert_eq!(settings.hibp_mode, sui_id_store::models::HibpMode::Block);
+}
+
+#[tokio::test]
+async fn setup_wizard_hibp_step_defaults_to_warn() {
+    let state = test_app();
+    let _session = post_setup_admin(&state).await;
+
+    // POST without a value — should default to "warn"
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/setup/hibp")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(""))
+                .expect("req"),
+        )
+        .await
+        .expect("POST /setup/hibp empty");
+    assert!(resp.status().is_redirection());
+
+    let settings = sui_id_store::repos::server_settings::get(&state.db).expect("settings");
+    assert_eq!(settings.hibp_mode, sui_id_store::models::HibpMode::Warn);
+}
+
+#[tokio::test]
+async fn setup_wizard_full_extended_flow_completes() {
+    // Drive the complete 5-step wizard: admin → lang → hibp → done.
+    let state = test_app();
+    let _session = post_setup_admin(&state).await;
+
+    // Step 3: language
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/setup/lang")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("lang=en"))
+                .expect("req"),
+        )
+        .await
+        .expect("lang step");
+    assert!(resp.status().is_redirection());
+
+    // Step 4: HIBP
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/setup/hibp")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("hibp_mode=off"))
+                .expect("req"),
+        )
+        .await
+        .expect("hibp step");
+    assert!(resp.status().is_redirection());
+
+    // Step 5: done renders
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/setup/done")
+                .body(Body::empty())
+                .expect("req"),
+        )
+        .await
+        .expect("done page");
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Verify final settings
+    let settings = sui_id_store::repos::server_settings::get(&state.db).expect("settings");
+    assert_eq!(settings.default_lang, "en");
+    assert_eq!(settings.hibp_mode, sui_id_store::models::HibpMode::Off);
+}

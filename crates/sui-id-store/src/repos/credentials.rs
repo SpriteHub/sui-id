@@ -40,6 +40,28 @@ pub fn upsert(db: &Database, cred: &CredentialRow) -> StoreResult<()> {
     })
 }
 
+/// Same as [`upsert`] but runs inside a caller-owned transaction.
+pub fn upsert_within_tx(
+    tx: &rusqlite::Transaction<'_>,
+    cred: &CredentialRow,
+) -> StoreResult<()> {
+    tx.execute(
+        "INSERT INTO credentials(user_id, password_hash, must_change, updated_at) \
+         VALUES(?1, ?2, ?3, ?4) \
+         ON CONFLICT(user_id) DO UPDATE SET \
+             password_hash = excluded.password_hash, \
+             must_change = excluded.must_change, \
+             updated_at = excluded.updated_at",
+        params![
+            cred.user_id.to_string(),
+            cred.password_hash,
+            cred.must_change as i64,
+            cred.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
 pub fn get(db: &Database, user_id: UserId) -> StoreResult<CredentialRow> {
     db.with_conn(|conn| {
         conn.query_row(

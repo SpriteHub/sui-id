@@ -39,19 +39,38 @@ use webauthn_rs::prelude::{
 /// the `Config::server.public_url`). The WebAuthn `rp_origin` must
 /// match the browser's `window.location.origin` at challenge time —
 /// scheme, host, and port. `rp_id` is the bare host.
+///
+/// # Transport enforcement (RFC 011)
+///
+/// The WebAuthn spec requires ceremonies to run over HTTPS or on
+/// `localhost` HTTP. The browser enforces this on its side; sui-id
+/// additionally enforces it here so a misconfigured deployment fails
+/// fast at startup with a clear error, matching the project's
+/// fail-loud-at-startup posture for other config invariants.
+///
+/// Accepted combinations:
+/// - `https://` with any host
+/// - `http://` with `localhost`, `127.0.0.1`, or `::1`
 pub fn build(issuer_url: &str) -> CoreResult<Webauthn> {
     let parsed = url::Url::parse(issuer_url)
         .map_err(|_| CoreError::Internal)?;
-    let rp_id = parsed
-        .host_str()
-        .ok_or(CoreError::Internal)?
-        .to_owned();
+    let scheme = parsed.scheme();
+    let host = parsed.host_str().ok_or(CoreError::Internal)?;
+
+    // Server-enforced WebAuthn transport invariant.
+    // Spec requirement: WebAuthn must run over HTTPS or http on localhost.
+    let is_localhost = matches!(host, "localhost" | "127.0.0.1" | "::1");
+    if scheme != "https" && !(scheme == "http" && is_localhost) {
+        return Err(CoreError::ConfigError(format!(
+            "WebAuthn requires https, or http on localhost; \
+             got {scheme}://{host} — update server.public_url to an https URL \
+             (or use http://localhost for local development)"
+        )));
+    }
+
+    let rp_id = host.to_owned();
     // Trim trailing slash; webauthn-rs is strict on origin formatting.
-    let mut origin_str = format!(
-        "{}://{}",
-        parsed.scheme(),
-        parsed.host_str().ok_or(CoreError::Internal)?
-    );
+    let mut origin_str = format!("{scheme}://{host}");
     if let Some(port) = parsed.port() {
         origin_str.push_str(&format!(":{port}"));
     }
@@ -298,6 +317,52 @@ mod tests {
     fn build_accepts_https_url() {
         let w = build("https://idp.example/").expect("build");
         let _ = w; // we just want it to construct without panicking.
+    }
+
+    #[test]
+    fn build_accepts_https_with_port() {
+        let w = build("https://idp.example:8443/").expect("build");
+        let _ = w;
+    }
+
+    #[test]
+    fn build_accepts_localhost_http() {
+        let w = build("http://localhost:8080/").expect("localhost http");
+        let _ = w;
+    }
+
+    #[test]
+    fn build_accepts_127_0_0_1_http() {
+        // webauthn-rs requires a hostname for rp_id, not a raw IP address.
+        // 127.0.0.1 passes our transport check (it's a loopback address)
+        // but is rejected at the WebauthnBuilder level with an Err — which
+        // is the correct behaviour: operators should use `localhost`, not the
+        // numeric address, for local dev.  We test that we reach the builder
+        // stage (i.e., our transport guard doesn't reject it) by checking that
+        // the error, if any, is *not* a ConfigError.
+        let r = build("http://127.0.0.1:8801/");
+        match r {
+            Ok(_) => {} // webauthn-rs accepted it — fine
+            Err(CoreError::ConfigError(_)) => {
+                panic!("127.0.0.1 http must not be rejected by our transport guard (RFC 011)")
+            }
+            Err(_) => {} // webauthn-rs rejected the IP as rp_id — expected
+        }
+    }
+
+    // RFC 011: http on a non-localhost host must be rejected at startup.
+    #[test]
+    fn build_rejects_http_on_public_host() {
+        let r = build("http://idp.example/");
+        assert!(
+            r.is_err(),
+            "http on a non-localhost host must be rejected (RFC 011)"
+        );
+        let err = r.unwrap_err();
+        assert!(
+            matches!(err, CoreError::ConfigError(_)),
+            "expected ConfigError, got: {err}"
+        );
     }
 
     #[test]

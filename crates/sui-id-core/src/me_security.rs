@@ -7,11 +7,12 @@
 //! a self-serve recovery-email change once email support arrives.
 
 use crate::errors::{CoreError, CoreResult};
+use crate::hibp::{self, HibpClient, HibpEnforcement};
 use crate::password;
 use crate::time::SharedClock;
 use chrono::Utc;
 use sui_id_shared::ids::{SessionId, UserId};
-use sui_id_store::models::{AuditLogRow, CredentialRow};
+use sui_id_store::models::{AuditLogRow, CredentialRow, HibpMode};
 use sui_id_store::repos::{audit, credentials, refresh_tokens, sessions};
 use sui_id_store::Database;
 
@@ -26,6 +27,9 @@ pub struct PasswordChangeReport {
     pub sessions_revoked: usize,
     /// Number of refresh-token rows revoked.
     pub refresh_tokens_revoked: usize,
+    /// `true` when the new password was found in breach data and
+    /// `hibp_mode` was `Warn` (the change is still allowed in that case).
+    pub hibp_warned: bool,
 }
 
 /// Change the signed-in user's password.
@@ -58,6 +62,8 @@ pub struct PasswordChangeReport {
 pub fn change_password_self(
     db: &Database,
     clock: &SharedClock,
+    hibp_client: Option<&dyn HibpClient>,
+    hibp_mode: HibpMode,
     user_id: UserId,
     current_password: &str,
     new_password: &str,
@@ -82,6 +88,20 @@ pub fn change_password_self(
     //    whether their guess passed policy.
     password::check_password_policy(new_password)?;
 
+    // 3b. RFC 003: HIBP breach check. Enforced here for consistency with
+    //     the setup wizard. Fail-open: network errors let the change
+    //     through. Block mode returns BadRequest; Warn mode proceeds but
+    //     sets the flag in the report so the UI can surface a nudge.
+    let hibp_warned = match hibp::enforce_hibp(hibp_mode, hibp_client, new_password) {
+        HibpEnforcement::Blocked { .. } => {
+            return Err(CoreError::BadRequest(
+                "New password found in known data breaches. Please choose a different password.".into(),
+            ));
+        }
+        HibpEnforcement::AllowedWithWarning { .. } => true,
+        _ => false,
+    };
+
     // 4. Hash and store. `must_change` is reset — the user has
     //    just demonstrated agency.
     let new_phc = password::hash_password(new_password)?;
@@ -103,6 +123,7 @@ pub fn change_password_self(
     let mut report = PasswordChangeReport {
         sessions_revoked: 0,
         refresh_tokens_revoked: 0,
+        hibp_warned,
     };
     if revoke_others {
         report.sessions_revoked = match keep_current_session {
@@ -189,6 +210,8 @@ mod tests {
         let r = change_password_self(
             &db,
             &clock,
+            None,
+            sui_id_store::models::HibpMode::Off,
             uid,
             "the-old-tester-password",
             "the-new-tester-password",
@@ -212,6 +235,8 @@ mod tests {
         let r = change_password_self(
             &db,
             &clock,
+            None,
+            sui_id_store::models::HibpMode::Off,
             uid,
             "wrong-current-tester-password",
             "the-new-tester-password",
@@ -232,6 +257,8 @@ mod tests {
         let r = change_password_self(
             &db,
             &clock,
+            None,
+            sui_id_store::models::HibpMode::Off,
             uid,
             "the-old-tester-password",
             "short",
@@ -265,6 +292,8 @@ mod tests {
         change_password_self(
             &db,
             &clock,
+            None,
+            sui_id_store::models::HibpMode::Off,
             uid,
             "the-old-tester-password",
             "the-new-tester-password",
@@ -284,6 +313,8 @@ mod tests {
         change_password_self(
             &db,
             &clock,
+            None,
+            sui_id_store::models::HibpMode::Off,
             uid,
             "the-old-tester-password",
             "the-new-tester-password",

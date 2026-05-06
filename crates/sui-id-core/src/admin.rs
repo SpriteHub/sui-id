@@ -5,12 +5,13 @@
 //! also revoke its outstanding refresh tokens") and emit audit log entries.
 
 use crate::errors::{CoreError, CoreResult};
+use crate::hibp::{self, HibpClient, HibpEnforcement};
 use crate::password::{check_password_policy, hash_password};
 use crate::time::SharedClock;
 use crate::tokens;
 use chrono::Utc;
 use sui_id_shared::ids::{ClientId, UserId};
-use sui_id_store::models::{AuditLogRow, ClientRow, CredentialRow, UserRow};
+use sui_id_store::models::{AuditLogRow, ClientRow, CredentialRow, HibpMode, UserRow};
 use sui_id_store::repos::{
     audit, clients, credentials, refresh_tokens, sessions, user_totp, user_webauthn_credentials,
     users,
@@ -248,15 +249,34 @@ pub fn admin_reset_mfa(
     })
 }
 
+/// Reset another user's password (admin-initiated).
+///
+/// Enforces the same HIBP policy as the setup wizard and self-service
+/// password change (RFC 003 consistency requirement). Pass
+/// `HibpMode::Off` / `None` to skip the check when HIBP is disabled.
 pub fn reset_user_password(
     db: &Database,
     clock: &SharedClock,
+    hibp_client: Option<&dyn HibpClient>,
+    hibp_mode: HibpMode,
     actor: UserId,
     target: UserId,
     new_password: &str,
 ) -> CoreResult<()> {
     require_admin(db, actor)?;
     check_password_policy(new_password)?;
+
+    // RFC 003: HIBP breach check on admin-driven password reset.
+    // Fail-open: network failures let the reset through.
+    if matches!(
+        hibp::enforce_hibp(hibp_mode, hibp_client, new_password),
+        HibpEnforcement::Blocked { .. }
+    ) {
+        return Err(CoreError::BadRequest(
+            "New password found in known data breaches. Please choose a different password.".into(),
+        ));
+    }
+
     let hash = hash_password(new_password)?;
     let now = clock.now();
     credentials::upsert(

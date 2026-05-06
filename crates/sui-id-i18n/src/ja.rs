@@ -80,6 +80,27 @@ pub static STRINGS_JA: Strings = Strings {
     setup_hibp_blocked: "このパスワードは過去のデータ漏洩で確認されています。別のものを選んでください。",
     setup_generic_failure: "セットアップに失敗しました。フォームを確認して再度お試しください。",
 
+    // RFC 012: Setup wizard — Language step
+    setup_step_lang: "言語",
+    setup_lang_title: "表示言語の設定",
+    setup_lang_lede: "管理画面とログイン画面に使用する言語を選択してください。あとから設定で変更できます。",
+    setup_lang_field_label: "表示言語",
+    setup_lang_default_note: "あとから管理画面の設定で変更できます。",
+    setup_lang_submit: "次へ",
+
+    // RFC 012: Setup wizard — HIBP step
+    setup_step_hibp: "セキュリティ",
+    setup_hibp_step_title: "パスワードセキュリティポリシー",
+    setup_hibp_step_lede: "Have I Been Pwned を使用して、既知の漏洩パスワードを検出できます。パスワードの先頭 5 文字のみを送信するため、プライバシーが守られます。",
+    setup_hibp_option_off: "無効",
+    setup_hibp_option_off_desc: "漏洩チェックを行いません。",
+    setup_hibp_option_warn: "警告（推奨）",
+    setup_hibp_option_warn_desc: "漏洩パスワードを警告しますが、設定は許可します。",
+    setup_hibp_option_block: "ブロック",
+    setup_hibp_option_block_desc: "既知の漏洩パスワードは拒否します。",
+    setup_hibp_step_default_note: "あとから管理画面の設定で変更できます。",
+    setup_hibp_step_submit: "次へ",
+
     // Step-up auth
     step_up_title: "再認証",
     step_up_lede: "セキュリティ上重要な操作を行う前に、認証アプリのコードで本人確認をお願いします。短時間(5 分間)有効です。",

@@ -37,6 +37,7 @@
 //! sent the link" page.
 
 use crate::errors::{CoreError, CoreResult};
+use crate::hibp::{self, HibpClient, HibpEnforcement};
 use crate::events::{self, Context, SecurityEvent};
 use crate::mail::{MailSender, OutgoingMail};
 use crate::password;
@@ -46,8 +47,8 @@ use chrono::Duration;
 use rand::{rngs::OsRng, RngCore};
 use sha2::{Digest, Sha256};
 use sui_id_shared::ids::{PasswordResetTokenId, UserId};
-use sui_id_store::models::{CredentialRow, PasswordResetTokenRow};
-use sui_id_store::repos::{credentials, password_reset_tokens, smtp_config, users};
+use sui_id_store::models::{CredentialRow, HibpMode, PasswordResetTokenRow};
+use sui_id_store::repos::{credentials, password_reset_tokens, refresh_tokens, sessions, smtp_config, users};
 use sui_id_store::Database;
 
 /// 30 minutes — a balance between user-friendly delivery delays
@@ -275,18 +276,39 @@ pub fn validate_token(
     Ok(row.user_id)
 }
 
-/// Verify the token, set the user's new password, and mark the
-/// token consumed. The new password must satisfy the project's
-/// password policy.
+/// Verify the token, set the user's new password, mark the token consumed,
+/// and revoke all existing sessions and refresh tokens for the user — all
+/// in a single atomic transaction.
+///
+/// Revoking prior sessions is essential: the user completed this flow
+/// precisely because they lost control of their credentials. An attacker
+/// who holds a stolen session cookie or refresh token must not retain
+/// access after the legitimate user has recovered the account.
+///
+/// The revoke matches the behaviour of the admin-driven and self-service
+/// password-change paths, which both revoke on write.
 pub async fn consume_and_reset_password(
     db: &Database,
     clock: &SharedClock,
     mailer: &dyn MailSender,
+    hibp_client: Option<&dyn HibpClient>,
+    hibp_mode: HibpMode,
     plaintext_token: &str,
     new_password: &str,
     requester_ip: Option<&str>,
 ) -> CoreResult<()> {
     password::check_password_policy(new_password)?;
+
+    // RFC 003: HIBP breach check on token-based password reset.
+    // Fail-open: network failures let the reset through.
+    if matches!(
+        hibp::enforce_hibp(hibp_mode, hibp_client, new_password),
+        HibpEnforcement::Blocked { .. }
+    ) {
+        return Err(CoreError::BadRequest(
+            "New password found in known data breaches. Please choose a different password.".into(),
+        ));
+    }
     let hash = hash_token(plaintext_token);
     let row = password_reset_tokens::find_by_hash(db, &hash)?
         .ok_or(CoreError::InvalidCredentials)?;
@@ -295,20 +317,28 @@ pub async fn consume_and_reset_password(
         return Err(CoreError::InvalidCredentials);
     }
 
-    // Update the user's password.
+    // Hash the new password before entering the transaction so a slow
+    // Argon2id derivation doesn't hold the DB mutex longer than necessary.
     let new_hash = password::hash_password(new_password)?;
-    credentials::upsert(
-        db,
-        &CredentialRow {
-            user_id: row.user_id,
-            password_hash: new_hash,
-            must_change: false,
-            updated_at: now,
-        },
-    )?;
 
-    // Mark the token consumed so a replay can't re-use it.
-    password_reset_tokens::mark_consumed(db, row.id, now)?;
+    // Atomically: update credential, consume token, revoke all sessions and
+    // refresh tokens. Either everything commits or nothing does — the user
+    // is never left in a half-recovered state.
+    db.with_tx(|tx| {
+        credentials::upsert_within_tx(
+            tx,
+            &CredentialRow {
+                user_id: row.user_id,
+                password_hash: new_hash.clone(),
+                must_change: false,
+                updated_at: now,
+            },
+        )?;
+        password_reset_tokens::mark_consumed_within_tx(tx, row.id, now)?;
+        sessions::revoke_all_for_user_within_tx(tx, row.user_id, now)?;
+        refresh_tokens::revoke_all_for_user_within_tx(tx, row.user_id, now)?;
+        Ok(())
+    })?;
 
     let mut ctx = Context::default().with_actor(row.user_id);
     if let Some(ip) = requester_ip {

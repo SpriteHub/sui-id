@@ -189,6 +189,9 @@ async fn serve_dev(args: &[String]) -> Result<()> {
     // the bind for the host (this is a dev-mode-only scheme).
     cfg.server.issuer = format!("http://{dev_bind}");
     cfg.server.cookie_secure = false;
+    // RFC 016: dev mode enables access logging by default so operators
+    // can immediately see requests arriving in the terminal.
+    cfg.log.access_log = true;
     // No persisted key file: the DB lives under an ephemeral
     // master key that this process generates. Keep storage paths
     // unset by pointing them at /dev/null-style placeholders that
@@ -215,6 +218,11 @@ async fn serve_dev(args: &[String]) -> Result<()> {
     };
     dev_mode::print_seed_summary(&seed, &outcome, &dev_bind);
     let _ = outcome.admin_user_id; // captured for symmetry; not needed below.
+
+    // Initialise tracing with dev defaults (access_log = true set above).
+    // In normal mode startup::prepare does this; dev mode builds AppState
+    // directly so we must call it explicitly here.
+    let _log_guard = sui_id::startup::init_tracing(&cfg.log);
 
     // Build the AppState directly (we can't use startup::prepare
     // because it opens its own DB). Mirror its mailer + HIBP

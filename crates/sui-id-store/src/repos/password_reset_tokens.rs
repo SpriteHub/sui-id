@@ -96,6 +96,23 @@ pub fn mark_consumed(
     })
 }
 
+/// Same as [`mark_consumed`] but runs inside a caller-owned transaction.
+pub fn mark_consumed_within_tx(
+    tx: &rusqlite::Transaction<'_>,
+    id: PasswordResetTokenId,
+    consumed_at: DateTime<Utc>,
+) -> StoreResult<()> {
+    let n = tx.execute(
+        "UPDATE password_reset_tokens SET consumed_at = ?1 WHERE id = ?2",
+        params![consumed_at, id.to_string()],
+    )?;
+    if n == 0 {
+        Err(StoreError::NotFound)
+    } else {
+        Ok(())
+    }
+}
+
 /// Periodic cleanup helper: delete rows whose `expires_at` is in
 /// the past *and* are unconsumed (or consumed long enough ago that
 /// keeping them adds no value). The cutoff comes from the caller so

@@ -178,11 +178,18 @@ pub async fn reset_password_post(
         ));
     }
 
+    // RFC 003: load HIBP settings for this request.
+    let hibp_mode = sui_id_store::repos::server_settings::get(&app.db)
+        .map(|s| s.hibp_mode)
+        .unwrap_or_default();
+
     let ip_str = ip.to_string();
     match sui_id_core::forgot_password::consume_and_reset_password(
         &app.db,
         &app.clock,
         app.mailer.as_ref(),
+        Some(app.hibp_client.as_ref()),
+        hibp_mode,
         &form.token,
         &form.password,
         Some(&ip_str),

@@ -96,6 +96,27 @@ pub struct Strings {
     /// setup-wizard error (e.g. an internal storage failure).
     pub setup_generic_failure: &'static str,
 
+    // ---- RFC 012: Setup wizard — Language step ----
+    pub setup_step_lang: &'static str,
+    pub setup_lang_title: &'static str,
+    pub setup_lang_lede: &'static str,
+    pub setup_lang_field_label: &'static str,
+    pub setup_lang_default_note: &'static str,
+    pub setup_lang_submit: &'static str,
+
+    // ---- RFC 012: Setup wizard — HIBP step ----
+    pub setup_step_hibp: &'static str,
+    pub setup_hibp_step_title: &'static str,
+    pub setup_hibp_step_lede: &'static str,
+    pub setup_hibp_option_off: &'static str,
+    pub setup_hibp_option_off_desc: &'static str,
+    pub setup_hibp_option_warn: &'static str,
+    pub setup_hibp_option_warn_desc: &'static str,
+    pub setup_hibp_option_block: &'static str,
+    pub setup_hibp_option_block_desc: &'static str,
+    pub setup_hibp_step_default_note: &'static str,
+    pub setup_hibp_step_submit: &'static str,
+
     // ---- Step-up auth ----
     pub step_up_title: &'static str,
     pub step_up_lede: &'static str,

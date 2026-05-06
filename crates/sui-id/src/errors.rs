@@ -153,7 +153,8 @@ fn safe_user_message(err: &CoreError) -> String {
         CoreError::NotInitialized => "This server has not been initialized yet.".into(),
         CoreError::AlreadyInitialized => "This server is already initialized.".into(),
         CoreError::Protocol { description, .. } => description.clone(),
-        CoreError::Store(_) | CoreError::Password | CoreError::Jwt | CoreError::Internal => {
+        CoreError::Store(_) | CoreError::Password | CoreError::Jwt | CoreError::Internal
+        | CoreError::ConfigError(_) => {
             "An internal error occurred.".into()
         }
     }

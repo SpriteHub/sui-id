@@ -203,6 +203,28 @@ that need resolution before implementation.
 
 ## Done
 
+- Security, spec-compliance, and quality release (v0.29.4).
+  Implements the five highest-priority RFC items from the
+  v0.29.3 codebase review plus the maintainer's logging query:
+  - **RFC 010** (security): forgot-password completion atomically
+    revokes all sessions and refresh tokens. Two regression tests.
+  - **RFC 011** (spec compliance): WebAuthn `build()` rejects
+    non-HTTPS non-localhost origins at startup. Fail-loud posture
+    now matches the rest of the codebase.
+  - **RFC 016** (operability): `TraceLayer` mounted, `LogConfig`
+    extended with `access_log` and `file` fields, daily-rotated
+    file appender, dev mode defaults to access logging on.
+  - **RFC 003** (consistency, elevated): HIBP breach check wired
+    into all three remaining password-set entry points (self-service
+    change, admin reset, forgot-password redemption). `PasswordChangeReport`
+    gains `hibp_warned`.
+  - **RFC 012** (wizard): Setup wizard extended from 3 to 5 steps
+    with language picker and HIBP policy picker (Position C).
+    Six new e2e tests.
+  - **RFC 015** (docs): README stale paths corrected; settings.rs
+    module comment corrected; operators.md wizard description
+    updated.
+
 - RFC set under `rfcs/` (v0.29.3). Seventeen design specifications
   in two cohorts. Nine cover the medium- and longer-term
   ROADMAP items (001–009); eight address the v0.29.3 external
