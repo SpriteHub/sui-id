@@ -59,9 +59,9 @@ pub async fn introspect(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let (client_id, client_secret) = client_credentials(&headers, &form.client_id, &form.client_secret)
-        .ok_or_else(|| HttpError::api(CoreError::Unauthenticated))?;
+        .ok_or_else(|| HttpError::oauth(CoreError::Unauthenticated))?;
     let cid = sui_id_core::oauth_token::authenticate_client(&app.db, &client_id, &client_secret)
-        .map_err(HttpError::api)?;
+        .map_err(HttpError::oauth)?;
     let resp = sui_id_core::oauth_token::introspect(
         &app.db,
         &app.clock,
@@ -69,7 +69,7 @@ pub async fn introspect(
         &form.token,
         form.token_type_hint.as_deref(),
     )
-    .map_err(HttpError::api)?;
+    .map_err(HttpError::oauth)?;
     let wire = IntrospectionWire {
         active: resp.active,
         scope: resp.scope,
@@ -114,9 +114,9 @@ pub async fn revoke(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let (client_id, client_secret) = client_credentials(&headers, &form.client_id, &form.client_secret)
-        .ok_or_else(|| HttpError::api(CoreError::Unauthenticated))?;
+        .ok_or_else(|| HttpError::oauth(CoreError::Unauthenticated))?;
     let cid = sui_id_core::oauth_token::authenticate_client(&app.db, &client_id, &client_secret)
-        .map_err(HttpError::api)?;
+        .map_err(HttpError::oauth)?;
     sui_id_core::oauth_token::revoke(
         &app.db,
         &app.clock,
@@ -124,7 +124,7 @@ pub async fn revoke(
         &form.token,
         form.token_type_hint.as_deref(),
     )
-    .map_err(HttpError::api)?;
+    .map_err(HttpError::oauth)?;
     let _ = sui_id_store::repos::audit::append(
         &app.db,
         &sui_id_store::models::AuditLogRow {

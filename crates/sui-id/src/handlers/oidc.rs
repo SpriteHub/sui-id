@@ -205,13 +205,13 @@ pub async fn token(
     let client_id_raw = header_client
         .or_else(|| form.client_id.clone())
         .ok_or_else(|| {
-            HttpError::api(CoreError::Protocol {
+            HttpError::oauth(CoreError::Protocol {
                 code: ProtocolError::InvalidClient,
                 description: "client_id is required".into(),
             })
         })?;
     let client_id = ClientId::from_str(&client_id_raw).map_err(|_| {
-        HttpError::api(CoreError::Protocol {
+        HttpError::oauth(CoreError::Protocol {
             code: ProtocolError::InvalidClient,
             description: "client_id is not a valid identifier".into(),
         })
@@ -228,19 +228,19 @@ pub async fn token(
     let set = match form.grant_type.as_str() {
         "authorization_code" => {
             let code = form.code.ok_or_else(|| {
-                HttpError::api(CoreError::Protocol {
+                HttpError::oauth(CoreError::Protocol {
                     code: ProtocolError::InvalidRequest,
                     description: "code is required".into(),
                 })
             })?;
             let redirect_uri = form.redirect_uri.ok_or_else(|| {
-                HttpError::api(CoreError::Protocol {
+                HttpError::oauth(CoreError::Protocol {
                     code: ProtocolError::InvalidRequest,
                     description: "redirect_uri is required".into(),
                 })
             })?;
             let code_verifier = form.code_verifier.ok_or_else(|| {
-                HttpError::api(CoreError::Protocol {
+                HttpError::oauth(CoreError::Protocol {
                     code: ProtocolError::InvalidRequest,
                     description: "code_verifier is required (PKCE)".into(),
                 })
@@ -257,11 +257,11 @@ pub async fn token(
                     code_verifier,
                 },
             )
-            .map_err(HttpError::api)?
+            .map_err(HttpError::oauth)?
         }
         "refresh_token" => {
             let refresh_token = form.refresh_token.ok_or_else(|| {
-                HttpError::api(CoreError::Protocol {
+                HttpError::oauth(CoreError::Protocol {
                     code: ProtocolError::InvalidRequest,
                     description: "refresh_token is required".into(),
                 })
@@ -276,10 +276,10 @@ pub async fn token(
                     client_secret,
                 },
             )
-            .map_err(HttpError::api)?
+            .map_err(HttpError::oauth)?
         }
         other => {
-            return Err(HttpError::api(CoreError::Protocol {
+            return Err(HttpError::oauth(CoreError::Protocol {
                 code: ProtocolError::UnsupportedGrantType,
                 description: format!("unsupported grant_type: {other}"),
             }));

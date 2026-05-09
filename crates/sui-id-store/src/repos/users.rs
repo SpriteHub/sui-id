@@ -9,6 +9,34 @@ use sui_id_shared::ids::UserId;
 
 fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
     let user_uuid_str: String = row.get(8)?;
+    // Migration 0004 added `user_uuid` with `DEFAULT ''` and immediately
+    // backfilled all existing rows. In a correctly-migrated database this
+    // string is never empty. If it were empty (e.g. from a direct SQL write
+    // that bypassed the application), `Uuid::parse_str("")` would return an
+    // opaque conversion error that would surface as a 500 with no actionable
+    // message. We handle it explicitly: emit a warning and use `Uuid::nil()`
+    // so that the row can still be read (the user can log in; WebAuthn will
+    // fail for this row until the operator repairs the value). A future
+    // migration will add `CHECK (user_uuid <> '')` once the safe parent-table
+    // rebuild strategy is available.
+    let user_uuid = if user_uuid_str.is_empty() {
+        tracing::warn!(
+            "users row has empty user_uuid — using nil UUID as fallback; \
+             repair with: UPDATE users SET user_uuid = lower(hex(randomblob(4))) || '-' || \
+             lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || \
+             substr('89ab', 1+(abs(random())%4), 1) || substr(lower(hex(randomblob(2))),2) || '-' || \
+             lower(hex(randomblob(6))) WHERE user_uuid = ''"
+        );
+        uuid::Uuid::nil()
+    } else {
+        uuid::Uuid::parse_str(&user_uuid_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                8,
+                rusqlite::types::Type::Text,
+                Box::new(e),
+            )
+        })?
+    };
     Ok(UserRow {
         id: row
             .get::<_, String>(0)?
@@ -19,9 +47,7 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
         is_admin: row.get::<_, i64>(3)? != 0,
         is_disabled: row.get::<_, i64>(4)? != 0,
         is_deleted: row.get::<_, i64>(5)? != 0,
-        user_uuid: uuid::Uuid::parse_str(&user_uuid_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e))
-        })?,
+        user_uuid,
         created_at: row.get::<_, DateTime<Utc>>(6)?,
         updated_at: row.get::<_, DateTime<Utc>>(7)?,
         failed_login_count: row.get::<_, i64>(9)?,

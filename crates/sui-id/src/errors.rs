@@ -2,14 +2,21 @@
 //!
 //! The pattern: handlers return `Result<R, HttpError>`. `HttpError` carries a
 //! [`CoreError`] plus the request id. On `IntoResponse`, we map to either a
-//! JSON body (for API endpoints) or a rendered HTML error page (for browser
-//! endpoints). The decision is made at the `From` site: API handlers wrap
-//! errors with [`HttpError::api`], browser handlers with [`HttpError::html`].
+//! JSON body (for API endpoints), a rendered HTML error page (for browser
+//! endpoints), or an RFC 6749 wire-format body (for OAuth protocol endpoints).
+//!
+//! - [`HttpError::api`] — internal JSON envelope (`{"code":...,"protocol_code":...}`)
+//!   for admin API and UI handlers.
+//! - [`HttpError::html`] — HTML error page for browser-facing handlers.
+//! - [`HttpError::oauth`] — **RFC 6749 §5.2** JSON body
+//!   (`{"error":...,"error_description":...}`) for the token, introspect, and
+//!   revoke endpoints. Integrators depend on this exact wire format.
 
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use axum::Json;
-use sui_id_core::errors::CoreError;
+use serde::Serialize;
+use sui_id_core::errors::{CoreError, ProtocolError};
 use sui_id_shared::errors::{ApiError, ApiErrorCode};
 use uuid::Uuid;
 
@@ -26,6 +33,21 @@ pub struct HttpError {
 enum ErrorRepresentation {
     Json,
     Html,
+    /// RFC 6749 §5.2 wire format: `{"error":"...","error_description":"..."}`
+    OAuth,
+}
+
+/// RFC 6749 §5.2 / RFC 7009 / RFC 7662 error response body.
+///
+/// The `error` field contains a registered error code (e.g. `"invalid_grant"`).
+/// The `error_description` field SHOULD contain a human-readable explanation
+/// in ASCII. It is `skip_serializing_if = "Option::is_none"` because some error
+/// paths do not have a natural description.
+#[derive(Debug, Serialize)]
+pub struct OAuthErrorBody {
+    pub error: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_description: Option<String>,
 }
 
 impl HttpError {
@@ -44,6 +66,30 @@ impl HttpError {
             inner: err,
             request_id: new_req_id(),
             representation: ErrorRepresentation::Html,
+            forced_status: None,
+            retry_after_secs: None,
+        }
+    }
+
+    /// Build an error response in RFC 6749 §5.2 wire format.
+    ///
+    /// Use this for all OAuth/OIDC **protocol endpoints** (token, introspect,
+    /// revoke). OIDC integrators expect `{"error":"...","error_description":"..."}`
+    /// here; the internal API envelope is inappropriate for these endpoints.
+    ///
+    /// Status codes per RFC 6749:
+    /// - `invalid_client` authentication failures → **401 Unauthorized** with
+    ///   a `WWW-Authenticate: Basic realm="sui-id"` header.
+    /// - All other protocol errors → **400 Bad Request**.
+    /// - Non-protocol internal errors → **500** (opaque, no `error_description`).
+    ///
+    /// The `WWW-Authenticate` header is attached in [`IntoResponse`] when the
+    /// error resolves to `invalid_client`.
+    pub fn oauth(err: CoreError) -> Self {
+        Self {
+            inner: err,
+            request_id: new_req_id(),
+            representation: ErrorRepresentation::OAuth,
             forced_status: None,
             retry_after_secs: None,
         }
@@ -81,12 +127,8 @@ fn new_req_id() -> String {
 
 impl IntoResponse for HttpError {
     fn into_response(self) -> Response {
-        let code = self.inner.api_code();
-        let status = self.forced_status.unwrap_or_else(|| {
-            StatusCode::from_u16(code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
-        });
-
         // Always log the internal cause; never put it in the response body.
+        let code = self.inner.api_code();
         tracing::warn!(
             request_id = %self.request_id,
             code = ?code,
@@ -94,40 +136,97 @@ impl IntoResponse for HttpError {
             "request failed"
         );
 
-        let mut resp = match self.representation {
-            ErrorRepresentation::Json => {
-                let payload = build_api_error(&self.inner, &self.request_id, code);
-                (status, Json(payload)).into_response()
-            }
-            ErrorRepresentation::Html => {
-                let title = match code {
-                    ApiErrorCode::Unauthorized => "Sign in required",
-                    ApiErrorCode::Forbidden => "Forbidden",
-                    ApiErrorCode::NotFound => "Not found",
-                    ApiErrorCode::Conflict => "Conflict",
-                    ApiErrorCode::BadRequest => "Bad request",
-                    ApiErrorCode::InvalidState => "Wrong system state",
-                    ApiErrorCode::TooManyRequests => "Too many requests",
-                    ApiErrorCode::Protocol => "Protocol error",
-                    ApiErrorCode::Internal => "Something went wrong",
-                };
-                let safe_message = safe_user_message(&self.inner);
-                let body = sui_id_web::render_error(
-                    title.to_owned(),
-                    safe_message,
-                    self.request_id.clone(),
-                );
-                (status, Html(body)).into_response()
-            }
-        };
-        if let Some(secs) = self.retry_after_secs {
-            if let Ok(value) = axum::http::HeaderValue::from_str(&secs.to_string()) {
-                resp.headers_mut()
-                    .insert(axum::http::header::RETRY_AFTER, value);
-            }
+        match self.representation {
+            ErrorRepresentation::OAuth => oauth_error_response(self),
+            ErrorRepresentation::Json => json_error_response(self, code),
+            ErrorRepresentation::Html => html_error_response(self, code),
         }
-        resp
     }
+}
+
+/// Produce an RFC 6749 §5.2 wire-format response.
+fn oauth_error_response(e: HttpError) -> Response {
+    let (status, error_code, description) = match &e.inner {
+        CoreError::Protocol { code, description } => {
+            let status = if *code == ProtocolError::InvalidClient {
+                StatusCode::UNAUTHORIZED
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (status, code.as_str(), Some(description.clone()))
+        }
+        CoreError::Unauthenticated | CoreError::InvalidCredentials => {
+            (StatusCode::UNAUTHORIZED, "invalid_client", Some("client authentication failed".into()))
+        }
+        _ => {
+            // Do not leak internal error details over the protocol wire.
+            (StatusCode::INTERNAL_SERVER_ERROR, "server_error", None)
+        }
+    };
+
+    let status = e.forced_status.unwrap_or(status);
+    let body = OAuthErrorBody { error: error_code, error_description: description };
+
+    let mut resp = (status, Json(body)).into_response();
+
+    // RFC 6749 §3.2.1: when the server authenticates the client via HTTP
+    // Basic and that authentication fails, it MUST include a
+    // WWW-Authenticate header.
+    if status == StatusCode::UNAUTHORIZED {
+        resp.headers_mut()
+            .insert(
+                axum::http::header::WWW_AUTHENTICATE,
+                axum::http::HeaderValue::from_static("Basic realm=\"sui-id\""),
+            );
+    }
+    // RFC 6749 §5.1 / BCP 212: token endpoint responses must not be cached.
+    if let Ok(val) = axum::http::HeaderValue::from_str("no-store") {
+        resp.headers_mut()
+            .insert(axum::http::header::CACHE_CONTROL, val);
+    }
+    resp
+}
+
+fn json_error_response(e: HttpError, code: ApiErrorCode) -> Response {
+    let status = e.forced_status.unwrap_or_else(|| {
+        StatusCode::from_u16(code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+    });
+    let payload = build_api_error(&e.inner, &e.request_id, code);
+    let mut resp = (status, Json(payload)).into_response();
+    if let Some(secs) = e.retry_after_secs {
+        if let Ok(value) = axum::http::HeaderValue::from_str(&secs.to_string()) {
+            resp.headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, value);
+        }
+    }
+    resp
+}
+
+fn html_error_response(e: HttpError, code: ApiErrorCode) -> Response {
+    let status = e.forced_status.unwrap_or_else(|| {
+        StatusCode::from_u16(code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+    });
+    let title = match code {
+        ApiErrorCode::Unauthorized => "Sign in required",
+        ApiErrorCode::Forbidden => "Forbidden",
+        ApiErrorCode::NotFound => "Not found",
+        ApiErrorCode::Conflict => "Conflict",
+        ApiErrorCode::BadRequest => "Bad request",
+        ApiErrorCode::InvalidState => "Wrong system state",
+        ApiErrorCode::TooManyRequests => "Too many requests",
+        ApiErrorCode::Protocol => "Protocol error",
+        ApiErrorCode::Internal => "Something went wrong",
+    };
+    let safe_message = safe_user_message(&e.inner);
+    let body = sui_id_web::render_error(title.to_owned(), safe_message, e.request_id.clone());
+    let mut resp = (status, Html(body)).into_response();
+    if let Some(secs) = e.retry_after_secs {
+        if let Ok(value) = axum::http::HeaderValue::from_str(&secs.to_string()) {
+            resp.headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, value);
+        }
+    }
+    resp
 }
 
 fn build_api_error(err: &CoreError, request_id: &str, code: ApiErrorCode) -> ApiError {

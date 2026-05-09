@@ -124,9 +124,9 @@ async fn exchange_code_rejected_when_user_disabled_before_exchange() {
     // The server uses "protocol_code" for the OAuth error token in its
     // JSON envelope (see sui-id-shared::errors::ApiErrorBody).
     assert_eq!(
-        json["protocol_code"].as_str(),
+        json["error"].as_str(),
         Some("invalid_grant"),
-        "expected invalid_grant protocol_code"
+        "expected invalid_grant per RFC 6749"
     );
 
     // The audit log should contain the user_revoked event.
@@ -171,7 +171,7 @@ async fn auth_codes_invalidated_on_user_disable() {
     );
     let body = read_body(resp.into_body()).await;
     let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
-    assert_eq!(json["protocol_code"].as_str(), Some("invalid_grant"), "expected invalid_grant");
+    assert_eq!(json["error"].as_str(), Some("invalid_grant"), "expected invalid_grant");
 }
 
 /// RFC 019 § 5 (GC fix): a revoked-but-unexpired refresh token survives

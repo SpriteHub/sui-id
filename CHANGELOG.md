@@ -5,7 +5,70 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.29.8] — Unreleased
+## [0.29.9] — Unreleased
+
+Addresses the remaining review findings from the v0.29.7 expert review:
+RFC 6749 protocol endpoint error format, and `user_uuid` empty-string
+defensive handling.
+
+### OAuth protocol endpoints: RFC 6749 §5.2 error format
+
+`/oauth2/token`, `/oauth2/introspect`, and `/oauth2/revoke` previously
+returned the internal API envelope (`{"code":"protocol","protocol_code":"..."}`)
+on error. OIDC integrators that mechanically parse token endpoint errors
+per RFC 6749 received an unrecognisable format. All three endpoints now
+return the standard wire format:
+
+```json
+{"error":"invalid_grant","error_description":"..."}
+```
+
+The `error` field is one of the registered error codes from RFC 6749
+(`invalid_grant`, `invalid_client`, `unsupported_grant_type`, etc.).
+
+Additional compliance improvements:
+- **401 responses include `WWW-Authenticate: Basic realm="sui-id"`** per
+  RFC 6749 §3.2.1, for cases where the client authenticated via Basic auth
+  and authentication failed (`invalid_client`).
+- **Protocol error responses include `Cache-Control: no-store`** per
+  RFC 6749 §5.1 / BCP 212.
+- Internal envelope fields (`code`, `protocol_code`, `request_id`) are
+  absent from protocol endpoint responses — they remain on admin/UI API
+  endpoints which are not consumed by OIDC integrators.
+
+A new `HttpError::oauth()` method in `errors.rs` encapsulates the
+RFC 6749 wire format. The internal `HttpError::api()` format is
+unchanged and still used for admin API and HTML endpoints.
+
+### `user_uuid` empty-string defensive handling
+
+`users::map_row()` previously called `Uuid::parse_str("")` for rows with
+`user_uuid = ''` (only possible via direct SQL writes or very old databases
+not correctly migrated through 0004). The parse error propagated as an
+opaque database I/O error, causing a 500 response with no actionable
+message.
+
+`map_row()` now detects the empty-string case explicitly: it logs a
+`WARN`-level message with a repair SQL snippet and substitutes `Uuid::nil()`
+so the row can still be read. The user can log in and use the service;
+WebAuthn credential operations will fail until the value is repaired.
+The repair guidance is included in the log message.
+
+### Tests added
+
+- `rfc6749_error_format` e2e suite (7 tests): unsupported_grant_type,
+  invalid_grant, invalid_client (missing creds), invalid_client (wrong
+  secret), Cache-Control presence, introspect unauthenticated 401,
+  and introspect with garbage token returning `{"active":false}`.
+
+### Test updated
+
+- `auth_flow_integrity` tests updated from `json["protocol_code"]` →
+  `json["error"]` to match the new RFC 6749 wire format.
+
+---
+
+## [0.29.8] — Previous bugfix release
 
 **Critical bugfix release.** Migration 0021 in v0.29.7 contained a data-loss
 bug on upgrade of an existing database. All users of v0.29.7 should skip that
