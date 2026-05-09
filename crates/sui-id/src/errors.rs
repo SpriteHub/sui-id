@@ -148,10 +148,10 @@ impl IntoResponse for HttpError {
 fn oauth_error_response(e: HttpError) -> Response {
     let (status, error_code, description) = match &e.inner {
         CoreError::Protocol { code, description } => {
-            let status = if *code == ProtocolError::InvalidClient {
-                StatusCode::UNAUTHORIZED
-            } else {
-                StatusCode::BAD_REQUEST
+            let status = match code {
+                ProtocolError::InvalidClient => StatusCode::UNAUTHORIZED,
+                ProtocolError::TemporarilyUnavailable => StatusCode::TOO_MANY_REQUESTS,
+                _ => StatusCode::BAD_REQUEST,
             };
             (status, code.as_str(), Some(description.clone()))
         }
@@ -183,6 +183,13 @@ fn oauth_error_response(e: HttpError) -> Response {
     if let Ok(val) = axum::http::HeaderValue::from_str("no-store") {
         resp.headers_mut()
             .insert(axum::http::header::CACHE_CONTROL, val);
+    }
+    // Add Retry-After for rate-limit (429) responses.
+    if let Some(secs) = e.retry_after_secs {
+        if let Ok(val) = axum::http::HeaderValue::from_str(&secs.to_string()) {
+            resp.headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, val);
+        }
     }
     resp
 }

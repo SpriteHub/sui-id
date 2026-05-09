@@ -194,7 +194,7 @@ pub async fn token(
         &app.clock,
         crate::handlers::RateLimitKey::Token,
         ip,
-        crate::handlers::ErrorAs::Json,
+        crate::handlers::ErrorAs::OAuth,
     )?;
 
     let basic = parse_basic_auth(&headers);

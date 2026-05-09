@@ -1,11 +1,23 @@
 -- preflight-0021.sql
+-- Pre-flight checks for migration 0021 (v0.29.7).
+--
+-- ┌─────────────────────────────────────────────────────────────────────┐
+-- │ NOTE: v0.29.7 has been RETRACTED due to a data-loss bug in          │
+-- │ migration 0021. Do NOT upgrade to v0.29.7.                          │
+-- │                                                                     │
+-- │ If you are upgrading from v0.29.6, skip directly to v0.29.10 or    │
+-- │ later. The pre-flight checks for migration 0022 (which replaces the  │
+-- │ boolean-CHECK work that was intended for migration 0021) are in      │
+-- │ docs/operators/preflight-0022.sql.                                  │
+-- │                                                                     │
+-- │ This file is retained for reference only. The queries below are     │
+-- │ a subset of preflight-0022.sql.                                     │
+-- └─────────────────────────────────────────────────────────────────────┘
+--
+-- Original description (historical):
 -- Pre-flight checks for migration 0021 (Schema invariant CHECKs).
---
--- Run these queries against your database BEFORE upgrading to v0.29.7.
--- If any query returns rows, resolve the issues first (see below).
--- An empty result for every query means you are safe to upgrade.
---
--- Usage: sqlite3 /path/to/sui-id.db < docs/operators/preflight-0021.sql
+-- This file referred to boolean-CHECK constraints that were deferred from
+-- 0021 (v0.29.7) to 0022 (v0.29.10) after the data-loss bug was discovered.
 
 
 -- ── Boolean columns out of {0, 1} ─────────────────────────────────────────

@@ -5,7 +5,77 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.29.10] — Unreleased
+## [0.29.11] — Unreleased
+
+Addresses remaining review findings from the v0.29.10 expert review
+(migration runner reliability, rate-limit response format, documentation).
+
+### Migration runner: guaranteed FK restoration on failure
+
+The `apply_migration()` function (extracted from `run()` in this release)
+uses a closure pattern to ensure `PRAGMA foreign_keys = ON` is restored
+*regardless* of whether the migration succeeds or fails:
+
+```rust
+let migration_result: StoreResult<()> = (|| {
+    let tx = conn.transaction()?;
+    tx.execute_batch(m.sql)?;
+    ...
+    tx.commit()?;
+    Ok(())
+})();
+// Always restore — even on failure.
+if needs_fk_disable {
+    let _ = conn.execute_batch("PRAGMA foreign_keys = ON;");
+}
+migration_result?;  // Propagate error after FK is restored.
+```
+
+Previously, a `?`-propagated error inside the transaction block would
+early-return without restoring FK enforcement, leaving the connection in
+a state where all FK constraints were silently disabled.
+
+### Migration runner: `run_up_to()` now shares `apply_migration()`
+
+`run_up_to()` (test helper) previously used a bare transaction loop
+without FK_DISABLE_REQUIRED handling. It now calls the same
+`apply_migration()` as `run()`, guaranteeing identical behaviour.
+Tests that call `run_up_to(&mut conn, 22)` now correctly handle the
+`FK_DISABLE_REQUIRED` marker in migration 0022.
+
+### Rate-limit error: RFC 6749 format on `/oauth2/token`
+
+The token endpoint previously used `ErrorAs::Json` for rate-limit errors,
+producing the internal API envelope. It now uses `ErrorAs::OAuth`:
+
+- Error body: `{"error":"temporarily_unavailable","error_description":"..."}`
+- HTTP status: 429 Too Many Requests
+- `Retry-After` header included (existing behaviour, now also in OAuth responses)
+- `Cache-Control: no-store` included (all OAuth error responses)
+
+`ProtocolError::TemporarilyUnavailable` is added to `sui-id-core` to carry
+this error code through the type system.
+
+### `preflight-0021.sql` retraction notice
+
+`docs/operators/preflight-0021.sql` now contains a prominent banner at the
+top of the file noting that v0.29.7 was retracted and directing operators
+to `preflight-0022.sql` for the current preflight procedure.
+
+### Tests added
+
+- `fk_is_restored_after_fk_disable_migration_failure` — verifies that
+  `PRAGMA foreign_keys` is ON after a FK_DISABLE migration fails, and that
+  FK enforcement is actually active.
+- `run_up_to_handles_fk_disable_migration_same_as_run` — verifies that
+  `run_up_to()` applies migration 0022's CHECK constraints correctly (not
+  skipping the FK_DISABLE_REQUIRED path).
+- `token_rate_limit_returns_oauth_format_with_retry_after` — e2e test that
+  exhausts the rate limit and verifies the response uses OAuth wire format.
+
+---
+
+## [0.29.10] — Previous release
 
 Completes RFC 021 by landing the boolean CHECK constraints that were deferred
 in v0.29.8 after the FK cascade data-loss fix. Introduces a safe table-rebuild

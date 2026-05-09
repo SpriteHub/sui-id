@@ -68,6 +68,9 @@ pub enum ProtocolError {
     UnsupportedResponseType,
     AccessDenied,
     ServerError,
+    /// RFC 6749 extension: returned when the service is temporarily unable
+    /// to handle the request (e.g. rate-limiting). Maps to HTTP 429.
+    TemporarilyUnavailable,
 }
 
 impl ProtocolError {
@@ -82,6 +85,7 @@ impl ProtocolError {
             Self::UnsupportedResponseType => "unsupported_response_type",
             Self::AccessDenied => "access_denied",
             Self::ServerError => "server_error",
+            Self::TemporarilyUnavailable => "temporarily_unavailable",
         }
     }
 }

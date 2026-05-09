@@ -429,16 +429,33 @@ pub fn enforce_rate_limit(
         retry_after = decision.retry_after_secs,
         "rate limit exceeded"
     );
-    let core_err = sui_id_core::CoreError::BadRequest(format!(
-        "Too many requests. Try again in {} seconds.",
-        decision.retry_after_secs
-    ));
-    let mut err = match representation {
-        ErrorAs::Json => HttpError::api(core_err),
-        ErrorAs::Html => HttpError::html(core_err),
+    let core_err = sui_id_core::CoreError::Protocol {
+        code: match representation {
+            // For OAuth protocol endpoints, use the registered error code.
+            ErrorAs::OAuth => sui_id_core::errors::ProtocolError::TemporarilyUnavailable,
+            // For admin/UI endpoints, BadRequest is fine (humans see the message).
+            _ => {
+                let err = sui_id_core::CoreError::BadRequest(format!(
+                    "Too many requests. Try again in {} seconds.",
+                    decision.retry_after_secs
+                ));
+                let mut e = match representation {
+                    ErrorAs::Json => HttpError::api(err),
+                    ErrorAs::Html => HttpError::html(err),
+                    ErrorAs::OAuth => unreachable!(),
+                };
+                e.set_retry_after_secs(decision.retry_after_secs);
+                e.force_status(StatusCode::TOO_MANY_REQUESTS);
+                return Err(e);
+            }
+        },
+        description: format!(
+            "Too many requests. Try again in {} seconds.",
+            decision.retry_after_secs
+        ),
     };
+    let mut err = HttpError::oauth(core_err);
     err.set_retry_after_secs(decision.retry_after_secs);
-    err.force_status(StatusCode::TOO_MANY_REQUESTS);
     Err(err)
 }
 
@@ -465,6 +482,11 @@ impl RateLimitKey {
 pub enum ErrorAs {
     Json,
     Html,
+    /// RFC 6749 wire format: `{"error":"...","error_description":"..."}`.
+    /// Use this for OAuth/OIDC protocol endpoints (token, introspect, revoke).
+    /// Rate-limit errors become `{"error":"temporarily_unavailable",...}` with
+    /// HTTP 429 and a `Retry-After` header.
+    OAuth,
 }
 
 use axum::http::StatusCode;

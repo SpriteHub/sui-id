@@ -474,5 +474,94 @@ fn migration_0022_fails_fast_if_existing_row_violates_check() {
         "migration 0022 must fail-fast when existing row has is_disabled=99; \
          this confirms the operator must run preflight-0022.sql first"
     );
-}
+    }
+
+    // ─── FK restoration guarantee ─────────────────────────────────────────────
+
+    #[test]
+    fn fk_is_restored_after_fk_disable_migration_failure() {
+        // Verify that foreign_keys is ON even when a FK_DISABLE_REQUIRED
+        // migration fails partway through. Without the closure pattern in
+        // apply_migration(), a migration failure would leave FK enforcement
+        // OFF for the rest of the connection's lifetime.
+        use rusqlite::Connection;
+
+        let mut conn = Connection::open_in_memory().expect("in-memory db");
+        conn.pragma_update(None, "foreign_keys", "ON").expect("enable FK");
+
+        // Apply migrations up to 0021 (all pass cleanly).
+        migrations::run_up_to(&mut conn, 21).expect("run up to 0021");
+
+        // Insert a user whose is_disabled=99 will FAIL migration 0022's CHECK.
+        conn.execute(
+            "INSERT INTO users(id, username, is_admin, is_disabled, is_deleted,
+                               created_at, updated_at, user_uuid, failed_login_count)
+             VALUES('u_bad','bad',0,99,0,datetime('now'),datetime('now'),
+                    '550e8400-e29b-41d4-a716-446655440099',0)",
+            [],
+        )
+        .expect("insert invalid boolean user");
+
+        // Attempt migration 0022 via the runner — it should fail on the CHECK.
+        let result = migrations::run_up_to(&mut conn, 22);
+        assert!(
+            result.is_err(),
+            "migration should fail when existing row violates boolean CHECK"
+        );
+
+        // Critical assertion: FK enforcement must be ON after the failed migration.
+        let fk_status: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |r| r.get(0))
+            .expect("pragma query");
+        assert_eq!(
+            fk_status, 1,
+            "PRAGMA foreign_keys must be 1 (ON) after a failed FK_DISABLE migration; \
+             got {fk_status}. A value of 0 means FK enforcement was left disabled."
+        );
+
+        // Verify FK is actually enforced (not just reported as ON).
+        let fk_insert_result = conn.execute(
+            "INSERT INTO credentials(user_id, password_hash, must_change, updated_at) \
+             VALUES('nonexistent-user', 'hash', 0, datetime('now'))",
+            [],
+        );
+        assert!(
+            fk_insert_result.is_err(),
+            "FK enforcement must be active after failed migration; \
+             orphan credential insert should have been rejected"
+        );
+    }
+
+    #[test]
+    fn run_up_to_handles_fk_disable_migration_same_as_run() {
+        // Verify that run_up_to() applies migration 0022 correctly using
+        // apply_migration() (FK_DISABLE_REQUIRED handling), not the old
+        // bare-transaction path.
+        use rusqlite::Connection;
+
+        let mut conn = Connection::open_in_memory().expect("in-memory db");
+        conn.pragma_update(None, "foreign_keys", "ON").expect("enable FK");
+
+        // Apply all migrations including 0022 via run_up_to.
+        migrations::run_up_to(&mut conn, 22).expect("run_up_to with 0022");
+
+        // Verify that the CHECK constraint from 0022 is active.
+        let err = conn.execute(
+            "INSERT INTO users(id, username, is_admin, is_disabled, is_deleted,
+                               created_at, updated_at, user_uuid, failed_login_count)
+             VALUES('u_bad','bad',2,0,0,datetime('now'),datetime('now'),
+                    '550e8400-e29b-41d4-a716-446655440099',0)",
+            [],
+        );
+        assert!(
+            err.is_err(),
+            "is_admin=2 must be rejected: run_up_to must apply 0022 with FK_DISABLE handling"
+        );
+
+        // And FK is still ON.
+        let fk_status: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |r| r.get(0))
+            .expect("pragma query");
+        assert_eq!(fk_status, 1, "FK must remain ON after run_up_to through 0022");
+    }
 }

@@ -138,6 +138,78 @@ const META_KEY_SCHEMA_VERSION: &str = "schema_version";
 /// left any FK violations.
 const FK_DISABLE_MARKER: &str = "-- MIGRATION:FK_DISABLE_REQUIRED";
 
+/// Apply a single migration to `conn`, handling FK_DISABLE_REQUIRED safely.
+///
+/// ### FK restoration guarantee
+///
+/// If the migration is marked `FK_DISABLE_REQUIRED`, this function:
+/// 1. Sets `PRAGMA foreign_keys = OFF` **before** the transaction (outside
+///    the transaction, so it actually takes effect).
+/// 2. Runs the migration inside its own transaction.
+/// 3. Always restores `PRAGMA foreign_keys = ON` afterwards — even if the
+///    migration fails. This prevents the connection from being left in a
+///    state where FK enforcement is silently disabled.
+/// 4. After a successful FK_DISABLE migration, runs `PRAGMA foreign_key_check`
+///    to catch any FK violations introduced by the migration SQL itself.
+///
+/// The caller must not use `conn` for anything if this function returns `Err`.
+/// In practice `Database::open()` propagates the error immediately to the
+/// caller, which discards the connection.
+fn apply_migration(conn: &mut Connection, m: &Migration) -> StoreResult<()> {
+    let needs_fk_disable = m.sql.trim_start().starts_with(FK_DISABLE_MARKER);
+    tracing::info!(version = m.version, needs_fk_disable, "applying migration");
+
+    // For table-rebuild migrations: disable FK enforcement BEFORE the
+    // transaction so DROP TABLE does not fire ON DELETE CASCADE.
+    if needs_fk_disable {
+        conn.execute_batch("PRAGMA foreign_keys = OFF;")
+            .map_err(StoreError::from)?;
+    }
+
+    // Run the migration in a closure so we can restore FK state regardless
+    // of whether the transaction succeeds or fails.
+    let migration_result: StoreResult<()> = (|| {
+        let tx = conn.transaction().map_err(StoreError::from)?;
+        tx.execute_batch(m.sql).map_err(StoreError::from)?;
+        tx.execute(
+            "INSERT OR REPLACE INTO sui_meta(key, value) VALUES(?1, ?2)",
+            (META_KEY_SCHEMA_VERSION, m.version.to_string()),
+        )
+        .map_err(StoreError::from)?;
+        tx.commit().map_err(StoreError::from)?;
+        Ok(())
+    })();
+
+    // Always restore FK enforcement after a FK_DISABLE migration, regardless
+    // of success or failure. We ignore errors here deliberately: if the
+    // connection is in a broken state the real error is in `migration_result`.
+    if needs_fk_disable {
+        let _ = conn.execute_batch("PRAGMA foreign_keys = ON;");
+    }
+
+    // Propagate any migration error now that FK state is restored.
+    migration_result?;
+
+    // After a successful FK_DISABLE migration, verify FK integrity. Any
+    // violation here means the migration SQL had a bug and we should refuse
+    // to start rather than silently corrupt the DB.
+    if needs_fk_disable {
+        let mut stmt = conn
+            .prepare("PRAGMA foreign_key_check")
+            .map_err(StoreError::from)?;
+        let first_violation = stmt.query_row([], |r| r.get::<_, String>(0)).ok();
+        if let Some(table) = first_violation {
+            return Err(StoreError::Integrity(format!(
+                "migration {}: FK violation after rebuild in table {table:?}; \
+                 run `PRAGMA foreign_key_check` for details",
+                m.version
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// Apply all pending migrations to `conn`.
 pub fn run(conn: &mut Connection) -> StoreResult<()> {
     // Ensure the meta table exists before we ask it for its version. The
@@ -161,51 +233,7 @@ pub fn run(conn: &mut Connection) -> StoreResult<()> {
         if m.version <= current {
             continue;
         }
-        let needs_fk_disable = m.sql.trim_start().starts_with(FK_DISABLE_MARKER);
-        tracing::info!(version = m.version, needs_fk_disable, "applying migration");
-
-        // For table-rebuild migrations: disable FK enforcement BEFORE the
-        // transaction so DROP TABLE does not fire ON DELETE CASCADE. The
-        // PRAGMA is a no-op inside a transaction, so it must come first.
-        if needs_fk_disable {
-            conn.execute_batch("PRAGMA foreign_keys = OFF;")
-                .map_err(StoreError::from)?;
-        }
-
-        // Each migration runs inside its own transaction so that a
-        // partial failure leaves schema_version un-bumped and the DB
-        // in the pre-migration state. The next startup will retry the
-        // same migration cleanly.
-        let tx = conn.transaction().map_err(StoreError::from)?;
-        tx.execute_batch(m.sql).map_err(StoreError::from)?;
-        tx.execute(
-            "INSERT OR REPLACE INTO sui_meta(key, value) VALUES(?1, ?2)",
-            (META_KEY_SCHEMA_VERSION, m.version.to_string()),
-        )?;
-        tx.commit().map_err(StoreError::from)?;
-
-        // Re-enable FK enforcement and verify integrity.
-        if needs_fk_disable {
-            conn.execute_batch("PRAGMA foreign_keys = ON;")
-                .map_err(StoreError::from)?;
-            // Abort if the migration left any FK violations. A violation here
-            // would mean the migration SQL had a bug (e.g. it dropped a parent
-            // row that had children it should have kept). This is better caught
-            // at startup than discovered when a query fails later.
-            let mut stmt = conn
-                .prepare("PRAGMA foreign_key_check")
-                .map_err(StoreError::from)?;
-            let first_violation = stmt
-                .query_row([], |r| r.get::<_, String>(0))
-                .ok();
-            if let Some(table) = first_violation {
-                return Err(StoreError::Integrity(format!(
-                    "migration {}: FK violation detected after rebuild in table {table:?}; \
-                     run `PRAGMA foreign_key_check` for details",
-                    m.version
-                )));
-            }
-        }
+        apply_migration(conn, m)?;
     }
     Ok(())
 }
@@ -214,6 +242,9 @@ pub fn run(conn: &mut Connection) -> StoreResult<()> {
 /// create a database at a known historical schema version so that a
 /// subsequent migration can be applied manually and its data-preservation
 /// behaviour verified.
+///
+/// Uses the same `apply_migration()` as `run()`, so FK_DISABLE_REQUIRED
+/// migrations are handled identically.
 #[cfg(test)]
 pub(crate) fn run_up_to(conn: &mut Connection, max_version: i32) -> StoreResult<()> {
     conn.execute_batch(
@@ -232,13 +263,7 @@ pub(crate) fn run_up_to(conn: &mut Connection, max_version: i32) -> StoreResult<
         if m.version <= current || m.version > max_version {
             continue;
         }
-        let tx = conn.transaction().map_err(StoreError::from)?;
-        tx.execute_batch(m.sql).map_err(StoreError::from)?;
-        tx.execute(
-            "INSERT OR REPLACE INTO sui_meta(key, value) VALUES(?1, ?2)",
-            (META_KEY_SCHEMA_VERSION, m.version.to_string()),
-        )?;
-        tx.commit().map_err(StoreError::from)?;
+        apply_migration(conn, m)?;
     }
     Ok(())
 }
