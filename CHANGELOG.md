@@ -5,7 +5,76 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.29.9] — Unreleased
+## [0.29.10] — Unreleased
+
+Completes RFC 021 by landing the boolean CHECK constraints that were deferred
+in v0.29.8 after the FK cascade data-loss fix. Introduces a safe table-rebuild
+pattern usable by all future parent-table migrations.
+
+### Migration 0022: boolean CHECK constraints (RFC 021 §1 / §2 / §4)
+
+Five tables are rebuilt with explicit `CHECK (col IN (0, 1))` constraints:
+
+| Table | Columns constrained |
+|---|---|
+| `users` | `is_admin`, `is_disabled`, `is_deleted` |
+| `credentials` | `must_change` |
+| `clients` | `confidential`, `is_disabled`, `is_deleted` |
+| `signing_keys` | `is_active` |
+| `user_totp` | `enabled` (STRICT mode preserved from migration 0003) |
+
+`clients` also gains the `confidential ↔ secret_hash` consistency CHECK
+(`confidential = 1 AND secret_hash IS NOT NULL OR confidential = 0 AND secret_hash IS NULL`).
+
+### `user_uuid` DB-level enforcement
+
+- `users.user_uuid CHECK (length(user_uuid) = 36)` added in the `users`
+  rebuild. Prevents empty-string or wrong-length values at the DB layer.
+  Migration 0022 backfills any `user_uuid = ''` rows before the rebuild.
+- `UNIQUE INDEX idx_users_user_uuid` upgraded from partial
+  (`WHERE user_uuid <> ''`) to unconditional, since the CHECK now guarantees
+  all values are properly formed.
+
+### Safe table-rebuild pattern — `FK_DISABLE_REQUIRED` marker
+
+A new marker in migration SQL triggers special handling in the migration
+runner (`migrations.rs`):
+
+1. `PRAGMA foreign_keys = OFF` is executed **before** the transaction begins
+   (not inside it — inside is a no-op per SQLite docs).
+2. The migration SQL runs inside the transaction normally.
+3. After `COMMIT`, the runner re-enables FK enforcement.
+4. `PRAGMA foreign_key_check` is called; any FK violation aborts startup
+   with a typed `StoreError::Integrity` error.
+
+This makes DROP TABLE safe for parent tables without touching child tables.
+Child tables' FK declarations re-attach to the rebuilt parent by name.
+
+### Fail-fast behaviour
+
+Migration 0022 does NOT silently coerce boolean values to 0 or 1. If any
+existing row violates a new CHECK constraint, the INSERT ... SELECT inside
+the migration fails and the migration is rolled back. The DB remains at the
+previous schema version and startup fails with a descriptive error.
+Operators are expected to run `docs/operators/preflight-0022.sql` first.
+
+### Tests
+
+- `migration_0022_preserves_all_child_rows_on_upgrade` — verifies that users,
+  credentials, sessions, clients, refresh_tokens, and user_totp all survive.
+- `migration_0022_boolean_checks_reject_invalid_values_after_apply` — verifies
+  that CHECK constraints are enforced after the migration.
+- `migration_0022_fails_fast_if_existing_row_violates_check` — verifies that
+  a migration with bad data aborts cleanly (no silent coercion).
+
+### Docs
+
+- `docs/operators/preflight-0022.sql` — pre-flight queries with repair guidance.
+- `docs/operators.md` — v0.29.10 upgrade section.
+
+---
+
+## [0.29.9] — Previous release
 
 Addresses the remaining review findings from the v0.29.7 expert review:
 RFC 6749 protocol endpoint error format, and `user_uuid` empty-string

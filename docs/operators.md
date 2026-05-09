@@ -1240,6 +1240,48 @@ For now, sui-id is pre-release: take a backup, replace the binary, and
 restart. If a release ever requires a destructive migration, the
 `CHANGELOG.md` entry will say so explicitly.
 
+### v0.29.10 — pre-flight required for boolean CHECK constraints
+
+Migration 0022 adds `CHECK (col IN (0, 1))` constraints to five tables
+(`users`, `credentials`, `clients`, `signing_keys`, `user_totp`) and the
+`clients.confidential ↔ secret_hash` consistency CHECK.
+
+Unlike migration 0021 (which was safe with no pre-flight requirement),
+**migration 0022 will abort if any existing row has a boolean value outside
+{0, 1}**. This is deliberate: rather than silently converting a bad value
+(which could re-enable a disabled user), the migration fails so the operator
+can review and correct the data manually.
+
+Run the pre-flight script before upgrading:
+
+```bash
+sqlite3 /path/to/sui-id.db < docs/operators/preflight-0022.sql
+```
+
+All queries must return zero or empty results before upgrading.
+
+**Safe evacuation approach.** Migration 0022 uses a new `FK_DISABLE_REQUIRED`
+marker recognised by the migration runner. The runner sets
+`PRAGMA foreign_keys = OFF` *before* starting the transaction, so the
+`DROP TABLE` steps do not trigger `ON DELETE CASCADE` on child tables. After
+`COMMIT`, the runner re-enables FK enforcement and runs
+`PRAGMA foreign_key_check` to confirm integrity. This is the fix for the
+v0.29.7 data-loss scenario.
+
+**Additional improvements in migration 0022:**
+
+- `users.user_uuid CHECK (length(user_uuid) = 36)` — prevents empty-string
+  `user_uuid` at the DB layer. Migration 0022 backfills any remaining empty
+  values automatically before the table rebuild.
+- Non-partial `UNIQUE INDEX idx_users_user_uuid` — since all values are now
+  guaranteed to be 36 chars, the `WHERE user_uuid <> ''` partial condition
+  is no longer needed.
+- `signing_keys.is_active CHECK (is_active IN (0, 1))` — completes the
+  enforcement that the partial-unique index from migration 0021 began.
+- `user_totp` rebuilt with STRICT mode preserved from migration 0003.
+
+---
+
 ### v0.29.8 — bugfix for v0.29.7 data-loss on upgrade
 
 **If you deployed v0.29.7, do not run its migration 0021 against a production

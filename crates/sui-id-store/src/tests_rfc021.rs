@@ -105,7 +105,7 @@ mod schema_invariant_tests {
             conn.execute(
                 "INSERT INTO users(id, username, is_admin, is_disabled, is_deleted, \
                                    created_at, updated_at, user_uuid, failed_login_count) \
-                 VALUES('u1', 'alice', 0, 0, 0, datetime('now'), datetime('now'), 'uuid1', 0)",
+                 VALUES('u1', 'alice', 0, 0, 0, datetime('now'), datetime('now'), '550e8400-e29b-41d4-a716-446655440000', 0)",
                 [],
             )?;
             conn.execute(
@@ -205,7 +205,7 @@ mod schema_invariant_tests {
             "INSERT INTO users(id, username, is_admin, is_disabled, is_deleted,
                                created_at, updated_at, user_uuid, failed_login_count,
                                email, email_normalized)
-             VALUES('u1','alice',0,0,0,datetime('now'),datetime('now'),'uuid-1',0,
+             VALUES('u1','alice',0,0,0,datetime('now'),datetime('now'),'550e8400-e29b-41d4-a716-446655440000',0,
                     'alice@example.com','alice@example.com');
 
              INSERT INTO credentials(user_id, password_hash, must_change, updated_at)
@@ -301,7 +301,7 @@ mod schema_invariant_tests {
         conn.execute(
             "INSERT INTO users(id, username, is_admin, is_disabled, is_deleted,
                                created_at, updated_at, user_uuid, failed_login_count)
-             VALUES('u2','bob',0,99,0,datetime('now'),datetime('now'),'uuid-2',0)",
+             VALUES('u2','bob',0,99,0,datetime('now'),datetime('now'),'550e8400-e29b-41d4-a716-446655440001',0)",
             [],
         )
         .expect("insert user with is_disabled=99");
@@ -324,4 +324,155 @@ mod schema_invariant_tests {
             "is_disabled must retain its original value — no coercion in this migration"
         );
     }
+
+    // ─── migration 0022: boolean CHECKs via safe evacuation ─────────────────
+
+#[test]
+fn migration_0022_preserves_all_child_rows_on_upgrade() {
+    use rusqlite::Connection;
+
+    let mut conn = Connection::open_in_memory().expect("in-memory db");
+    conn.pragma_update(None, "foreign_keys", "ON").expect("enable FK");
+
+    // Apply migrations 0001–0021.
+    migrations::run_up_to(&mut conn, 21).expect("run up to 0021");
+
+    // Insert representative data in every table that migration 0022 rebuilds
+    // (and their children, which must survive CASCADE-safe).
+    conn.execute_batch(
+        "INSERT INTO users(id, username, is_admin, is_disabled, is_deleted,
+                           created_at, updated_at, user_uuid, failed_login_count,
+                           email, email_normalized)
+         VALUES('u1','alice',0,0,0,datetime('now'),datetime('now'),
+                '550e8400-e29b-41d4-a716-446655440099',0,
+                'alice@example.com','alice@example.com');
+
+         INSERT INTO credentials(user_id, password_hash, must_change, updated_at)
+         VALUES('u1','$argon2id$dummy',0,datetime('now'));
+
+         INSERT INTO sessions(id, user_id, created_at, expires_at)
+         VALUES('s1','u1',datetime('now'),datetime('now','+1 hour'));
+
+         INSERT INTO clients(id, name, confidential, secret_hash, redirect_uris,
+                             is_disabled, is_deleted, allowed_scopes,
+                             post_logout_redirect_uris, created_at, updated_at)
+         VALUES('c1','rp',1,'hash','[]',0,0,'openid','[]',
+                datetime('now'),datetime('now'));
+
+         INSERT INTO refresh_tokens(id, token_enc, user_id, client_id, scope,
+                                    expires_at, created_at, auth_methods, family_id)
+         VALUES('rt1',X'deadbeef','u1','c1','openid',
+                datetime('now','+30 days'),datetime('now'),'[]','fam1');
+
+         INSERT INTO user_totp(user_id, secret_enc, enabled, last_used_step, created_at)
+         VALUES('u1',X'73656372657400',1,0,datetime('now'));",
+    )
+    .expect("insert test data");
+
+    // Verify baseline.
+    assert_eq!(count_rows(&conn, "users"), 1, "pre: users");
+    assert_eq!(count_rows(&conn, "credentials"), 1, "pre: credentials");
+    assert_eq!(count_rows(&conn, "sessions"), 1, "pre: sessions");
+    assert_eq!(count_rows(&conn, "clients"), 1, "pre: clients");
+    assert_eq!(count_rows(&conn, "refresh_tokens"), 1, "pre: refresh_tokens");
+    assert_eq!(count_rows(&conn, "user_totp"), 1, "pre: user_totp");
+
+    // Apply migration 0022 using the runner, which handles FK_DISABLE_REQUIRED.
+    let sql_0022 = migrations::sql_for_version(22);
+
+    // Disable FK BEFORE the transaction (exactly as the runner does).
+    conn.execute_batch("PRAGMA foreign_keys = OFF;").expect("fk off");
+    let tx = conn.transaction().expect("begin tx");
+    tx.execute_batch(sql_0022).expect("apply 0022");
+    tx.commit().expect("commit 0022");
+    conn.execute_batch("PRAGMA foreign_keys = ON;").expect("fk on");
+
+    // All rows must survive.
+    assert_eq!(count_rows(&conn, "users"), 1, "post: users must survive");
+    assert_eq!(count_rows(&conn, "credentials"), 1,
+        "post: credentials must survive — FK cascade regression");
+    assert_eq!(count_rows(&conn, "sessions"), 1, "post: sessions must survive");
+    assert_eq!(count_rows(&conn, "clients"), 1, "post: clients must survive");
+    assert_eq!(count_rows(&conn, "refresh_tokens"), 1, "post: refresh_tokens must survive");
+    assert_eq!(count_rows(&conn, "user_totp"), 1, "post: user_totp must survive");
+
+    // FK integrity check must be clean.
+    let mut stmt = conn.prepare("PRAGMA foreign_key_check").expect("fk_check");
+    let violations: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .expect("query")
+        .filter_map(Result::ok)
+        .collect();
+    assert!(violations.is_empty(), "FK violations after 0022: {violations:?}");
+}
+
+#[test]
+fn migration_0022_boolean_checks_reject_invalid_values_after_apply() {
+    use rusqlite::Connection;
+
+    let mut conn = Connection::open_in_memory().expect("in-memory db");
+    conn.pragma_update(None, "foreign_keys", "ON").expect("enable FK");
+    migrations::run_up_to(&mut conn, 21).expect("run up to 0021");
+
+    // Apply migration 0022 (no existing data, so insert-select passes trivially).
+    conn.execute_batch("PRAGMA foreign_keys = OFF;").expect("fk off");
+    let tx = conn.transaction().expect("begin tx");
+    tx.execute_batch(migrations::sql_for_version(22)).expect("apply 0022");
+    tx.commit().expect("commit 0022");
+    conn.execute_batch("PRAGMA foreign_keys = ON;").expect("fk on");
+
+    // After 0022, boolean CHECK constraints must be enforced.
+    let err = conn.execute(
+        "INSERT INTO users(id, username, is_admin, is_disabled, is_deleted,
+                           created_at, updated_at, user_uuid, failed_login_count)
+         VALUES('u_bad','bad',2,0,0,datetime('now'),datetime('now'),
+                '550e8400-e29b-41d4-a716-446655440099',0)",
+        [],
+    );
+    assert!(err.is_err(), "is_admin=2 must be rejected by CHECK after migration 0022");
+
+    let err2 = conn.execute(
+        "INSERT INTO clients(id, name, confidential, secret_hash, redirect_uris,
+                             is_disabled, is_deleted, allowed_scopes,
+                             post_logout_redirect_uris, created_at, updated_at)
+         VALUES('c_bad','rp',1,NULL,'[]',0,0,'','[]',datetime('now'),datetime('now'))",
+        [],
+    );
+    assert!(err2.is_err(),
+        "confidential=1 with NULL secret_hash must be rejected after migration 0022");
+}
+
+#[test]
+fn migration_0022_fails_fast_if_existing_row_violates_check() {
+    // This test verifies that the migration ABORTS if any existing row would
+    // violate a new CHECK constraint — exactly the desired "fail-fast" behaviour.
+    use rusqlite::Connection;
+
+    let mut conn = Connection::open_in_memory().expect("in-memory db");
+    conn.pragma_update(None, "foreign_keys", "ON").expect("enable FK");
+    migrations::run_up_to(&mut conn, 21).expect("run up to 0021");
+
+    // Insert a user with is_disabled=99 (invalid boolean under the new CHECK).
+    conn.execute(
+        "INSERT INTO users(id, username, is_admin, is_disabled, is_deleted,
+                           created_at, updated_at, user_uuid, failed_login_count)
+         VALUES('u_bad','bad',0,99,0,datetime('now'),datetime('now'),
+                '550e8400-e29b-41d4-a716-446655440099',0)",
+        [],
+    )
+    .expect("pre-migration invalid insert should succeed without CHECK");
+
+    // Attempt migration 0022. It must FAIL because is_disabled=99 violates CHECK.
+    conn.execute_batch("PRAGMA foreign_keys = OFF;").expect("fk off");
+    let tx = conn.transaction().expect("begin tx");
+    let result = tx.execute_batch(migrations::sql_for_version(22));
+    // The transaction will be rolled back (or we roll it back manually).
+    drop(tx); // drops = rollback
+
+    assert!(
+        result.is_err(),
+        "migration 0022 must fail-fast when existing row has is_disabled=99; \
+         this confirms the operator must run preflight-0022.sql first"
+    );
+}
 }

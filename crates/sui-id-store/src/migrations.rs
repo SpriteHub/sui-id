@@ -98,6 +98,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 21,
         sql: include_str!("./migrations/0021_schema_invariants.sql"),
     },
+    Migration {
+        version: 22,
+        sql: include_str!("./migrations/0022_boolean_checks.sql"),
+    },
 ];
 
 /// The highest schema version this build of sui-id-store knows how to
@@ -120,6 +124,19 @@ pub const MAX_SCHEMA_VERSION: i32 = {
 };
 
 const META_KEY_SCHEMA_VERSION: &str = "schema_version";
+
+/// Migrations whose SQL begins with this marker line require foreign key
+/// enforcement to be disabled on the connection **before** the transaction
+/// begins. This is necessary for migrations that rebuild parent tables
+/// (DROP + RENAME) without wanting ON DELETE CASCADE to fire.
+///
+/// Background: `PRAGMA foreign_keys = OFF` is a no-op inside a SQLite
+/// transaction (<https://www.sqlite.org/pragma.html#pragma_foreign_keys>).
+/// Setting it before the transaction starts does carry into the transaction.
+/// After the transaction commits, the runner re-enables FK enforcement and
+/// runs `PRAGMA foreign_key_check` to abort with an error if the migration
+/// left any FK violations.
+const FK_DISABLE_MARKER: &str = "-- MIGRATION:FK_DISABLE_REQUIRED";
 
 /// Apply all pending migrations to `conn`.
 pub fn run(conn: &mut Connection) -> StoreResult<()> {
@@ -144,17 +161,21 @@ pub fn run(conn: &mut Connection) -> StoreResult<()> {
         if m.version <= current {
             continue;
         }
-        tracing::info!(version = m.version, "applying migration");
+        let needs_fk_disable = m.sql.trim_start().starts_with(FK_DISABLE_MARKER);
+        tracing::info!(version = m.version, needs_fk_disable, "applying migration");
+
+        // For table-rebuild migrations: disable FK enforcement BEFORE the
+        // transaction so DROP TABLE does not fire ON DELETE CASCADE. The
+        // PRAGMA is a no-op inside a transaction, so it must come first.
+        if needs_fk_disable {
+            conn.execute_batch("PRAGMA foreign_keys = OFF;")
+                .map_err(StoreError::from)?;
+        }
+
         // Each migration runs inside its own transaction so that a
         // partial failure leaves schema_version un-bumped and the DB
         // in the pre-migration state. The next startup will retry the
         // same migration cleanly.
-        //
-        // Note: SQLite does not support VACUUM or some ATTACH DDL
-        // inside a transaction. Migrations that need those are
-        // responsible for their own recovery story and must not be
-        // versioned migrations. None of the existing migrations use
-        // such statements.
         let tx = conn.transaction().map_err(StoreError::from)?;
         tx.execute_batch(m.sql).map_err(StoreError::from)?;
         tx.execute(
@@ -162,6 +183,29 @@ pub fn run(conn: &mut Connection) -> StoreResult<()> {
             (META_KEY_SCHEMA_VERSION, m.version.to_string()),
         )?;
         tx.commit().map_err(StoreError::from)?;
+
+        // Re-enable FK enforcement and verify integrity.
+        if needs_fk_disable {
+            conn.execute_batch("PRAGMA foreign_keys = ON;")
+                .map_err(StoreError::from)?;
+            // Abort if the migration left any FK violations. A violation here
+            // would mean the migration SQL had a bug (e.g. it dropped a parent
+            // row that had children it should have kept). This is better caught
+            // at startup than discovered when a query fails later.
+            let mut stmt = conn
+                .prepare("PRAGMA foreign_key_check")
+                .map_err(StoreError::from)?;
+            let first_violation = stmt
+                .query_row([], |r| r.get::<_, String>(0))
+                .ok();
+            if let Some(table) = first_violation {
+                return Err(StoreError::Integrity(format!(
+                    "migration {}: FK violation detected after rebuild in table {table:?}; \
+                     run `PRAGMA foreign_key_check` for details",
+                    m.version
+                )));
+            }
+        }
     }
     Ok(())
 }
