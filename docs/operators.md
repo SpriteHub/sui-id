@@ -1240,7 +1240,53 @@ For now, sui-id is pre-release: take a backup, replace the binary, and
 restart. If a release ever requires a destructive migration, the
 `CHANGELOG.md` entry will say so explicitly.
 
-### v0.29.7 — pre-flight checks required for schema hardening
+### v0.29.8 — bugfix for v0.29.7 data-loss on upgrade
+
+**If you deployed v0.29.7, do not run its migration 0021 against a production
+database.** Migration 0021 in that release deletes all credentials, sessions,
+refresh tokens, and MFA registrations for existing users (see root-cause analysis
+in CHANGELOG). Instead:
+
+1. Roll back to v0.29.6 (restore from backup if you already applied 0021)
+2. Upgrade directly to v0.29.8
+
+v0.29.8 ships a corrected migration 0021. It is safe to apply to any database
+at schema version 0020 (v0.29.6). No pre-flight checks are required beyond the
+standard backup recommendation.
+
+The migration adds:
+- `idx_signing_keys_single_active` partial unique index (at most one active signing key)
+- `consents` table redesign with proper FK constraints
+- `idx_sessions_user_active_alive` index on sessions
+
+Boolean CHECK constraints (`is_admin IN (0,1)`, etc.) and the `clients` confidential/
+secret_hash consistency CHECK are **deferred** to a future release. They were removed
+from this migration to fix the data-loss bug. The pre-flight SQL in
+`docs/operators/preflight-0021.sql` remains useful for diagnostics but is no longer
+a required step before upgrading.
+
+---
+
+### v0.29.7 — RETRACTED (data-loss bug)
+
+> **Do not upgrade to v0.29.7.** See v0.29.8 for the fix.
+
+Migration 0021 in v0.29.7 used `PRAGMA foreign_keys = OFF` inside a transaction.
+SQLite treats this PRAGMA as a no-op in transaction context, so `DROP TABLE users`
+triggered `ON DELETE CASCADE` on all child tables. The following tables were wiped:
+
+- `credentials` (users could no longer log in)
+- `sessions`
+- `refresh_tokens`
+- `user_totp` (MFA registrations lost)
+- potentially `user_webauthn_credentials`, `password_reset_tokens`, and others
+
+The pre-flight section below (for v0.29.7) is retained for reference but is no
+longer relevant if you upgrade directly to v0.29.8.
+
+---
+
+### ~~v0.29.7~~ — pre-flight checks required for schema hardening (retracted)
 
 Migration `0021` rebuilds five tables (`users`, `credentials`, `clients`,
 `signing_keys`, `user_totp`) and adds CHECK constraints. If any existing

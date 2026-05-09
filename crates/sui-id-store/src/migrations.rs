@@ -165,3 +165,48 @@ pub fn run(conn: &mut Connection) -> StoreResult<()> {
     }
     Ok(())
 }
+
+/// Apply migrations up to and including `max_version`. Used in tests to
+/// create a database at a known historical schema version so that a
+/// subsequent migration can be applied manually and its data-preservation
+/// behaviour verified.
+#[cfg(test)]
+pub(crate) fn run_up_to(conn: &mut Connection, max_version: i32) -> StoreResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sui_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    )?;
+    let current: i32 = conn
+        .query_row(
+            "SELECT value FROM sui_meta WHERE key = ?1",
+            [META_KEY_SCHEMA_VERSION],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    for m in MIGRATIONS {
+        if m.version <= current || m.version > max_version {
+            continue;
+        }
+        let tx = conn.transaction().map_err(StoreError::from)?;
+        tx.execute_batch(m.sql).map_err(StoreError::from)?;
+        tx.execute(
+            "INSERT OR REPLACE INTO sui_meta(key, value) VALUES(?1, ?2)",
+            (META_KEY_SCHEMA_VERSION, m.version.to_string()),
+        )?;
+        tx.commit().map_err(StoreError::from)?;
+    }
+    Ok(())
+}
+
+/// Return the SQL for the migration at the given version. Panics if the
+/// version does not exist — this is intentionally strict so that test
+/// helper code fails loudly when migrations are renumbered.
+#[cfg(test)]
+pub(crate) fn sql_for_version(version: i32) -> &'static str {
+    MIGRATIONS
+        .iter()
+        .find(|m| m.version == version)
+        .unwrap_or_else(|| panic!("no migration with version {version}"))
+        .sql
+}

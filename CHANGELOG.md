@@ -5,7 +5,89 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.29.7] — Unreleased
+## [0.29.8] — Unreleased
+
+**Critical bugfix release.** Migration 0021 in v0.29.7 contained a data-loss
+bug on upgrade of an existing database. All users of v0.29.7 should skip that
+release and upgrade directly from v0.29.6 to v0.29.8.
+
+### Bug fix: migration 0021 FK cascade data loss (critical)
+
+**Affected:** Any upgrade from v0.29.6 → v0.29.7 on a database that already
+had at least one user.
+
+**Symptom:** After applying migration 0021, all rows in `credentials`,
+`sessions`, `refresh_tokens`, `user_totp` (and potentially
+`user_webauthn_credentials`, `login_pending_mfa`, `webauthn_pending`,
+`password_reset_tokens`) were deleted. Users could not log in.
+
+**Root cause:** The original migration 0021 attempted to add boolean CHECK
+constraints by rebuilding parent tables (`users`, `clients`, etc.) with
+DROP TABLE + CREATE TABLE. The migration SQL included `PRAGMA foreign_keys = OFF`
+to suppress cascade effects, but SQLite documents that this PRAGMA is a no-op
+inside a transaction. Since the migration runner wraps each migration in a
+transaction (migrations.rs line 158), the PRAGMA had no effect. `DROP TABLE
+users` therefore fired `ON DELETE CASCADE` on all FK-referencing child tables,
+deleting every user's credentials, sessions, tokens, and MFA data.
+
+**Fix (this release):** Migration 0021 is rewritten to remove all parent table
+rebuilds. Only three safe, additive changes are retained:
+
+- `CREATE UNIQUE INDEX idx_signing_keys_single_active` — index-only, no rebuild
+- `consents` DROP + CREATE — consents is a child table with no FK-referencing
+  children; dropping it cannot cascade to any other table
+- `CREATE INDEX idx_sessions_user_active_alive` — index-only, no rebuild
+
+**Deferred:** The boolean CHECK constraints (`is_admin IN (0,1)` etc.) and the
+`clients.confidential ↔ secret_hash` CHECK are deferred to a future migration
+that will use a safe parent/child table evacuation strategy. This strategy
+renames child tables first, rebuilds the parent, then recreates the children —
+avoiding any DROP TABLE on a referenced table.
+
+**Also fixed in this release:**
+
+- **Silent boolean coercion removed.** The original migration 0021 used
+  `CASE WHEN is_disabled NOT IN (0,1) THEN 0 ELSE is_disabled END`, which
+  would have silently set `is_disabled=99` (disabled under the old boolean
+  convention) to `0` (enabled), re-enabling previously-disabled users and
+  clients. This coercion is gone along with the table rebuilds.
+
+### Tests added
+
+- `migration_0021_preserves_all_child_rows_on_upgrade` — regression test that
+  simulates an upgrade from schema 0020 with data, applies migration 0021, and
+  asserts every row survives with FK integrity check passing.
+- `migration_0021_with_invalid_boolean_still_preserves_rows` — verifies that
+  rows with non-standard boolean values are preserved without coercion.
+- `consents_empty_granted_scopes_rejected` — tests the new consents CHECK.
+
+### Removed from tests (deferred with the CHECKs)
+
+- `users_is_admin_check_rejects_invalid_value`
+- `users_is_disabled_check_rejects_invalid_value`
+- `clients_is_disabled_check_rejects_invalid_value`
+- `clients_confidential_without_secret_hash_rejected`
+- `clients_public_with_secret_hash_rejected`
+- `clients_valid_confidential_with_secret_hash_accepted`
+
+These will be re-added when the safe rebuild migration lands.
+
+### Documentation
+
+- `docs/operators.md` — v0.29.8 upgrade section added.
+- `docs/operators.md` — v0.29.7 section updated with data-loss warning.
+
+---
+
+## [0.29.7] — Retracted (data-loss bug — see v0.29.8)
+
+> **Do not use.** Migration 0021 in this release deletes credentials,
+> sessions, refresh tokens, and TOTP data for all existing users on upgrade.
+> Upgrade directly from v0.29.6 to v0.29.8 instead.
+>
+> See v0.29.8 changelog for the full root-cause analysis.
+
+
 
 Implements RFC 021 (schema invariant CHECKs and migration safety). Raises
 the DB-layer guarantees established by the v0.29.5 data-model review's
