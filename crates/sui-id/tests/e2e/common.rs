@@ -170,7 +170,25 @@ pub async fn complete_setup_and_login(state: &AppState) -> String {
     extract_set_cookie(resp.headers(), "sui_id_session").expect("session cookie set")
 }
 
+/// Create a test client. Default `allowed_scopes` is `"openid profile"` (the
+/// server default when the form field is left blank). Use
+/// [`create_client_with_scopes`] when a test needs to exercise additional
+/// scopes such as `"email"` or `"offline_access"`.
 pub async fn create_client(state: &AppState, session_cookie: &str) -> (String, String) {
+    // Use empty allowed_scopes so the server uses its own default ("openid profile").
+    // This preserves the behaviour of the original helper so existing tests
+    // that do not need wider scope continue to work unmodified.
+    // Use create_client_with_scopes for tests that need email or offline_access.
+    create_client_with_scopes(state, session_cookie, "").await
+}
+
+/// Like [`create_client`] but with an explicit `allowed_scopes` policy.
+/// Pass a space-separated list; e.g. `"openid profile email"`.
+pub async fn create_client_with_scopes(
+    state: &AppState,
+    session_cookie: &str,
+    allowed_scopes: &str,
+) -> (String, String) {
     // First, GET the clients page to obtain a CSRF cookie + token.
     let router = build_router(state.clone());
     let req = Request::builder()
@@ -184,8 +202,9 @@ pub async fn create_client(state: &AppState, session_cookie: &str) -> (String, S
 
     // Then POST the form with both the cookie and a matching _csrf field.
     let router = build_router(state.clone());
+    let encoded_scopes = urlencode(allowed_scopes);
     let body = format!(
-        "name=test-rp&redirect_uris=https%3A%2F%2Frp.test%2Fcb&confidential=true&_csrf={csrf}"
+        "name=test-rp&redirect_uris=https%3A%2F%2Frp.test%2Fcb&confidential=true&allowed_scopes={encoded_scopes}&_csrf={csrf}"
     );
     let req = Request::builder()
         .method(Method::POST)
@@ -201,7 +220,7 @@ pub async fn create_client(state: &AppState, session_cookie: &str) -> (String, S
     assert_eq!(resp.status(), StatusCode::OK, "expected 200 from clients page");
     let body_bytes = read_body(resp.into_body()).await;
     let html = String::from_utf8_lossy(&body_bytes).to_string();
-    // The page surfaces the new client's id+secret as <span class="code">value</span>.
+    // The page surfacesthe new client's id+secret as <span class="code">value</span>.
     let mut codes: Vec<String> = Vec::new();
     let mut rest = html.as_str();
     while let Some(start) = rest.find("class=\"code\">") {

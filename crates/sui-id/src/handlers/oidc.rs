@@ -336,6 +336,15 @@ pub struct UserInfo {
     pub preferred_username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Original-case email address. Returned only when the access token's
+    /// granted scope includes `email` and the user has an email on record.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// Whether the email has been confirmed (`email_verified_at IS NOT NULL`).
+    /// Omitted entirely when `email` is not returned (OIDC convention).
+    /// Always `false` until an email-verification flow is implemented.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_verified: Option<bool>,
 }
 
 /// Standard OIDC userinfo endpoint. Authenticates via the Bearer access
@@ -372,10 +381,27 @@ pub async fn userinfo(
     // OIDC Core §5.3.2 SHOULD: userinfo is per-user data and must
     // not be cached by intermediaries. Without `no-store` a CDN or
     // shared proxy could serve one user's claims to another.
+    // Populate email claims when (a) the access token's scope includes
+    // "email" and (b) the user has an email address on record.
+    let scope_includes_email = claims.scope.split_whitespace().any(|s| s == "email");
+    let (email_claim, email_verified_claim) = if scope_includes_email {
+        match row.email.as_deref() {
+            Some(addr) => {
+                let verified = row.email_verified_at.is_some();
+                (Some(addr.to_owned()), Some(verified))
+            }
+            None => (None, None),
+        }
+    } else {
+        (None, None)
+    };
+
     let mut resp = Json(UserInfo {
         sub: row.id.to_string(),
         preferred_username: Some(row.username),
         name: row.display_name,
+        email: email_claim,
+        email_verified: email_verified_claim,
     })
     .into_response();
     resp.headers_mut().insert(

@@ -311,7 +311,7 @@ async fn forgot_password_email_in_user_preferred_locale() {
         .db
         .with_conn(|conn| {
             conn.execute(
-                "UPDATE users SET email = ?1, preferred_lang = ?2 WHERE id = ?3",
+                "UPDATE users SET email = ?1, email_normalized = lower(trim(?1)), preferred_lang = ?2 WHERE id = ?3",
                 rusqlite::params!["alice@example.test", "en", user.id.to_string()],
             )
             .expect("update");

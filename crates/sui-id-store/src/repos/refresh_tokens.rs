@@ -1,8 +1,12 @@
 //! Refresh token storage.
 //!
 //! The plaintext token is sealed with the master key before insertion. On
-//! lookup we decrypt and compare in constant time. Plaintext tokens are
-//! returned to the API only at issuance.
+//! lookup we first try the indexed `token_hash` path (O(log n)), falling
+//! back to the legacy full-decrypt scan only for rows whose `token_hash`
+//! is NULL (pre-migration 0019 rows not yet backfilled). The fallback is
+//! removed once the backfill completes and a follow-up migration marks the
+//! column NOT NULL. Plaintext tokens are returned to the API only at
+//! issuance.
 
 use crate::crypto::{open, seal};
 use crate::db::Database;
@@ -10,6 +14,7 @@ use crate::errors::{StoreError, StoreResult};
 use crate::models::RefreshTokenRow;
 use chrono::{DateTime, Utc};
 use rusqlite::params;
+use sha2::{Digest, Sha256};
 use sui_id_shared::ids::{ClientId, UserId};
 
 fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<RefreshTokenRow> {
@@ -39,6 +44,15 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<RefreshTokenRow> {
 
 const AAD: &[u8] = b"sui-id/refresh_token/v1";
 
+/// Compute the SHA-256 hash of a plaintext refresh token.
+/// Used as the indexed lookup key (no pepper needed: tokens are
+/// 32-byte CSPRNG outputs with full entropy).
+fn token_hash_bytes(plaintext: &str) -> Vec<u8> {
+    let mut h = Sha256::new();
+    h.update(plaintext.as_bytes());
+    h.finalize().to_vec()
+}
+
 /// Insert a new refresh token row. The plaintext token is taken from
 /// `row.token_plain`; the caller is responsible for generating it.
 pub fn insert(db: &Database, row: &RefreshTokenRow) -> StoreResult<()> {
@@ -47,14 +61,16 @@ pub fn insert(db: &Database, row: &RefreshTokenRow) -> StoreResult<()> {
         .as_deref()
         .ok_or_else(|| StoreError::Integrity("refresh token: missing plaintext on insert".into()))?;
     let sealed = seal(db.key(), plain.as_bytes(), AAD)?;
+    let hash = token_hash_bytes(plain);
     let methods_json = serde_json::to_string(&row.auth_methods)?;
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO refresh_tokens(id, token_enc, user_id, client_id, scope, expires_at, revoked_at, created_at, auth_methods, family_id) \
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO refresh_tokens(id, token_enc, token_hash, user_id, client_id, scope, expires_at, revoked_at, created_at, auth_methods, family_id) \
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 row.id,
                 sealed,
+                hash,
                 row.user_id.to_string(),
                 row.client_id.to_string(),
                 row.scope,
@@ -69,16 +85,46 @@ pub fn insert(db: &Database, row: &RefreshTokenRow) -> StoreResult<()> {
     })
 }
 
-/// Look up a token row by plaintext value. Performs constant-time comparison
-/// of the decrypted bytes.
+/// Look up an active token row by plaintext value.
+///
+/// Fast path: use the `token_hash` index for O(log n) lookup. This covers
+/// all rows inserted at or after migration 0019.
+///
+/// Fallback path: for rows whose `token_hash` IS NULL (pre-migration rows
+/// not yet backfilled by the startup task), decrypt each candidate and
+/// compare in constant time. This fallback is removed once the backfill
+/// is complete and a follow-up migration ensures the column is NOT NULL.
 pub fn find_active(db: &Database, plaintext: &str) -> StoreResult<RefreshTokenRow> {
     use subtle::ConstantTimeEq;
 
     let now = Utc::now();
+    let hash = token_hash_bytes(plaintext);
+
+    // --- fast path: indexed lookup ---
+    let fast: Option<RefreshTokenRow> = db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, token_enc, user_id, client_id, scope, expires_at, revoked_at, \
+             created_at, auth_methods, family_id \
+             FROM refresh_tokens \
+             WHERE token_hash = ?1 AND revoked_at IS NULL AND expires_at > ?2",
+        )?;
+        match stmt.query_row(params![hash, now], map) {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StoreError::from(e)),
+        }
+    })?;
+    if let Some(row) = fast {
+        return Ok(row);
+    }
+
+    // --- fallback: decrypt-scan for NULL token_hash rows (backfill pending) ---
     let candidates: Vec<(RefreshTokenRow, Vec<u8>)> = db.with_conn(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, token_enc, user_id, client_id, scope, expires_at, revoked_at, created_at, auth_methods, family_id FROM refresh_tokens \
-             WHERE revoked_at IS NULL AND expires_at > ?1",
+            "SELECT id, token_enc, user_id, client_id, scope, expires_at, revoked_at, \
+             created_at, auth_methods, family_id \
+             FROM refresh_tokens \
+             WHERE token_hash IS NULL AND revoked_at IS NULL AND expires_at > ?1",
         )?;
         let rows = stmt
             .query_map([now], |r| {
@@ -148,12 +194,18 @@ pub fn revoke_all_for_client(db: &Database, client_id: ClientId) -> StoreResult<
     })
 }
 
-/// Delete revoked-and-old or expired refresh tokens. Hygiene only — expired
-/// or revoked tokens are already excluded from `find_active`.
+/// Delete expired refresh tokens. Retains revoked-but-unexpired rows so
+/// that the theft-detection path (`find_any`) can still fire on replays
+/// within the original token's lifetime.
+///
+/// The previous behaviour (`WHERE expires_at < ?1 OR revoked_at IS NOT
+/// NULL`) was incorrect: it deleted revoked rows immediately, which meant
+/// a rotated token could be garbage-collected before a replay attempt
+/// reached the theft-detection branch.
 pub fn purge_expired(db: &Database) -> StoreResult<usize> {
     db.with_conn(|conn| {
         let n = conn.execute(
-            "DELETE FROM refresh_tokens WHERE expires_at < ?1 OR revoked_at IS NOT NULL",
+            "DELETE FROM refresh_tokens WHERE expires_at < ?1",
             [Utc::now()],
         )?;
         Ok(n)
@@ -170,12 +222,41 @@ pub fn purge_expired(db: &Database) -> StoreResult<usize> {
 /// Returns `NotFound` for tokens that genuinely don't exist (typo,
 /// or rows already purged by `purge_expired`). Returns the row
 /// regardless of `revoked_at` and `expires_at` when found.
+///
+/// Fast path: indexed lookup via `token_hash` (no revocation /
+/// expiry filter applied so that the caller sees the `revoked_at`
+/// field and can trigger theft detection). Fallback: decrypt-scan
+/// for NULL-hash rows not yet backfilled.
 pub fn find_any(db: &Database, plaintext: &str) -> StoreResult<RefreshTokenRow> {
     use subtle::ConstantTimeEq;
 
+    let hash = token_hash_bytes(plaintext);
+
+    // --- fast path: indexed lookup (includes revoked rows) ---
+    let fast: Option<RefreshTokenRow> = db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, token_enc, user_id, client_id, scope, expires_at, revoked_at, \
+             created_at, auth_methods, family_id \
+             FROM refresh_tokens \
+             WHERE token_hash = ?1",
+        )?;
+        match stmt.query_row([hash], map) {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StoreError::from(e)),
+        }
+    })?;
+    if let Some(row) = fast {
+        return Ok(row);
+    }
+
+    // --- fallback: decrypt-scan for NULL token_hash rows (backfill pending) ---
     let candidates: Vec<(RefreshTokenRow, Vec<u8>)> = db.with_conn(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, token_enc, user_id, client_id, scope, expires_at, revoked_at, created_at, auth_methods, family_id FROM refresh_tokens",
+            "SELECT id, token_enc, user_id, client_id, scope, expires_at, revoked_at, \
+             created_at, auth_methods, family_id \
+             FROM refresh_tokens \
+             WHERE token_hash IS NULL",
         )?;
         let rows = stmt
             .query_map([], |r| {
@@ -197,6 +278,7 @@ pub fn find_any(db: &Database, plaintext: &str) -> StoreResult<RefreshTokenRow> 
     }
     Err(StoreError::NotFound)
 }
+
 
 /// Revoke every active row in the given rotation family. Returns
 /// the number of rows updated. Idempotent: rows already revoked
@@ -237,6 +319,73 @@ pub fn reseal_all(
             rusqlite::params![resealed, id],
         )?;
         count += 1;
+    }
+    Ok(count)
+}
+
+/// Backfill `token_hash` for rows that predate migration 0019 (where the
+/// column did not yet exist). Called once at startup from a
+/// `tokio::spawn` task; the system is correct before backfill completes
+/// because `find_active` / `find_any` fall back to the decrypt-scan path
+/// for rows with `token_hash IS NULL`.
+///
+/// Error policy: if a row's `token_enc` does not decrypt (e.g. from a
+/// partial key-rotation), the row is skipped with a warning. The row
+/// remains un-backfilled and will continue to be covered by the fallback
+/// scan, which also fails to decrypt it and skips it silently — so the
+/// behaviour is unchanged.
+///
+/// Returns the number of rows successfully backfilled.
+pub fn backfill_token_hashes(db: &Database) -> StoreResult<usize> {
+    // Collect all rows with token_hash IS NULL.
+    let rows_to_fill: Vec<(String, Vec<u8>)> = db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, token_enc FROM refresh_tokens WHERE token_hash IS NULL",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                let id: String = r.get(0)?;
+                let enc: Vec<u8> = r.get(1)?;
+                Ok((id, enc))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    })?;
+
+    let mut count = 0usize;
+    for (id, enc) in rows_to_fill {
+        let plain = match open(db.key(), &enc, AAD) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(
+                    id = %id,
+                    error = %e,
+                    "refresh_token backfill: failed to decrypt row; skipping"
+                );
+                continue;
+            }
+        };
+        // token_enc stores the raw plaintext bytes; interpret as UTF-8 to hash.
+        let plain_str = match std::str::from_utf8(&plain) {
+            Ok(s) => s,
+            Err(_) => {
+                tracing::warn!(id = %id, "refresh_token backfill: non-UTF-8 plaintext; skipping");
+                continue;
+            }
+        };
+        let hash = token_hash_bytes(plain_str);
+        match db.with_conn(|conn| {
+            conn.execute(
+                "UPDATE refresh_tokens SET token_hash = ?1 WHERE id = ?2 AND token_hash IS NULL",
+                rusqlite::params![hash, id],
+            )?;
+            Ok(())
+        }) {
+            Ok(()) => count += 1,
+            Err(e) => {
+                tracing::warn!(id = %id, error = %e, "refresh_token backfill: write failed; skipping");
+            }
+        }
     }
     Ok(count)
 }

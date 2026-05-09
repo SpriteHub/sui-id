@@ -5,6 +5,183 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.6] — Unreleased
+
+Implements RFC 019 (auth flow data integrity hardening) and RFC 020
+(user identity invariants and OIDC claim consistency). Both RFCs
+addressed correctness gaps identified in the v0.29.5 data-model
+review; they are shipped together as 0.29.6 because neither involves
+a breaking API change.
+
+### Security / Correctness (RFC 019)
+
+- **User-state recheck at token exchange.** A user who is disabled
+  or deleted in the window between `/oauth2/authorize` and
+  `/oauth2/token` is now rejected at exchange time with
+  `invalid_grant`. The event is recorded in the audit log as
+  `oauth2.exchange_code.user_revoked`.
+- **Auth code invalidation on disable/delete.** Disabling or
+  deleting a user via the admin panel now atomically marks all
+  outstanding authorization codes consumed, preventing replay after
+  a subsequent re-enable.
+- **Refresh-token O(log n) lookup.** Migration 0019 adds a
+  `token_hash` column (SHA-256 of the plaintext token) to
+  `refresh_tokens` with a partial unique index. New tokens are
+  indexed at insert time; existing rows are backfilled by a
+  background task that runs once at startup. Until backfill
+  completes, the previous full-decrypt scan serves as a fallback.
+- **GC correctness.** Verified that `purge_expired` only deletes
+  rows whose `expires_at` is in the past, never rows whose only
+  fault is `revoked_at IS NOT NULL`, preserving theft-detection
+  coverage.
+- **Auth codes foreign-key constraints.** Migration 0019 rebuilds
+  the `auth_codes` table with `REFERENCES users(id) ON DELETE
+  CASCADE` and `REFERENCES clients(id) ON DELETE CASCADE`. Auth
+  codes have a ≤60 s TTL; the rebuild-on-migrate is safe.
+
+### Data model (RFC 020)
+
+- **`email_normalized` column.** Migration 0020 adds a
+  case-folded (lower + trim) email column and moves the unique
+  index from `email` to `email_normalized`. Mixed-case emails
+  registered at setup (e.g. `Alice@Example.com`) are now found
+  correctly by all lookup paths, including forgot-password.
+- **`email_verified_at` column.** Tracks when the address was
+  confirmed. NULL for all current users (no verification flow
+  yet); present now so userinfo can report `email_verified: false`
+  rather than omitting the claim.
+- **`user_uuid` UNIQUE index.** Migration 0020 adds a partial
+  unique index on `user_uuid WHERE user_uuid <> ''`. WebAuthn uses
+  `user_uuid` as the stable user handle; this prevents two users
+  ever colliding at the credential layer.
+- **`normalize_email` helper** in `sui-id-shared`. All write
+  paths (`users::create`, `users::update_email`) and lookup paths
+  (`users::find_by_email_normalized`) now use this helper.
+- **Forgot-password delivers to original-case email.** The
+  normalised form is used for lookup only; the reset email is sent
+  to the address the user originally typed.
+- **userinfo email claims.** `/oauth2/userinfo` now returns
+  `email` (original case) and `email_verified` (bool) when the
+  access token's granted scope includes `email` and the user has
+  an address on record. Both claims are omitted when the scope or
+  address is absent.
+
+### Tests
+
+- `auth_flow_integrity` e2e suite: user-state recheck, code
+  invalidation on disable, and GC-safe theft detection (RFC 019).
+- `user_identity_invariants` e2e suite: case-insensitive
+  forgot-password, email uniqueness, and userinfo email claims
+  (RFC 020).
+
+### RFC archive
+
+- RFC 019 and RFC 020 moved from `rfcs/proposed/` to
+  `rfcs/done/` (per RFC 018 lifecycle policy).
+
+---
+
+## [0.29.5] — Previous documentation release
+
+Documentation-only release. Lands seven RFCs as the v0.29.5
+data-model review and review-2 fallout, and reorganises one
+historical RFC into the archive folder under the lifecycle
+policy from RFC 018.
+
+### RFC additions in `rfcs/proposed/`
+
+Seven new RFCs, addressing the v0.29.5 data-model reviews,
+the case-A vs case-B framing from review-2, the UI/UX
+deliverables, and growing-pains in the documentation file
+layout:
+
+- **[RFC 019](./rfcs/proposed/019-auth-flow-data-integrity.md)
+  — Auth flow data integrity hardening.** High priority. Closes
+  three real correctness gaps in the token-issuance path: a
+  user disabled mid-flow can still receive tokens, the
+  refresh-token lookup is a full-table decrypt scan, and the
+  refresh-token GC contradicts the family-id theft-detection
+  design from migration `0008`.
+- **[RFC 020](./rfcs/proposed/020-user-identity-invariants.md)
+  — User identity invariants and OIDC claim consistency.** High
+  priority. Adds `email_normalized` so forgot-password works
+  for capitalised emails, makes `user_uuid` actually unique,
+  adds `email_verified_at`, and aligns userinfo with discovery
+  by returning `email` / `email_verified` when scope=email is
+  granted.
+- **[RFC 021](./rfcs/proposed/021-schema-invariant-checks.md)
+  — Schema invariant CHECKs and migration safety.** Medium
+  priority. Boolean-shape CHECKs across the data model,
+  `clients` confidential ↔ `secret_hash` consistency CHECK, the
+  `signing_keys` single-active partial unique index, the
+  `consents` redesign with proper FKs, application-level JSON
+  validation, and transactional migration runs.
+- **[RFC 022](./rfcs/proposed/022-single-realm-scope-statement.md)
+  — Single-realm scope statement.** Medium priority,
+  documentation-only. Declares sui-id as a single-realm IdP and
+  points at RFC 025 as the documented expansion path.
+- **[RFC 023](./rfcs/proposed/023-visual-design-system.md)
+  — Visual design system: tokens, components, motion.** Medium
+  priority. Translates the UI/UX deliverables' visual
+  specification into CSS variable tokens (light + dark),
+  component primitives (button, field, badge, banner, modal,
+  tabs), focus-ring contract, and motion guidelines. Pairs
+  with RFC 017's behavioural contract.
+- **[RFC 024](./rfcs/proposed/024-doc-file-consolidation.md)
+  — Documentation file consolidation.** Low-medium priority,
+  internal-only. Splits CHANGELOG per minor under
+  `docs/changelog/`, compresses ROADMAP, relocates
+  PUBLISHING.md to `docs/contributors/release-process.md`. The
+  project root stops growing.
+- **[RFC 025](./rfcs/proposed/025-multi-tenant-expansion.md)
+  — Multi-tenant expansion path: detailed design.** Low
+  priority, longer-term, no scheduled delivery. Detailed-design
+  RFC for multi-tenancy: a `tenants` table, `tenant_id`
+  propagation, per-tenant signing keys, the global-admin vs
+  tenant-admin split, slug-prefixed routing, and the migration
+  path from single-realm to multi-tenant. Supersedes the
+  earlier RFC 007 sketch.
+
+### Lifecycle moves in `rfcs/`
+
+- **RFC 007 (Multi-tenancy)** moves from `proposed/` to
+  `archive/` with status `Superseded by RFC 025`. The original
+  sketch is preserved verbatim per the RFC 018 "files are
+  never deleted" rule; its status header is amended to point
+  at the supersedor.
+
+### `rfcs/README.md` updates
+
+- The Proposed table gains rows for 019–025 (in priority
+  order: 019, 020 high; 021, 022, 023 medium; 024 low-medium;
+  025 longer-term, no schedule).
+- The Proposed table loses the row for 007.
+- The Archive table gains a row for 007 with the supersession
+  note (replacing the previous "(empty — no withdrawn or
+  superseded RFCs)" placeholder).
+- The Implementation order paragraph is rewritten to reflect
+  the new top of the queue (019 / 020 high-priority cohort).
+
+### `ROADMAP.md` updates
+
+The Near term section gains the v0.29.5 review-driven RFCs
+(019 / 020 high-priority cohort, then 021 / 022 / 023 medium,
+then existing 013 / 014 / 017, then 024 internal cleanup).
+The Longer term section's Multi-tenancy entry repoints from
+RFC 007 to RFC 025 with a brief note on the supersession.
+
+### What didn't change
+
+- No code changes. No `Cargo.toml` workspace changes beyond
+  any version bump the maintainer applies on release.
+- No schema changes. The migrations and schema-tightening
+  designs are described in 019 / 020 / 021; their
+  implementation is a future release.
+- No tests added or removed.
+- No existing RFC content changes beyond RFC 007's status
+  header. The other seventeen RFCs are byte-identical to
+  v0.29.5.
+
 ## [0.29.5] - 2026-05-06
 
 Documentation-only release. Reorganises the `rfcs/` directory

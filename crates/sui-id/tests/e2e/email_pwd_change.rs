@@ -22,7 +22,7 @@ async fn set_admin_email(state: &AppState, email: &str) {
         .expect("user");
     state.db.with_conn(|conn| {
         conn.execute(
-            "UPDATE users SET email = ?1 WHERE id = ?2",
+            "UPDATE users SET email = ?1, email_normalized = lower(trim(?1)) WHERE id = ?2",
             rusqlite::params![email, user.id.to_string()],
         )
         .expect("update");

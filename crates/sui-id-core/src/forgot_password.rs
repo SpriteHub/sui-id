@@ -89,7 +89,7 @@ pub async fn request_reset(
     email: &str,
     requester_ip: Option<&str>,
 ) -> CoreResult<()> {
-    let normalized_email = email.trim().to_lowercase();
+    let normalized_email = sui_id_shared::normalize_email(email);
     let now = clock.now();
 
     let mut ctx = Context::default();
@@ -98,7 +98,7 @@ pub async fn request_reset(
     }
 
     // Look up by email.
-    let user_row = users::find_by_email(db, &normalized_email)?;
+    let user_row = users::find_by_email_normalized(db, &normalized_email)?;
     let Some(user_row) = user_row else {
         events::emit(
             db,
@@ -203,7 +203,9 @@ pub async fn request_reset(
         format!("{} {}", display, t.email_greeting_suffix)
     };
     let mail = OutgoingMail {
-        to: normalized_email.clone(),
+        // Deliver to the original-case address the user registered with;
+        // the normalised form was only needed for the lookup.
+        to: user_row.email.clone().unwrap_or_else(|| normalized_email.clone()),
         subject: t.email_subject_password_reset.to_string(),
         text_body: format!(
             "{greeting}\n\

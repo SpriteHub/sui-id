@@ -270,17 +270,24 @@ async fn login_rate_limit_returns_429_with_retry_after() {
 #[tokio::test]
 async fn gc_purges_expired_auth_codes() {
     use chrono::{Duration, Utc};
-    use sui_id_shared::ids::{ClientId, UserId};
     use sui_id_store::models::AuthorizationCodeRow;
     use sui_id_store::repos::auth_codes;
 
     let state = test_app();
+    // Complete setup so that a real user and client exist in the DB.
+    // Migration 0019 added FK constraints on auth_codes(user_id, client_id),
+    // so we need real referents to insert a test row.
+    let session = complete_setup_and_login(&state).await;
+    let (client_id_str, _) = create_client(&state, &session).await;
+    let user = sui_id_store::repos::users::find_by_username(&state.db, USERNAME)
+        .expect("find user");
+    let client_id: sui_id_shared::ids::ClientId = client_id_str.parse().expect("client_id");
 
     // Insert a code that already expired one minute ago.
     let row = AuthorizationCodeRow {
         code_hash: "deadbeef".repeat(8),
-        client_id: ClientId::new(),
-        user_id: UserId::new(),
+        client_id,
+        user_id: user.id,
         redirect_uri: "https://rp.test/cb".into(),
         scope: "openid".into(),
         nonce: None,

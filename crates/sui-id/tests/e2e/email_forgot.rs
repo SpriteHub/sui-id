@@ -130,16 +130,13 @@ async fn forgot_password_post_sends_mail_for_known_email() {
     // No bulk update helper; round-trip a delete/create pair would
     // complicate things, so we use a raw SQL UPDATE via the DB
     // handle.
-    state
-        .db
-        .with_conn(|conn| {
-            conn.execute(
-                "UPDATE users SET email = ?1 WHERE id = ?2",
-                rusqlite::params![updated.email, user.id.to_string()],
-            )?;
-            Ok(())
-        })
-        .expect("set email");
+    sui_id_store::repos::users::update_email(
+        &state.db,
+        user.id,
+        updated.email.as_deref(),
+        chrono::Utc::now(),
+    )
+    .expect("set email");
 
     // CSRF cookie via GET.
     let resp = build_router(state.clone())
@@ -211,16 +208,13 @@ async fn reset_password_full_flow_changes_password_and_sends_notification() {
     // Set the admin's email so they can reset.
     let user = sui_id_store::repos::users::find_by_username(&state.db, USERNAME)
         .expect("alice");
-    state
-        .db
-        .with_conn(|conn| {
-            conn.execute(
-                "UPDATE users SET email = ?1 WHERE id = ?2",
-                rusqlite::params!["alice@test.invalid", user.id.to_string()],
-            )?;
-            Ok(())
-        })
-        .expect("set email");
+    sui_id_store::repos::users::update_email(
+        &state.db,
+        user.id,
+        Some("alice@test.invalid"),
+        chrono::Utc::now(),
+    )
+    .expect("set email");
 
     // 1) POST /forgot-password to mint a token + capture mail
     let resp = build_router(state.clone())
@@ -508,16 +502,13 @@ async fn forgot_password_reset_revokes_all_sessions_and_refresh_tokens() {
 
     // Give the admin user an email so forgot-password can proceed.
     let user = sui_id_store::repos::users::find_by_username(&state.db, USERNAME).expect("user");
-    state
-        .db
-        .with_conn(|conn| {
-            conn.execute(
-                "UPDATE users SET email = ?1 WHERE id = ?2",
-                rusqlite::params!["alice@reset.test", user.id.to_string()],
-            )?;
-            Ok(())
-        })
-        .expect("set email");
+    sui_id_store::repos::users::update_email(
+        &state.db,
+        user.id,
+        Some("alice@reset.test"),
+        chrono::Utc::now(),
+    )
+    .expect("set email");
 
     // Sign in again to get a second session.
     let _session_b = login_again_for_admin(&state, USERNAME, PASSWORD).await;
@@ -573,14 +564,17 @@ async fn forgot_password_reset_is_no_op_when_user_has_no_sessions() {
     enable_smtp_in_db(&state);
 
     let user = sui_id_store::repos::users::find_by_username(&state.db, USERNAME).expect("user");
+    sui_id_store::repos::users::update_email(
+        &state.db,
+        user.id,
+        Some("bob@reset.test"),
+        chrono::Utc::now(),
+    )
+    .expect("set email");
+    // Revoke the one session we created so we start with zero.
     state
         .db
         .with_conn(|conn| {
-            conn.execute(
-                "UPDATE users SET email = ?1 WHERE id = ?2",
-                rusqlite::params!["bob@reset.test", user.id.to_string()],
-            )?;
-            // Revoke the one session we created so we start with zero.
             conn.execute(
                 "UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ?1",
                 [user.id.to_string()],

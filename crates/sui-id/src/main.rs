@@ -87,6 +87,19 @@ async fn serve(args: &[String]) -> Result<()> {
     let router = build_router(startup.state.clone());
 
     sui_id::gc::spawn(startup.state.clone());
+    // One-shot backfill: populate token_hash for any refresh_token rows
+    // that predate migration 0019. Runs in the background; the system is
+    // correct before it completes.
+    {
+        let db = startup.state.db.clone();
+        tokio::spawn(async move {
+            match sui_id_store::repos::refresh_tokens::backfill_token_hashes(&db) {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(rows = n, "backfill: populated refresh_token.token_hash"),
+                Err(e) => tracing::warn!(error = %e, "backfill: refresh_token.token_hash failed"),
+            }
+        });
+    }
 
     let addr: std::net::SocketAddr = startup
         .listen_addr
@@ -237,6 +250,16 @@ async fn serve_dev(args: &[String]) -> Result<()> {
 
     let router = build_router(state.clone());
     sui_id::gc::spawn(state.clone());
+    {
+        let db = state.db.clone();
+        tokio::spawn(async move {
+            match sui_id_store::repos::refresh_tokens::backfill_token_hashes(&db) {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(rows = n, "backfill: populated refresh_token.token_hash"),
+                Err(e) => tracing::warn!(error = %e, "backfill: refresh_token.token_hash failed"),
+            }
+        });
+    }
 
     let addr: std::net::SocketAddr = dev_bind
         .parse()

@@ -402,6 +402,8 @@ mod integration_tests {
                 locked_until: None,
                 email: None,
                 preferred_lang: None,
+                email_normalized: None,
+                email_verified_at: None,
             },
         )
         .expect("insert user");

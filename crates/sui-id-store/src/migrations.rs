@@ -86,6 +86,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 18,
         sql: include_str!("./migrations/0018_session_limits.sql"),
     },
+    Migration {
+        version: 19,
+        sql: include_str!("./migrations/0019_auth_flow_integrity.sql"),
+    },
+    Migration {
+        version: 20,
+        sql: include_str!("./migrations/0020_user_identity_invariants.sql"),
+    },
 ];
 
 /// The highest schema version this build of sui-id-store knows how to
@@ -110,7 +118,7 @@ pub const MAX_SCHEMA_VERSION: i32 = {
 const META_KEY_SCHEMA_VERSION: &str = "schema_version";
 
 /// Apply all pending migrations to `conn`.
-pub fn run(conn: &Connection) -> StoreResult<()> {
+pub fn run(conn: &mut Connection) -> StoreResult<()> {
     // Ensure the meta table exists before we ask it for its version. The
     // initial migration creates the table too (idempotent CREATE IF NOT
     // EXISTS), but we need to read from it before the migration runs.
@@ -133,11 +141,23 @@ pub fn run(conn: &Connection) -> StoreResult<()> {
             continue;
         }
         tracing::info!(version = m.version, "applying migration");
-        conn.execute_batch(m.sql).map_err(StoreError::from)?;
-        conn.execute(
+        // Each migration runs inside its own transaction so that a
+        // partial failure leaves schema_version un-bumped and the DB
+        // in the pre-migration state. The next startup will retry the
+        // same migration cleanly.
+        //
+        // Note: SQLite does not support VACUUM or some ATTACH DDL
+        // inside a transaction. Migrations that need those are
+        // responsible for their own recovery story and must not be
+        // versioned migrations. None of the existing migrations use
+        // such statements.
+        let tx = conn.transaction().map_err(StoreError::from)?;
+        tx.execute_batch(m.sql).map_err(StoreError::from)?;
+        tx.execute(
             "INSERT OR REPLACE INTO sui_meta(key, value) VALUES(?1, ?2)",
             (META_KEY_SCHEMA_VERSION, m.version.to_string()),
         )?;
+        tx.commit().map_err(StoreError::from)?;
     }
     Ok(())
 }

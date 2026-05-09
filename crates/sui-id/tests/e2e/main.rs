@@ -50,3 +50,5 @@ mod settings;
 mod setup_wizard;
 mod step_up_totp;
 mod step_up_webauthn;
+mod auth_flow_integrity;
+mod user_identity_invariants;

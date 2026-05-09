@@ -28,21 +28,29 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
         locked_until: row.get::<_, Option<DateTime<Utc>>>(10)?,
         email: row.get::<_, Option<String>>(11)?,
         preferred_lang: row.get::<_, Option<String>>(12)?,
+        email_normalized: row.get::<_, Option<String>>(13)?,
+        email_verified_at: row.get::<_, Option<chrono::DateTime<chrono::Utc>>>(14)?,
     })
 }
 
 const SELECT_USER: &str = "SELECT id, username, display_name, is_admin, is_disabled, \
                            is_deleted, created_at, updated_at, user_uuid, \
-                           failed_login_count, locked_until, email, preferred_lang \
+                           failed_login_count, locked_until, email, preferred_lang, \
+                           email_normalized, email_verified_at \
                            FROM users";
 
 pub fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
+    let email_normalized = user
+        .email
+        .as_deref()
+        .map(sui_id_shared::normalize_email);
     db.with_conn(|conn| {
         conn.execute(
             "INSERT INTO users(id, username, display_name, is_admin, is_disabled, is_deleted, \
                                 created_at, updated_at, user_uuid, \
-                                failed_login_count, locked_until, email, preferred_lang) \
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                                failed_login_count, locked_until, email, preferred_lang, \
+                                email_normalized) \
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 user.id.to_string(),
                 user.username,
@@ -57,6 +65,7 @@ pub fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
                 user.locked_until,
                 user.email,
                 user.preferred_lang,
+                email_normalized,
             ],
         )
         .map_err(|e| match e {
@@ -122,21 +131,29 @@ pub fn find_by_username(db: &Database, username: &str) -> StoreResult<UserRow> {
     })
 }
 
-/// Find a user by email address. Returns `Ok(None)` when no user
-/// matches; `Ok(Some(row))` otherwise. Email lookup is
-/// case-sensitive by the partial unique index from migration 0012;
-/// callers that want case-insensitivity should normalise (lowercase)
-/// before calling.
-pub fn find_by_email(db: &Database, email: &str) -> StoreResult<Option<UserRow>> {
+/// Find a user by normalised email address. The caller should pass a
+/// value produced by `sui_id_shared::normalize_email`; this function
+/// operates on the `email_normalized` index column (migration 0020)
+/// so the lookup is O(log n) and case-insensitive.
+///
+/// Returns `Ok(None)` when no user matches.
+pub fn find_by_email_normalized(db: &Database, normalized: &str) -> StoreResult<Option<UserRow>> {
     db.with_conn(|conn| {
-        let mut stmt = conn.prepare(&format!("{SELECT_USER} WHERE email = ?1"))?;
-        let res = stmt.query_row([email], map_row);
+        let mut stmt = conn.prepare(&format!("{SELECT_USER} WHERE email_normalized = ?1"))?;
+        let res = stmt.query_row([normalized], map_row);
         match res {
             Ok(row) => Ok(Some(row)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
     })
+}
+
+/// Find a user by email address, normalising the input automatically.
+/// Thin wrapper over `find_by_email_normalized` for callers that hold
+/// the original-case address.
+pub fn find_by_email(db: &Database, email: &str) -> StoreResult<Option<UserRow>> {
+    find_by_email_normalized(db, &sui_id_shared::normalize_email(email))
 }
 
 /// Like `get` but returns `Ok(None)` instead of `Err(NotFound)`.
@@ -254,5 +271,30 @@ pub fn admin_unlock(db: &Database, id: UserId) -> StoreResult<()> {
             return Err(StoreError::NotFound);
         }
         Ok(())
+    })
+}
+
+/// Update a user's email address. Writes both `email` (original case)
+/// and `email_normalized` (via `sui_id_shared::normalize_email`) in
+/// the same statement so the two columns stay in sync.
+///
+/// Pass `None` to clear the email from the account.
+pub fn update_email(
+    db: &Database,
+    id: UserId,
+    email: Option<&str>,
+    now: DateTime<Utc>,
+) -> StoreResult<()> {
+    let normalized = email.map(sui_id_shared::normalize_email);
+    db.with_conn(|conn| {
+        let n = conn.execute(
+            "UPDATE users SET email = ?1, email_normalized = ?2, updated_at = ?3 WHERE id = ?4",
+            params![email, normalized, now, id.to_string()],
+        )?;
+        if n == 0 {
+            Err(StoreError::NotFound)
+        } else {
+            Ok(())
+        }
     })
 }

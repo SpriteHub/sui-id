@@ -59,6 +59,11 @@ pub fn create_initial_admin(
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_owned),
+        email_normalized: email
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(sui_id_shared::normalize_email),
+        email_verified_at: None,
         // No language preference yet — admin can set one on
         // /me/profile after sign-in. NULL falls through to
         // server_settings.default_lang.

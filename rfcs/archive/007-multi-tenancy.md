@@ -1,7 +1,15 @@
 # RFC 007 — Multi-tenancy
 
-**Status.** Exploratory
-**Tracks.** ROADMAP / Longer term — "Multi-tenancy".
+**Status.** Superseded by [RFC 025 — Multi-tenant expansion path: detailed design](../proposed/025-multi-tenant-expansion.md)
+**Tracks.** ROADMAP / Longer term — "Multi-tenancy" (now tracked
+under RFC 025).
+
+> This RFC was the original sketch of multi-tenant support. It is
+> retained here as a record of the early framing. The current
+> design — schema, routing, admin authorisation, migration path —
+> is in RFC 025; that RFC explicitly absorbed this one's intent.
+> Any future scheduling of multi-tenant work happens against
+> RFC 025.
 **Touches.** every table that has a `user_id` or `client_id` (i.e.
 most of `sui-id-store`), cross-cutting policies in
 `sui-id-core` (lockout, rate limits, audit chain), the admin UI

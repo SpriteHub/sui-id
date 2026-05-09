@@ -500,6 +500,8 @@ mod session_limit_tests {
                 locked_until: None,
                 email: None,
                 preferred_lang: None,
+                email_normalized: None,
+                email_verified_at: None,
             },
         )
         .expect("user");

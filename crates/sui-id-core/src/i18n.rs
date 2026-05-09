@@ -120,6 +120,8 @@ mod tests {
                 locked_until: None,
                 email: None,
                 preferred_lang: preferred_lang.map(str::to_owned),
+                email_normalized: None,
+                email_verified_at: None,
             },
         )
         .expect("user");

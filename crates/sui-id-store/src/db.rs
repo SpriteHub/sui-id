@@ -28,12 +28,12 @@ impl Database {
     /// Open or create the SQLite database at `path`, run pending migrations,
     /// and bind the master key for column encryption.
     pub fn open(path: &Path, key: MasterKey) -> StoreResult<Self> {
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
         // Reasonable defaults for a single-process, self-hosted service.
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        migrations::run(&conn)?;
+        migrations::run(&mut conn)?;
         Ok(Self {
             inner: Arc::new(Inner {
                 conn: Mutex::new(conn),
@@ -44,9 +44,9 @@ impl Database {
 
     /// Open an in-memory database (used by tests).
     pub fn open_in_memory(key: MasterKey) -> StoreResult<Self> {
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        migrations::run(&conn)?;
+        migrations::run(&mut conn)?;
         Ok(Self {
             inner: Arc::new(Inner {
                 conn: Mutex::new(conn),

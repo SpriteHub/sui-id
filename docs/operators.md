@@ -1240,6 +1240,42 @@ For now, sui-id is pre-release: take a backup, replace the binary, and
 restart. If a release ever requires a destructive migration, the
 `CHANGELOG.md` entry will say so explicitly.
 
+### v0.29.6 — pre-flight check required if duplicate emails exist
+
+Migration `0020` adds a `UNIQUE INDEX` on `email_normalized`
+(the lower-cased, trimmed form of each user's email). If any two
+users share the same normalised email address (e.g. one registered as
+`alice@example.com` and another as `Alice@EXAMPLE.COM`), the migration
+will **fail with a `UNIQUE constraint failed` error** and sui-id will
+refuse to start.
+
+Run the following SQL against your database **before** upgrading to
+check for duplicates:
+
+```sql
+-- Returns one row per normalised-email collision.
+-- An empty result means you are safe to upgrade.
+SELECT lower(trim(email)) AS email_normalized,
+       count(*)            AS n,
+       group_concat(id)    AS user_ids
+FROM   users
+WHERE  email IS NOT NULL
+  AND  email <> ''
+GROUP  BY lower(trim(email))
+HAVING count(*) > 1;
+```
+
+If the query returns rows, resolve the conflicts before upgrading. The
+typical resolution is to delete or merge the duplicate accounts through
+the admin panel while on the current version.
+
+All other changes in 0.29.6 (migration `0019`: `auth_codes` FK
+constraints and `refresh_tokens.token_hash`) are safe to apply without
+any pre-flight check. The `auth_codes` table is rebuilt by the
+migration; any rows outstanding at upgrade time are at most 60 seconds
+old and can safely be discarded (users will be asked to log in again
+for in-flight OIDC flows).
+
 ## Further reading
 
 - [`docs/deployment.md`](deployment.md) is a chronological install

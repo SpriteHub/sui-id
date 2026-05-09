@@ -10,6 +10,7 @@ use crate::errors::{StoreError, StoreResult};
 use crate::models::AuthorizationCodeRow;
 use chrono::{DateTime, Utc};
 use rusqlite::params;
+use sui_id_shared::ids::UserId;
 
 fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<AuthorizationCodeRow> {
     let auth_methods_json: String = row.get(11)?;
@@ -85,6 +86,19 @@ pub fn consume(db: &Database, code_hash: &str) -> StoreResult<AuthorizationCodeR
         tx.execute("UPDATE auth_codes SET consumed = 1 WHERE code_hash = ?1", [code_hash])?;
         tx.commit()?;
         Ok(row)
+    })
+}
+
+/// Mark all unconsumed auth codes for the given user as consumed. Called
+/// when a user is disabled or soft-deleted so that any in-flight
+/// authorization codes cannot be exchanged for tokens.
+pub fn invalidate_all_for_user(db: &Database, user_id: UserId) -> StoreResult<usize> {
+    db.with_conn(|conn| {
+        let n = conn.execute(
+            "UPDATE auth_codes SET consumed = 1 WHERE user_id = ?1 AND consumed = 0",
+            [user_id.to_string()],
+        )?;
+        Ok(n)
     })
 }
 

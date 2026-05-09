@@ -13,8 +13,8 @@ use chrono::Utc;
 use sui_id_shared::ids::{ClientId, UserId};
 use sui_id_store::models::{AuditLogRow, ClientRow, CredentialRow, HibpMode, UserRow};
 use sui_id_store::repos::{
-    audit, clients, credentials, refresh_tokens, sessions, user_totp, user_webauthn_credentials,
-    users,
+    audit, auth_codes, clients, credentials, refresh_tokens, sessions, user_totp,
+    user_webauthn_credentials, users,
 };
 use sui_id_store::Database;
 
@@ -79,6 +79,12 @@ pub fn create_user(
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_owned),
+        email_normalized: spec
+            .email
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(sui_id_shared::normalize_email),
+        email_verified_at: None,
         // No language preference yet; admin user manages own
         // language on /me/profile.
         preferred_lang: None,
@@ -133,6 +139,7 @@ pub fn set_user_disabled(
     if disabled {
         sessions::revoke_all_for_user(db, target)?;
         refresh_tokens::revoke_all_for_user(db, target)?;
+        auth_codes::invalidate_all_for_user(db, target)?;
     }
     audit_ok(
         db,
@@ -156,6 +163,7 @@ pub fn delete_user(db: &Database, actor: UserId, target: UserId) -> CoreResult<(
     })?;
     sessions::revoke_all_for_user(db, target)?;
     refresh_tokens::revoke_all_for_user(db, target)?;
+    auth_codes::invalidate_all_for_user(db, target)?;
     audit_ok(db, actor, "user.delete", Some(target.to_string()));
     Ok(())
 }
@@ -290,6 +298,7 @@ pub fn reset_user_password(
     )?;
     sessions::revoke_all_for_user(db, target)?;
     refresh_tokens::revoke_all_for_user(db, target)?;
+    auth_codes::invalidate_all_for_user(db, target)?;
     audit_ok(db, actor, "user.reset_password", Some(target.to_string()));
     Ok(())
 }

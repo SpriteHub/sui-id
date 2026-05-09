@@ -13,3 +13,16 @@ pub mod ids;
 
 pub use auth_method::{acr_from_methods, amr_from_methods, AuthMethod};
 pub use errors::{ApiError, ApiErrorCode};
+
+/// Normalise an email address for case-insensitive uniqueness checks and
+/// lookup. The original-case form is preserved separately in `UserRow.email`
+/// for display purposes; this function produces the canonical form used for
+/// database indexing and forgot-password lookup.
+///
+/// Rule: trim leading/trailing whitespace, then convert to lowercase.
+/// We do not perform full RFC 5321 local-part canonicalisation (dots,
+/// plus-addressing) — those vary by provider and are not universally
+/// applicable.
+pub fn normalize_email(input: &str) -> String {
+    input.trim().to_lowercase()
+}

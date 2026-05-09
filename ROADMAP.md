@@ -5,14 +5,36 @@ a promise.
 
 ## Near term
 
-v0.29.4 cleared the high-priority backlog from the v0.29.3
-external codebase review (RFCs 010, 011, 012, 016, 003 for
-security and spec compliance, plus RFC 015 for documentation
-consistency). The next batch is the medium-priority items —
-performance, maintainability, and the cross-cutting UI/UX
-contract.
+v0.29.6 ships RFC 019 and RFC 020, closing the high-priority
+correctness gaps from the v0.29.5 data-model review:
+RFC 019 (auth flow data integrity — indexed refresh-token
+lookup, user-state recheck, auth-code FK constraints) and
+RFC 020 (email_normalized, email_verified_at, user_uuid unique
+index, userinfo email claims, normalize_email helper).
 
-**Medium priority — performance and maintainability:**
+**Next — medium priority:**
+
+- **Schema invariant CHECKs and migration safety** —
+  see [RFC 021](./rfcs/proposed/021-schema-invariant-checks.md).
+  Adds boolean CHECKs across the data model, a single-active
+  invariant on `signing_keys`, the `clients` confidential ↔
+  `secret_hash` consistency CHECK, the `consents` redesign
+  with proper FKs, application-level JSON validation, and
+  transactional migration runs.
+- **Single-realm scope statement** —
+  see [RFC 022](./rfcs/proposed/022-single-realm-scope-statement.md).
+  Documentation-only declaration that sui-id is a single-realm
+  IdP today, with an explicit pointer at RFC 025 as the
+  expansion path.
+- **Visual design system: tokens, components, motion** —
+  see [RFC 023](./rfcs/proposed/023-visual-design-system.md).
+  CSS variable tokens (light + dark), component primitives
+  (button, field, badge, banner, modal, tabs), focus-ring
+  contract, motion guidelines. Pairs with RFC 017's
+  behavioural contract; together they cover what new admin-UI
+  work inherits.
+
+**Medium priority — performance and maintainability (carried over):**
 
 - **Reduce blocking impact of synchronous SQLite on async
   handlers** —
@@ -37,6 +59,15 @@ contract.
   RFC; the document becomes the inherited contract for further
   admin-domain UI work (notably RFC 002's admin-domain i18n).
   Land ahead of those.
+
+**Low-medium priority — internal cleanup:**
+
+- **Documentation file consolidation** —
+  see [RFC 024](./rfcs/proposed/024-doc-file-consolidation.md).
+  Splits `CHANGELOG.md` per minor version under `docs/changelog/`,
+  compresses ROADMAP, relocates `PUBLISHING.md` to
+  `docs/contributors/release-process.md`. Internal-only, no
+  user-visible change.
 
 ## Medium term
 
@@ -136,13 +167,17 @@ that need resolution before implementation.
   assumes sui-id owns the user table.
 - **Metrics** — see [RFC 006](./rfcs/proposed/006-metrics.md). A
   Prometheus endpoint behind admin auth.
-- **Multi-tenancy** —
-  see [RFC 007](./rfcs/proposed/007-multi-tenancy.md). Today every
-  client and every user share one flat namespace. A tenant
-  column threaded through the schema, with admins scoped to
-  their tenant, would open up B2B-style deployments. The
-  existing audit chain and cross-cutting policies (lockout,
-  rate limits) all need to become tenant-aware first.
+- **Multi-tenant expansion path** —
+  see [RFC 025](./rfcs/proposed/025-multi-tenant-expansion.md).
+  Today every client and every user share one flat namespace,
+  by design (RFC 022 declares the single-realm scope). RFC 025
+  is the detailed-design RFC for the expansion: a `tenants`
+  table, `tenant_id` propagation, per-tenant signing keys,
+  global-admin vs tenant-admin split, slug-prefixed routing,
+  and the migration path from single-realm to multi-tenant.
+  The design is settled enough to inform other RFCs; delivery
+  has no schedule. (Supersedes the earlier RFC 007 sketch,
+  which has moved to `rfcs/archive/`.)
 - **Outbound-facing-third-party scenarios** —
   see [RFC 008](./rfcs/proposed/008-third-party-posture.md). sui-id
   today is designed for the "first-party" deployment model

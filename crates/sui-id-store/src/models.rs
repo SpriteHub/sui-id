@@ -13,12 +13,20 @@ pub struct UserRow {
     pub id: UserId,
     pub username: String,
     pub display_name: Option<String>,
-    /// Optional email address. Added in migration 0012. Used by the
-    /// setup wizard and admin user-creation form, and (in a future
-    /// release) by the password-change notification and forgot-password
-    /// reset flows once SMTP support lands. NULL = "we don't have one";
-    /// userinfo simply omits the `email` claim in that case.
+    /// Original-case email address. Added in migration 0012.
+    /// NULL = "we don't have one"; userinfo omits the `email` claim in
+    /// that case. The original case is preserved so the UI can display
+    /// what the user typed at registration.
     pub email: Option<String>,
+    /// Case-folded form of `email` (lower + trim). Added in migration
+    /// 0020. Used for all uniqueness checks and lookup-by-email paths
+    /// (including forgot-password) so that "Alice@Example.com" and
+    /// "alice@example.com" resolve to the same account.
+    pub email_normalized: Option<String>,
+    /// Timestamp at which the email address was confirmed. NULL for all
+    /// users until an email-verification flow ships (future RFC). Present
+    /// now so userinfo can honestly report `email_verified: false`.
+    pub email_verified_at: Option<DateTime<Utc>>,
     /// Preferred UI locale, BCP-47 tag (e.g. "ja", "en"). NULL =
     /// no preference; the application falls back through Cookie /
     /// Accept-Language / server default. Added in migration 0016.

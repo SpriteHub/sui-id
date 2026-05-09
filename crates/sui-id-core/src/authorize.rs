@@ -23,7 +23,7 @@ use chrono::Duration;
 use ed25519_dalek::SigningKey;
 use sui_id_shared::ids::{ClientId, UserId};
 use sui_id_store::models::{AuditLogRow, AuthorizationCodeRow, RefreshTokenRow};
-use sui_id_store::repos::{audit, auth_codes, clients, refresh_tokens, signing_keys};
+use sui_id_store::repos::{audit, auth_codes, clients, refresh_tokens, signing_keys, users};
 use sui_id_store::Database;
 
 /// Lifetime of an authorization code (kept very short by design).
@@ -253,6 +253,41 @@ pub fn exchange_code(
         });
     }
     tokens::verify_pkce(&row.code_challenge_method, &req.code_verifier, &row.code_challenge)?;
+
+    // Re-check user state at exchange time. A user might have been
+    // disabled or deleted in the ~60-second window between the
+    // authorization request and this exchange. Sessions and refresh
+    // tokens are revoked on disable, but auth codes are short-lived
+    // server-side objects that don't know about the disable event
+    // unless we explicitly check here.
+    //
+    // The code is already consumed above, so a disabled-then-re-enabled
+    // user must re-authenticate to obtain a fresh code anyway — the
+    // consumed state is the correct outcome regardless.
+    let user = users::get(db, row.user_id).map_err(|e| match e {
+        sui_id_store::StoreError::NotFound => CoreError::Protocol {
+            code: ProtocolError::InvalidGrant,
+            description: "user not found".into(),
+        },
+        other => CoreError::from(other),
+    })?;
+    if user.is_disabled || user.is_deleted {
+        let _ = audit::append(
+            db,
+            &AuditLogRow {
+                at: chrono::Utc::now(),
+                actor: Some(row.user_id),
+                action: "oauth2.exchange_code.user_revoked".into(),
+                target: Some(req.client_id.to_string()),
+                result: "denied".into(),
+                note: Some("user disabled or deleted during auth-code exchange window".into()),
+            },
+        );
+        return Err(CoreError::Protocol {
+            code: ProtocolError::InvalidGrant,
+            description: "user account is not active".into(),
+        });
+    }
 
     issue_for(
         db,
