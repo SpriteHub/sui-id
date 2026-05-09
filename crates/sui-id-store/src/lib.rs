@@ -24,3 +24,6 @@ pub mod repos;
 
 pub use db::Database;
 pub use errors::{StoreError, StoreResult};
+
+#[cfg(test)]
+mod tests_rfc021;

@@ -63,7 +63,36 @@ pub fn insert_with_plaintext(
     })
 }
 
-/// Get the currently active signing key, or `NotFound` if none exists.
+/// AAD used when sealing / opening signing key private bytes. Exposed so the
+/// rotation path in `sui-id-core::admin` can seal the key *before* entering
+/// the DB transaction.
+pub const SIGNING_KEY_AAD: &[u8] = AAD;
+
+/// Insert a signing key using already-sealed private key bytes, directly on
+/// a `Transaction`. Used by the rotation path (retire-then-insert in one tx).
+pub fn insert_sealed_on_conn(
+    tx: &rusqlite::Transaction<'_>,
+    id: SigningKeyId,
+    algorithm: &str,
+    private_key_sealed: &[u8],
+    public_key: &[u8],
+    is_active: bool,
+) -> StoreResult<()> {
+    let now = Utc::now();
+    tx.execute(
+        "INSERT INTO signing_keys(id, algorithm, private_key_enc, public_key, is_active, created_at, rotated_at) \
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, NULL)",
+        params![
+            id.to_string(),
+            algorithm,
+            private_key_sealed,
+            public_key,
+            is_active as i64,
+            now,
+        ],
+    )?;
+    Ok(())
+}
 ///
 /// When more than one row has `is_active = 1` (which can briefly happen
 /// during a rotation transaction), the **most recently created** one wins.
@@ -186,4 +215,47 @@ pub fn reseal_all(
         count += 1;
     }
     Ok(count)
+}
+
+/// Retire the currently active key (if any) and insert a new one, atomically.
+///
+/// This is the correct rotation order when the partial unique index
+/// `idx_signing_keys_single_active` is present (migration 0021): the index
+/// allows at most one `is_active = 1` row, so the old insert-then-retire
+/// order would briefly create two active rows and violate the constraint.
+///
+/// Both steps execute inside a single transaction; external readers never
+/// observe the zero-active-keys gap between them.
+///
+/// `private_key_plain` is sealed with the master key before the INSERT.
+pub fn rotate_atomic(
+    db: &Database,
+    new_id: SigningKeyId,
+    algorithm: &str,
+    private_key_plain: &[u8],
+    public_key: &[u8],
+) -> StoreResult<SigningKeyRow> {
+    // Seal outside the transaction so crypto work is not inside the mutex.
+    let sealed = seal(db.key(), private_key_plain, AAD)?;
+    let pk_vec = public_key.to_vec();
+    let now = Utc::now();
+    db.with_tx(|tx| {
+        // Step 1: retire any currently active key.
+        tx.execute(
+            "UPDATE signing_keys SET is_active = 0, rotated_at = ?1 WHERE is_active = 1",
+            params![now],
+        )?;
+        // Step 2: insert the new active key.
+        insert_sealed_on_conn(tx, new_id, algorithm, &sealed, &pk_vec, true)?;
+        Ok(())
+    })?;
+    Ok(SigningKeyRow {
+        id: new_id,
+        algorithm: algorithm.to_owned(),
+        private_key_enc: vec![],
+        public_key: pk_vec,
+        is_active: true,
+        created_at: now,
+        rotated_at: None,
+    })
 }

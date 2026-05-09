@@ -5,7 +5,72 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.29.6] — Unreleased
+## [0.29.7] — Unreleased
+
+Implements RFC 021 (schema invariant CHECKs and migration safety). Raises
+the DB-layer guarantees established by the v0.29.5 data-model review's
+medium-priority findings.
+
+### Database schema (RFC 021)
+
+- **Boolean CHECK constraints.** `users.is_admin`, `users.is_disabled`,
+  `users.is_deleted`, `credentials.must_change`, `clients.confidential`,
+  `clients.is_disabled`, `clients.is_deleted`, `signing_keys.is_active`,
+  and `user_totp.enabled` now all carry `CHECK (col IN (0, 1))`.
+  Previously these were enforced only by application convention. Five
+  tables are rebuilt by migration 0021 to add the constraints.
+- **`clients` confidential/secret_hash consistency CHECK.** A
+  confidential client must have `secret_hash IS NOT NULL`; a public
+  client must have `secret_hash IS NULL`. Both rules are now enforced
+  at the DB layer.
+- **`signing_keys` single-active partial unique index.** Migration 0021
+  adds `UNIQUE INDEX ... ON signing_keys(is_active) WHERE is_active = 1`.
+  At most one active signing key may exist at any time.
+- **Key rotation order reversed.** `rotate_signing_key` now retires the
+  current active key *before* inserting the new one (both in one
+  transaction), so the new unique index is never violated. External
+  readers cannot observe the zero-active-key gap between the two steps.
+- **`consents` FK redesign.** The `consents` table is dropped and
+  rebuilt with `REFERENCES users(id) ON DELETE CASCADE`,
+  `REFERENCES clients(id) ON DELETE CASCADE`, a composite
+  `PRIMARY KEY (user_id, client_id)`, a `granted_scopes` column,
+  and `CHECK (length(granted_scopes) > 0)`.
+- **Sessions query index.** Adds
+  `idx_sessions_user_active_alive ON sessions(user_id, expires_at, created_at)
+  WHERE revoked_at IS NULL` to support the active-and-not-expired query
+  shape. The existing `idx_sessions_user_active` is kept for FIFO
+  eviction queries.
+
+### Application layer (RFC 021)
+
+- **`StoreError::CorruptJson`.** New typed error variant surfaced when
+  a JSON-TEXT column write fails validation.
+- **`repos::json_util::require_valid_json`.** Guard function applied at
+  every `clients.redirect_uris` and `clients.post_logout_redirect_uris`
+  write path, preventing silent corruption at insert time.
+- **`signing_keys::rotate_atomic`.** New atomic helper encapsulating the
+  retire-then-insert rotation pattern; `admin::rotate_signing_key` delegates
+  to it.
+
+### Tests
+
+- 11 unit tests in `sui-id-store` covering each new constraint: boolean
+  CHECKs, confidential/secret_hash consistency, signing_keys unique
+  index, consents FK, and JSON validation.
+
+### Operator documentation
+
+- `docs/operators/preflight-0021.sql` — pre-flight queries to run before
+  upgrading to 0.29.7.
+- `docs/operators.md` — 0.29.7 upgrade section with repair instructions.
+
+### RFC archive
+
+- RFC 021 moved from `rfcs/proposed/` to `rfcs/done/`.
+
+---
+
+## [0.29.6] — Previous release
 
 Implements RFC 019 (auth flow data integrity hardening) and RFC 020
 (user identity invariants and OIDC claim consistency). Both RFCs

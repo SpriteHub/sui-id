@@ -1240,6 +1240,35 @@ For now, sui-id is pre-release: take a backup, replace the binary, and
 restart. If a release ever requires a destructive migration, the
 `CHANGELOG.md` entry will say so explicitly.
 
+### v0.29.7 — pre-flight checks required for schema hardening
+
+Migration `0021` rebuilds five tables (`users`, `credentials`, `clients`,
+`signing_keys`, `user_totp`) and adds CHECK constraints. If any existing
+row violates a constraint (unusual boolean values, inconsistent
+`confidential` / `secret_hash`, or multiple active signing keys), the
+migration will **fail** and sui-id will refuse to start until the data is
+repaired.
+
+Run the pre-flight script before upgrading:
+
+```bash
+sqlite3 /path/to/sui-id.db < docs/operators/preflight-0021.sql
+```
+
+All queries must return empty or zero results. See the script at
+`docs/operators/preflight-0021.sql` for repair instructions.
+
+The `consents` table is dropped and rebuilt (no production data should
+exist there yet; it has no consumers until RFC 008 lands).
+
+The signing key rotation order is also reversed in this release: the
+existing active key is retired *before* the new one is inserted (both
+in one transaction). This is invisible to callers but means any manual
+direct-SQL rotation done against a pre-0.29.7 instance may need to be
+revised if you bypassed the admin UI.
+
+---
+
 ### v0.29.6 — pre-flight check required if duplicate emails exist
 
 Migration `0020` adds a `UNIQUE INDEX` on `email_normalized`

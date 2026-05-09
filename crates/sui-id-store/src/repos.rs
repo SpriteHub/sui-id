@@ -8,6 +8,7 @@ pub mod audit;
 pub mod auth_codes;
 pub mod clients;
 pub mod credentials;
+pub mod json_util;
 pub mod login_pending_mfa;
 pub mod password_reset_tokens;
 pub mod refresh_tokens;

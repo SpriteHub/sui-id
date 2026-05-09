@@ -3,6 +3,7 @@
 use crate::db::Database;
 use crate::errors::{StoreError, StoreResult};
 use crate::models::ClientRow;
+use crate::repos::json_util::require_valid_json;
 use chrono::{DateTime, Utc};
 use rusqlite::params;
 use sui_id_shared::ids::ClientId;
@@ -45,6 +46,10 @@ const SELECT: &str = "SELECT id, name, confidential, secret_hash, redirect_uris,
 pub fn create(db: &Database, c: &ClientRow) -> StoreResult<()> {
     let uris = serde_json::to_string(&c.redirect_uris)?;
     let post_logout = serde_json::to_string(&c.post_logout_redirect_uris)?;
+    // Pre-condition: validate that the serialised JSON round-trips correctly
+    // before writing, so a future read cannot encounter corrupt JSON.
+    require_valid_json::<Vec<String>>(&uris, "clients.redirect_uris")?;
+    require_valid_json::<Vec<String>>(&post_logout, "clients.post_logout_redirect_uris")?;
     db.with_conn(|conn| {
         conn.execute(
             "INSERT INTO clients(id, name, confidential, secret_hash, redirect_uris, \
@@ -112,6 +117,7 @@ pub fn update_basic(
         let new_name = name.unwrap_or(&current.name);
         let new_uris = redirect_uris.map(<[String]>::to_vec).unwrap_or(current.redirect_uris.clone());
         let uris_json = serde_json::to_string(&new_uris)?;
+        require_valid_json::<Vec<String>>(&uris_json, "clients.redirect_uris")?;
         conn.execute(
             "UPDATE clients SET name = ?1, redirect_uris = ?2, updated_at = ?3 WHERE id = ?4",
             params![new_name, uris_json, Utc::now(), id.to_string()],
@@ -141,6 +147,7 @@ pub fn set_post_logout_redirect_uris(
     uris: &[String],
 ) -> StoreResult<()> {
     let json = serde_json::to_string(uris)?;
+    require_valid_json::<Vec<String>>(&json, "clients.post_logout_redirect_uris")?;
     db.with_conn(|conn| {
         let n = conn.execute(
             "UPDATE clients SET post_logout_redirect_uris = ?1, updated_at = ?2 WHERE id = ?3",

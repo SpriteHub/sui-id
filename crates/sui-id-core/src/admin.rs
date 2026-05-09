@@ -575,28 +575,24 @@ pub fn rotate_signing_key(
     use sui_id_store::repos::signing_keys;
 
     require_admin(db, actor)?;
-    let previous = signing_keys::active(db).ok();
 
-    // Generate the new key.
+    // Generate the new key material first (outside the DB lock).
     let mut rng = OsRng;
     let sk = SigningKey::generate(&mut rng);
     let pk = sk.verifying_key();
     let new_id = SigningKeyId::new();
-    signing_keys::insert_with_plaintext(
+
+    // Delegate the retire-then-insert to the store layer. Migration 0021
+    // adds a partial unique index (at most one is_active=1 row), so the
+    // old insert-then-retire order would violate the constraint. The new
+    // order retires first and inserts second inside one transaction.
+    signing_keys::rotate_atomic(
         db,
         new_id,
         "EdDSA",
         sk.to_bytes().as_ref(),
         pk.to_bytes().as_ref(),
-        true,
     )?;
-
-    // Retire the previous active key, if any. We do this *after* the new
-    // key is in place so that — even with a crash mid-flight — there is
-    // never a window with zero active keys.
-    if let Some(prev) = previous {
-        signing_keys::retire(db, prev.id)?;
-    }
     let _ = clock;
     audit_ok(db, actor, "signing_key.rotate", Some(new_id.to_string()));
     Ok(new_id)

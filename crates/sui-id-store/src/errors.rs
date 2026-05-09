@@ -24,6 +24,18 @@ pub enum StoreError {
 
     #[error("serialization error")]
     Serde(#[from] serde_json::Error),
+
+    /// A JSON-TEXT column value failed to deserialize. Indicates either
+    /// corruption from an out-of-band write or a bug in a previous write
+    /// path. Surfaced as a typed error so callers can decide whether to
+    /// skip the row, reject the request, or page an operator.
+    #[error("corrupt JSON in column '{context}': {source}")]
+    CorruptJson {
+        context: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 pub type StoreResult<T> = Result<T, StoreError>;
+

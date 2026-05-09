@@ -14,8 +14,8 @@ index, userinfo email claims, normalize_email helper).
 
 **Next — medium priority:**
 
-- **Schema invariant CHECKs and migration safety** —
-  see [RFC 021](./rfcs/proposed/021-schema-invariant-checks.md).
+- **Single-realm scope statement** —
+  see [RFC 022](./rfcs/proposed/022-single-realm-scope-statement.md).
   Adds boolean CHECKs across the data model, a single-active
   invariant on `signing_keys`, the `clients` confidential ↔
   `secret_hash` consistency CHECK, the `consents` redesign

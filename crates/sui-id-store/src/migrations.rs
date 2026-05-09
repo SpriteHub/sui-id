@@ -94,6 +94,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 20,
         sql: include_str!("./migrations/0020_user_identity_invariants.sql"),
     },
+    Migration {
+        version: 21,
+        sql: include_str!("./migrations/0021_schema_invariants.sql"),
+    },
 ];
 
 /// The highest schema version this build of sui-id-store knows how to
