@@ -76,19 +76,19 @@ pub async fn page_get(
     let current_session_id = SessionId::from_str(&raw_session)
         .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
 
-    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let user = users::get(&app.db, user_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
 
-    let totp_enabled = user_totp::get(&app.db, user_id)
+    let totp_enabled = user_totp::get(&app.db, user_id).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?
         .map(|r| r.enabled)
         .unwrap_or(false);
 
-    let passkey_count = sui_id_core::webauthn::list_for_user(&app.db, user_id)
+    let passkey_count = sui_id_core::webauthn::list_for_user(&app.db, user_id).await
         .map_err(HttpError::html)?
         .len();
 
     let session_rows =
-        sessions::list_active_for_user(&app.db, user_id).map_err(|e| HttpError::html(e.into()))?;
+        sessions::list_active_for_user(&app.db, user_id).await.map_err(|e| HttpError::html(e.into()))?;
     let mut sessions_view = Vec::with_capacity(session_rows.len());
     for s in session_rows {
         let auth_methods = describe_auth_methods(&s.auth_methods);
@@ -102,7 +102,7 @@ pub async fn page_get(
         });
     }
 
-    let event_rows = audit::recent_for_user(&app.db, user_id, RECENT_EVENT_LIMIT)
+    let event_rows = audit::recent_for_user(&app.db, user_id, RECENT_EVENT_LIMIT).await
         .map_err(|e| HttpError::html(e.into()))?;
     let events_view: Vec<_> = event_rows
         .into_iter()
@@ -156,7 +156,7 @@ pub async fn revoke_one(
     // Ownership check: pulling the session row and comparing user_id
     // is the simplest correct way. Skipping this would let a user
     // revoke another user's session by guessing the id.
-    let row = match sessions::get(&app.db, target_id) {
+    let row = match sessions::get(&app.db, target_id).await {
         Ok(r) => r,
         Err(sui_id_store::StoreError::NotFound) => {
             // Treat unknown ids the same as foreign ids — both
@@ -169,7 +169,7 @@ pub async fn revoke_one(
         return Ok(Redirect::to("/me/security?msg=unknown").into_response());
     }
 
-    sessions::revoke(&app.db, target_id).map_err(|e| HttpError::html(e.into()))?;
+    sessions::revoke(&app.db, target_id).await.map_err(|e| HttpError::html(e.into()))?;
 
     // If the user just revoked their *own* current session, clear
     // the cookie so the next request is clean. They'll bounce to
@@ -213,14 +213,14 @@ pub async fn revoke_all_others(
         &app,
         &ctx,
         "/me/security",
-    ) {
+    ).await {
         return Ok(redirect);
     }
 
     let user_id = ctx.user_id;
     let keep = ctx.session_id;
 
-    let n = sessions::revoke_all_for_user_except(&app.db, user_id, keep)
+    let n = sessions::revoke_all_for_user_except(&app.db, user_id, keep).await
         .map_err(|e| HttpError::html(e.into()))?;
 
     // Audit: emit one row capturing how many sessions were swept.
@@ -235,7 +235,7 @@ pub async fn revoke_all_others(
             result: "ok".into(),
             note: Some(format!("revoked {n} other session(s)")),
         },
-    );
+    ).await;
 
     let target = if n == 0 {
         "/me/security?msg=no_other_sessions"
@@ -307,7 +307,7 @@ pub async fn password_change_get(
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let user = users::get(&app.db, user_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
     let token = csrf::ensure_token(&jar);
     let html = sui_id_web::render_password_change(
         sui_id_web::PasswordChangeData {
@@ -373,7 +373,7 @@ pub async fn password_change_post(
         .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
 
     // RFC 003: load HIBP settings from the DB for this request.
-    let hibp_mode = sui_id_store::repos::server_settings::get(&app.db)
+    let hibp_mode = sui_id_store::repos::server_settings::get(&app.db).await
         .map(|s| s.hibp_mode)
         .unwrap_or_default();
 
@@ -387,7 +387,7 @@ pub async fn password_change_post(
         &form.new_password,
         Some(keep),
         revoke_others,
-    )
+    ).await
     .map_err(HttpError::html)?;
 
     let _ = report; // counts are in the audit event already; nothing to surface
@@ -407,7 +407,7 @@ pub async fn password_change_post(
     // operationally fine for a self-service action that already
     // holds a database write.
     if let Ok(Some(user_row)) =
-        sui_id_store::repos::users::find_by_id_opt(&app.db, user_id)
+        sui_id_store::repos::users::find_by_id_opt(&app.db, user_id).await
     {
         if let Some(email) = user_row.email.as_deref() {
             // Recipient's preferred locale, falling through to
@@ -418,19 +418,13 @@ pub async fn password_change_post(
                 .preferred_lang
                 .as_deref()
                 .and_then(sui_id_i18n::Locale::parse)
-                .unwrap_or_else(|| {
-                    sui_id_store::repos::server_settings::get(&app.db)
-                        .ok()
-                        .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
-                        .unwrap_or_default()
-                });
+                .unwrap_or_default();
             if let Err(e) = sui_id_core::forgot_password::notify_password_changed(
                 app.mailer.as_ref(),
                 email,
                 &user_row.display_name,
                 recipient_locale,
-            )
-            .await
+            ).await
             {
                 tracing::warn!(
                     error = %e,

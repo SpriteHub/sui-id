@@ -23,7 +23,7 @@ pub fn spawn(state: AppState) {
         // startup work.
         tokio::time::sleep(Duration::from_secs(60)).await;
         loop {
-            run_once(&state);
+            run_once(&state).await;
             tokio::time::sleep(GC_INTERVAL).await;
         }
     });
@@ -31,34 +31,34 @@ pub fn spawn(state: AppState) {
 
 /// Run one GC cycle inline. Public so integration tests can drive it
 /// deterministically without waiting on the real interval.
-pub fn run_once(state: &AppState) {
+pub async fn run_once(state: &AppState) {
     let db = &state.db;
-    match auth_codes::purge_expired(db) {
+    match auth_codes::purge_expired(db).await {
         Ok(n) if n > 0 => tracing::info!(deleted = n, "gc: removed expired auth codes"),
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "gc: auth_codes purge failed"),
     }
-    match sessions::purge_expired(db) {
+    match sessions::purge_expired(db).await {
         Ok(n) if n > 0 => tracing::info!(deleted = n, "gc: removed expired sessions"),
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "gc: sessions purge failed"),
     }
-    match refresh_tokens::purge_expired(db) {
+    match refresh_tokens::purge_expired(db).await {
         Ok(n) if n > 0 => tracing::info!(deleted = n, "gc: removed expired refresh tokens"),
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "gc: refresh_tokens purge failed"),
     }
-    match login_pending_mfa::purge_expired(db) {
+    match login_pending_mfa::purge_expired(db).await {
         Ok(n) if n > 0 => tracing::info!(deleted = n, "gc: removed expired pending-MFA rows"),
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "gc: login_pending_mfa purge failed"),
     }
-    match webauthn_pending::purge_expired(db) {
+    match webauthn_pending::purge_expired(db).await {
         Ok(n) if n > 0 => tracing::info!(deleted = n, "gc: removed expired WebAuthn ceremonies"),
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "gc: webauthn_pending purge failed"),
     }
-    match revoked_access_tokens::purge_expired(db) {
+    match revoked_access_tokens::purge_expired(db).await {
         Ok(n) if n > 0 => tracing::info!(deleted = n, "gc: removed expired access-token deny entries"),
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "gc: revoked_access_tokens purge failed"),

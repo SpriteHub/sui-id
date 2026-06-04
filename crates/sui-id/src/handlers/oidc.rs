@@ -29,7 +29,7 @@ pub async fn discovery(state_ext: AppStateExt) -> impl IntoResponse {
 
 pub async fn jwks(state_ext: AppStateExt) -> Result<Response, HttpError> {
     let axum::extract::State(app) = state_ext;
-    let body = jwks::build(&app.db).map_err(|e| HttpError::api(CoreError::from(e)))?;
+    let body = jwks::build(&app.db).await.map_err(|e| HttpError::api(CoreError::from(e)))?;
     let mut resp = Json(body).into_response();
     resp.headers_mut()
         .insert(header::CACHE_CONTROL, "public, max-age=300".parse().unwrap_or_else(|_| "no-store".parse().expect("static")));
@@ -93,14 +93,14 @@ pub async fn authorize(
         code_challenge_method: q.code_challenge_method.clone(),
     };
 
-    let accepted = authorize::begin_authorization(&app.db, params).map_err(HttpError::html)?;
+    let accepted = authorize::begin_authorization(&app.db, params).await.map_err(HttpError::html)?;
     let redirect = authorize::complete_authorization(
         &app.db,
         &app.clock,
         session_user,
         &session_auth_methods,
         accepted,
-    )
+    ).await
     .map_err(HttpError::html)?;
 
     let mut url = redirect.redirect_uri;
@@ -127,7 +127,7 @@ async fn resolve_session(
     // Resolve hits the database both for validity (expiry / revocation)
     // and to fetch the recorded auth_methods. Cheaper to do it once
     // here than to call resolve and then re-fetch the row.
-    let session = sui_id_store::repos::sessions::get(&app.db, id).ok()?;
+    let session = sui_id_store::repos::sessions::get(&app.db, id).await.ok()?;
     if session.revoked_at.is_some() || session.expires_at < app.clock.now() {
         return None;
     }
@@ -256,7 +256,7 @@ pub async fn token(
                     client_secret,
                     code_verifier,
                 },
-            )
+            ).await
             .map_err(HttpError::oauth)?
         }
         "refresh_token" => {
@@ -275,7 +275,7 @@ pub async fn token(
                     client_id,
                     client_secret,
                 },
-            )
+            ).await
             .map_err(HttpError::oauth)?
         }
         other => {
@@ -361,11 +361,11 @@ pub async fn userinfo(
         .and_then(|s| s.strip_prefix("Bearer "))
         .ok_or_else(|| HttpError::api(CoreError::Unauthenticated))?;
 
-    let claims = sui_id_core::tokens::verify_access_token(&app.db, &app.clock, raw)
+    let claims = sui_id_core::tokens::verify_access_token(&app.db, &app.clock, raw).await
         .map_err(HttpError::api)?;
     // RFC 7009: a revoked access token must stop being honoured at
     // protected endpoints. We consult the deny-list before serving.
-    if sui_id_store::repos::revoked_access_tokens::is_revoked(&app.db, &claims.jti)
+    if sui_id_store::repos::revoked_access_tokens::is_revoked(&app.db, &claims.jti).await
         .map_err(|e| HttpError::api(CoreError::from(e)))?
     {
         return Err(HttpError::api(CoreError::Unauthenticated));
@@ -374,7 +374,7 @@ pub async fn userinfo(
         .sub
         .parse()
         .map_err(|_| HttpError::api(CoreError::Internal))?;
-    let row = users::get(&app.db, uid).map_err(|_| HttpError::api(CoreError::Unauthenticated))?;
+    let row = users::get(&app.db, uid).await.map_err(|_| HttpError::api(CoreError::Unauthenticated))?;
     if row.is_disabled || row.is_deleted {
         return Err(HttpError::api(CoreError::Unauthenticated));
     }
@@ -411,7 +411,7 @@ pub async fn userinfo(
     Ok(resp)
 }
 
-// ---------- /logout (RP-initiated) ----------
+// ---------- /logout (RP-initiated).await ----------
 
 /// Query parameters for the RP-initiated logout endpoint, per
 /// OpenID Connect RP-Initiated Logout 1.0.
@@ -446,7 +446,7 @@ pub async fn logout(
     if let Some(token) = &q.id_token_hint {
         // Verify the signature; accept expired tokens so the user can still
         // log out after their session has gone stale.
-        if let Ok(claims) = sui_id_core::tokens::verify_id_token(&app.db, &app.clock, token, true) {
+        if let Ok(claims) = sui_id_core::tokens::verify_id_token(&app.db, &app.clock, token, true).await {
             user_id = claims.sub.parse().ok();
             hinted_client = claims.aud.parse().ok();
         } else {
@@ -464,7 +464,7 @@ pub async fn logout(
                 let part = part.trim();
                 if let Some(value) = part.strip_prefix("sui_id_session=") {
                     if let Ok(sid) = value.parse() {
-                        if let Ok(uid) = sui_id_core::session::resolve(&app.db, &app.clock, sid) {
+                        if let Ok(uid) = sui_id_core::session::resolve(&app.db, &app.clock, sid).await {
                             user_id = Some(uid);
                         }
                     }
@@ -474,7 +474,7 @@ pub async fn logout(
     }
 
     if let Some(uid) = user_id {
-        sui_id_core::session::logout_user(&app.db, &app.clock, uid)
+        sui_id_core::session::logout_user(&app.db, &app.clock, uid).await
             .map_err(HttpError::html)?;
     }
 
@@ -493,7 +493,7 @@ pub async fn logout(
         q.post_logout_redirect_uri.as_deref(),
         hinted_client.or_else(|| q.client_id.as_deref().and_then(|s| s.parse().ok())),
     ) {
-        (Some(uri), Some(cid)) => match sui_id_store::repos::clients::get(&app.db, cid) {
+        (Some(uri), Some(cid)) => match sui_id_store::repos::clients::get(&app.db, cid).await {
             Ok(client) if !client.is_disabled && !client.is_deleted => {
                 if !client.post_logout_redirect_uris.is_empty() {
                     if client.post_logout_redirect_uris.iter().any(|u| u == uri) {

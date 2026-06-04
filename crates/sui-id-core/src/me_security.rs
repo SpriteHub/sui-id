@@ -59,7 +59,7 @@ pub struct PasswordChangeReport {
 ///   password policy (length, etc.).
 /// - storage / hashing failures bubble up as [`CoreError::Internal`]
 ///   or [`CoreError::Password`].
-pub fn change_password_self(
+pub async fn change_password_self(
     db: &Database,
     clock: &SharedClock,
     hibp_client: Option<&dyn HibpClient>,
@@ -74,25 +74,25 @@ pub fn change_password_self(
     //    user account exists without a password (shouldn't happen
     //    in practice, but be explicit) — refuse the same as a
     //    wrong password to avoid an oracle.
-    let row = credentials::get(db, user_id).map_err(|e| match e {
+    let row = credentials::get(db, user_id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::InvalidCredentials,
         other => CoreError::from(other),
     })?;
 
     // 2. Verify the current password.
-    password::verify_password(current_password, &row.password_hash)?;
+    password::verify_password(current_password, &row.password_hash).await?;
 
     // 3. Enforce the policy on the new one. Done after the verify
     //    so that someone fishing for "is X my password?" via this
     //    endpoint doesn't get differentiated errors based on
     //    whether their guess passed policy.
-    password::check_password_policy(new_password)?;
+    password::check_password_policy(new_password).await?;
 
     // 3b. RFC 003: HIBP breach check. Enforced here for consistency with
     //     the setup wizard. Fail-open: network errors let the change
     //     through. Block mode returns BadRequest; Warn mode proceeds but
     //     sets the flag in the report so the UI can surface a nudge.
-    let hibp_warned = match hibp::enforce_hibp(hibp_mode, hibp_client, new_password) {
+    let hibp_warned = match hibp::enforce_hibp(hibp_mode, hibp_client, new_password).await {
         HibpEnforcement::Blocked { .. } => {
             return Err(CoreError::BadRequest(
                 "New password found in known data breaches. Please choose a different password.".into(),
@@ -104,7 +104,7 @@ pub fn change_password_self(
 
     // 4. Hash and store. `must_change` is reset — the user has
     //    just demonstrated agency.
-    let new_phc = password::hash_password(new_password)?;
+    let new_phc = password::hash_password(new_password).await?;
     credentials::upsert(
         db,
         &CredentialRow {
@@ -113,7 +113,7 @@ pub fn change_password_self(
             must_change: false,
             updated_at: Utc::now(),
         },
-    )?;
+    ).await?;
 
     // 5. Optionally sweep other live state. The caller asked for
     //    this when the box was checked; we revoke every other
@@ -127,10 +127,10 @@ pub fn change_password_self(
     };
     if revoke_others {
         report.sessions_revoked = match keep_current_session {
-            Some(keep) => sessions::revoke_all_for_user_except(db, user_id, keep)?,
-            None => sessions::revoke_all_for_user(db, user_id)?,
+            Some(keep) => sessions::revoke_all_for_user_except(db, user_id, keep).await?,
+            None => sessions::revoke_all_for_user(db, user_id).await?,
         };
-        report.refresh_tokens_revoked = refresh_tokens::revoke_all_for_user(db, user_id)?;
+        report.refresh_tokens_revoked = refresh_tokens::revoke_all_for_user(db, user_id).await?;
     }
 
     // 6. Audit. The note carries the sweep counts so an operator
@@ -149,7 +149,7 @@ pub fn change_password_self(
                 report.sessions_revoked, report.refresh_tokens_revoked
             )),
         },
-    );
+    ).await;
 
     Ok(report)
 }
@@ -166,7 +166,7 @@ mod tests {
         Database::open_in_memory(MasterKey::generate()).expect("db")
     }
 
-    fn create_user_with_password(db: &Database, password: &str) -> UserId {
+    async fn create_user_with_password(db: &Database, password: &str) -> UserId {
         let id = UserId::new();
         let now = Utc::now();
         users::create(
@@ -188,9 +188,9 @@ mod tests {
                 email_normalized: None,
                 email_verified_at: None,
             },
-        )
+        ).await
         .expect("create user");
-        let phc = password::hash_password(password).expect("hash");
+        let phc = password::hash_password(password).await.expect("hash");
         credentials::upsert(
             db,
             &CredentialRow {
@@ -199,16 +199,16 @@ mod tests {
                 must_change: false,
                 updated_at: now,
             },
-        )
+        ).await
         .expect("set credential");
         id
     }
 
     #[test]
-    fn happy_path_replaces_hash_and_returns_zero_sweep_when_box_unchecked() {
+    async fn happy_path_replaces_hash_and_returns_zero_sweep_when_box_unchecked() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user_with_password(&db, "the-old-tester-password");
+        let clock = crate::time::system_clock().await;
+        let uid = create_user_with_password(&db, "the-old-tester-password").await;
         let r = change_password_self(
             &db,
             &clock,
@@ -219,21 +219,21 @@ mod tests {
             "the-new-tester-password",
             None,
             false,
-        )
+        ).await
         .expect("change");
         assert_eq!(r.sessions_revoked, 0);
         assert_eq!(r.refresh_tokens_revoked, 0);
         // Old password no longer verifies; new one does.
-        let stored = credentials::get(&db, uid).expect("cred").password_hash;
-        assert!(password::verify_password("the-old-tester-password", &stored).is_err());
-        assert!(password::verify_password("the-new-tester-password", &stored).is_ok());
+        let stored = credentials::get(&db, uid).await.expect("cred").password_hash;
+        assert!(password::verify_password("the-old-tester-password", &stored).await.is_err());
+        assert!(password::verify_password("the-new-tester-password", &stored).await.is_ok());
     }
 
     #[test]
-    fn wrong_current_password_is_rejected_as_invalid_credentials() {
+    async fn wrong_current_password_is_rejected_as_invalid_credentials() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user_with_password(&db, "the-old-tester-password");
+        let clock = crate::time::system_clock().await;
+        let uid = create_user_with_password(&db, "the-old-tester-password").await;
         let r = change_password_self(
             &db,
             &clock,
@@ -244,18 +244,18 @@ mod tests {
             "the-new-tester-password",
             None,
             false,
-        );
+        ).await;
         assert!(matches!(r, Err(CoreError::InvalidCredentials)));
         // Stored hash is unchanged.
-        let stored = credentials::get(&db, uid).expect("cred").password_hash;
-        assert!(password::verify_password("the-old-tester-password", &stored).is_ok());
+        let stored = credentials::get(&db, uid).await.expect("cred").password_hash;
+        assert!(password::verify_password("the-old-tester-password", &stored).await.is_ok());
     }
 
     #[test]
-    fn weak_new_password_is_rejected_after_current_is_verified() {
+    async fn weak_new_password_is_rejected_after_current_is_verified() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user_with_password(&db, "the-old-tester-password");
+        let clock = crate::time::system_clock().await;
+        let uid = create_user_with_password(&db, "the-old-tester-password").await;
         let r = change_password_self(
             &db,
             &clock,
@@ -266,21 +266,21 @@ mod tests {
             "short",
             None,
             false,
-        );
+        ).await;
         assert!(matches!(r, Err(CoreError::BadRequest(_))), "{r:?}");
         // Stored hash unchanged — failure must not partially apply.
-        let stored = credentials::get(&db, uid).expect("cred").password_hash;
-        assert!(password::verify_password("the-old-tester-password", &stored).is_ok());
+        let stored = credentials::get(&db, uid).await.expect("cred").password_hash;
+        assert!(password::verify_password("the-old-tester-password", &stored).await.is_ok());
     }
 
     #[test]
-    fn must_change_flag_is_reset_on_self_change() {
+    async fn must_change_flag_is_reset_on_self_change() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user_with_password(&db, "the-old-tester-password");
+        let clock = crate::time::system_clock().await;
+        let uid = create_user_with_password(&db, "the-old-tester-password").await;
         // Set must_change=true via direct upsert, simulating a
         // pending admin reset.
-        let phc = password::hash_password("the-old-tester-password").expect("hash");
+        let phc = password::hash_password("the-old-tester-password").await.expect("hash");
         credentials::upsert(
             &db,
             &CredentialRow {
@@ -289,7 +289,7 @@ mod tests {
                 must_change: true,
                 updated_at: Utc::now(),
             },
-        )
+        ).await
         .expect("upsert");
         change_password_self(
             &db,
@@ -301,17 +301,17 @@ mod tests {
             "the-new-tester-password",
             None,
             false,
-        )
+        ).await
         .expect("change");
-        let row = credentials::get(&db, uid).expect("cred");
+        let row = credentials::get(&db, uid).await.expect("cred");
         assert!(!row.must_change, "must_change should be cleared");
     }
 
     #[test]
-    fn audit_event_is_appended() {
+    async fn audit_event_is_appended() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user_with_password(&db, "the-old-tester-password");
+        let clock = crate::time::system_clock().await;
+        let uid = create_user_with_password(&db, "the-old-tester-password").await;
         change_password_self(
             &db,
             &clock,
@@ -322,9 +322,9 @@ mod tests {
             "the-new-tester-password",
             None,
             false,
-        )
+        ).await
         .expect("change");
-        let rows = audit::recent(&db, 50).expect("audit");
+        let rows = audit::recent(&db, 50).await.expect("audit");
         assert!(
             rows.iter().any(|r| r.action == "auth.password.changed_self"),
             "expected auth.password.changed_self in audit log; got: {:?}",

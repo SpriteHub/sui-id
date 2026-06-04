@@ -18,7 +18,7 @@ use sui_id_store::repos::{
 };
 use sui_id_store::Database;
 
-fn audit_ok(db: &Database, actor: UserId, action: &str, target: Option<String>) {
+async fn audit_ok(db: &Database, actor: UserId, action: &str, target: Option<String>) {
     let _ = audit::append(
         db,
         &AuditLogRow {
@@ -29,11 +29,11 @@ fn audit_ok(db: &Database, actor: UserId, action: &str, target: Option<String>) 
             result: "ok".into(),
             note: None,
         },
-    );
+    ).await;
 }
 
-pub fn require_admin(db: &Database, user_id: UserId) -> CoreResult<()> {
-    let user = users::get(db, user_id).map_err(|e| match e {
+pub async fn require_admin(db: &Database, user_id: UserId) -> CoreResult<()> {
+    let user = users::get(db, user_id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Forbidden,
         other => CoreError::from(other),
     })?;
@@ -57,17 +57,17 @@ pub struct CreateUserSpec<'a> {
     pub is_admin: bool,
 }
 
-pub fn create_user(
+pub async fn create_user(
     db: &Database,
     clock: &SharedClock,
     actor: UserId,
     spec: CreateUserSpec<'_>,
 ) -> CoreResult<UserRow> {
-    require_admin(db, actor)?;
+    require_admin(db, actor).await?;
     if spec.username.trim().is_empty() {
         return Err(CoreError::BadRequest("username must not be empty".into()));
     }
-    check_password_policy(spec.password)?;
+    check_password_policy(spec.password).await?;
 
     let now = clock.now();
     let row = UserRow {
@@ -97,11 +97,11 @@ pub fn create_user(
         failed_login_count: 0,
         locked_until: None,
     };
-    users::create(db, &row).map_err(|e| match e {
+    users::create(db, &row).await.map_err(|e| match e {
         sui_id_store::StoreError::Conflict => CoreError::Conflict("username already in use".into()),
         other => CoreError::from(other),
     })?;
-    let hash = hash_password(spec.password)?;
+    let hash = hash_password(spec.password).await?;
     credentials::upsert(
         db,
         &CredentialRow {
@@ -110,61 +110,61 @@ pub fn create_user(
             must_change: false,
             updated_at: now,
         },
-    )?;
-    audit_ok(db, actor, "user.create", Some(row.id.to_string()));
+    ).await?;
+    audit_ok(db, actor, "user.create", Some(row.id.to_string())).await;
     Ok(row)
 }
 
-pub fn list_users(db: &Database, actor: UserId) -> CoreResult<Vec<UserRow>> {
-    require_admin(db, actor)?;
-    Ok(users::list(db)?)
+pub async fn list_users(db: &Database, actor: UserId) -> CoreResult<Vec<UserRow>> {
+    require_admin(db, actor).await?;
+    Ok(users::list(db).await?)
 }
 
-pub fn set_user_disabled(
+pub async fn set_user_disabled(
     db: &Database,
     actor: UserId,
     target: UserId,
     disabled: bool,
 ) -> CoreResult<()> {
-    require_admin(db, actor)?;
+    require_admin(db, actor).await?;
     if actor == target && disabled {
         return Err(CoreError::BadRequest(
             "cannot disable your own account; have another administrator do it".into(),
         ));
     }
-    users::set_disabled(db, target, disabled).map_err(|e| match e {
+    users::set_disabled(db, target, disabled).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
     if disabled {
-        sessions::revoke_all_for_user(db, target)?;
-        refresh_tokens::revoke_all_for_user(db, target)?;
-        auth_codes::invalidate_all_for_user(db, target)?;
+        sessions::revoke_all_for_user(db, target).await?;
+        refresh_tokens::revoke_all_for_user(db, target).await?;
+        auth_codes::invalidate_all_for_user(db, target).await?;
     }
     audit_ok(
         db,
         actor,
         if disabled { "user.disable" } else { "user.enable" },
         Some(target.to_string()),
-    );
+    ).await;
     Ok(())
 }
 
-pub fn delete_user(db: &Database, actor: UserId, target: UserId) -> CoreResult<()> {
-    require_admin(db, actor)?;
+pub async fn delete_user(db: &Database, actor: UserId, target: UserId) -> CoreResult<()> {
+    require_admin(db, actor).await?;
     if actor == target {
         return Err(CoreError::BadRequest(
             "cannot delete your own account".into(),
         ));
     }
-    users::soft_delete(db, target).map_err(|e| match e {
+    users::soft_delete(db, target).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
-    sessions::revoke_all_for_user(db, target)?;
-    refresh_tokens::revoke_all_for_user(db, target)?;
-    auth_codes::invalidate_all_for_user(db, target)?;
-    audit_ok(db, actor, "user.delete", Some(target.to_string()));
+    sessions::revoke_all_for_user(db, target).await?;
+    refresh_tokens::revoke_all_for_user(db, target).await?;
+    auth_codes::invalidate_all_for_user(db, target).await?;
+    audit_ok(db, actor, "user.delete", Some(target.to_string())).await;
     Ok(())
 }
 
@@ -193,22 +193,22 @@ pub struct MfaResetReport {
 /// provided they still have a valid session, which means the typical
 /// case of "lost the second factor outright" still requires another
 /// admin to act on their behalf.
-pub fn admin_reset_mfa(
+pub async fn admin_reset_mfa(
     db: &Database,
     actor: UserId,
     target: UserId,
 ) -> CoreResult<MfaResetReport> {
-    require_admin(db, actor)?;
+    require_admin(db, actor).await?;
     // Check the target exists and is not soft-deleted, to give a
     // clear error rather than a silently-no-op outcome.
-    let _user = users::get(db, target).map_err(|e| match e {
+    let _user = users::get(db, target).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
 
     // Remove TOTP if present. user_totp::delete returns NotFound when
     // the user has no row at all; we treat that as "nothing to do".
-    let totp_removed = match user_totp::delete(db, target) {
+    let totp_removed = match user_totp::delete(db, target).await {
         Ok(()) => true,
         Err(sui_id_store::StoreError::NotFound) => false,
         Err(e) => return Err(CoreError::from(e)),
@@ -219,10 +219,10 @@ pub fn admin_reset_mfa(
     // (which double-checks user_id) still applies — a defensive choice;
     // a bulk delete by user_id would be equivalent at the SQL level but
     // bypasses that safety net.
-    let creds = user_webauthn_credentials::list_for_user(db, target)?;
+    let creds = user_webauthn_credentials::list_for_user(db, target).await?;
     let mut passkeys_removed = 0;
     for c in creds {
-        user_webauthn_credentials::delete(db, c.id, target)?;
+        user_webauthn_credentials::delete(db, c.id, target).await?;
         passkeys_removed += 1;
     }
 
@@ -241,7 +241,7 @@ pub fn admin_reset_mfa(
             result: "ok".into(),
             note: Some(note),
         },
-    );
+    ).await;
 
     // After resetting, we leave any active sessions for the target
     // alone. The reset is intended to restore login capability, not
@@ -262,7 +262,7 @@ pub fn admin_reset_mfa(
 /// Enforces the same HIBP policy as the setup wizard and self-service
 /// password change (RFC 003 consistency requirement). Pass
 /// `HibpMode::Off` / `None` to skip the check when HIBP is disabled.
-pub fn reset_user_password(
+pub async fn reset_user_password(
     db: &Database,
     clock: &SharedClock,
     hibp_client: Option<&dyn HibpClient>,
@@ -271,13 +271,13 @@ pub fn reset_user_password(
     target: UserId,
     new_password: &str,
 ) -> CoreResult<()> {
-    require_admin(db, actor)?;
-    check_password_policy(new_password)?;
+    require_admin(db, actor).await?;
+    check_password_policy(new_password).await?;
 
     // RFC 003: HIBP breach check on admin-driven password reset.
     // Fail-open: network failures let the reset through.
     if matches!(
-        hibp::enforce_hibp(hibp_mode, hibp_client, new_password),
+        hibp::enforce_hibp(hibp_mode, hibp_client, new_password).await,
         HibpEnforcement::Blocked { .. }
     ) {
         return Err(CoreError::BadRequest(
@@ -285,7 +285,7 @@ pub fn reset_user_password(
         ));
     }
 
-    let hash = hash_password(new_password)?;
+    let hash = hash_password(new_password).await?;
     let now = clock.now();
     credentials::upsert(
         db,
@@ -295,11 +295,11 @@ pub fn reset_user_password(
             must_change: false,
             updated_at: now,
         },
-    )?;
-    sessions::revoke_all_for_user(db, target)?;
-    refresh_tokens::revoke_all_for_user(db, target)?;
-    auth_codes::invalidate_all_for_user(db, target)?;
-    audit_ok(db, actor, "user.reset_password", Some(target.to_string()));
+    ).await?;
+    sessions::revoke_all_for_user(db, target).await?;
+    refresh_tokens::revoke_all_for_user(db, target).await?;
+    auth_codes::invalidate_all_for_user(db, target).await?;
+    audit_ok(db, actor, "user.reset_password", Some(target.to_string())).await;
     Ok(())
 }
 
@@ -323,13 +323,13 @@ pub struct CreateClientSpec<'a> {
     pub post_logout_redirect_uris: &'a [String],
 }
 
-pub fn create_client(
+pub async fn create_client(
     db: &Database,
     clock: &SharedClock,
     actor: UserId,
     spec: CreateClientSpec<'_>,
 ) -> CoreResult<CreatedClient> {
-    require_admin(db, actor)?;
+    require_admin(db, actor).await?;
     if spec.name.trim().is_empty() {
         return Err(CoreError::BadRequest("client name must not be empty".into()));
     }
@@ -359,12 +359,12 @@ pub fn create_client(
     }
 
     let secret_plain = if spec.confidential {
-        Some(tokens::random_token(32))
+        Some(tokens::random_token(32).await)
     } else {
         None
     };
     let secret_hash = match secret_plain.as_deref() {
-        Some(s) => Some(hash_password(s)?),
+        Some(s) => Some(hash_password(s).await?),
         None => None,
     };
 
@@ -382,8 +382,8 @@ pub fn create_client(
         created_at: now,
         updated_at: now,
     };
-    clients::create(db, &row)?;
-    audit_ok(db, actor, "client.create", Some(row.id.to_string()));
+    clients::create(db, &row).await?;
+    audit_ok(db, actor, "client.create", Some(row.id.to_string())).await;
     Ok(CreatedClient {
         row,
         generated_secret: secret_plain,
@@ -391,13 +391,13 @@ pub fn create_client(
 }
 
 /// Update the per-client scope policy. Empty string means "permit any".
-pub fn set_client_allowed_scopes(
+pub async fn set_client_allowed_scopes(
     db: &Database,
     actor: UserId,
     target: ClientId,
     scopes: &str,
 ) -> CoreResult<()> {
-    require_admin(db, actor)?;
+    require_admin(db, actor).await?;
     for tok in scopes.split_whitespace() {
         if !tok
             .chars()
@@ -408,26 +408,26 @@ pub fn set_client_allowed_scopes(
             )));
         }
     }
-    clients::set_allowed_scopes(db, target, scopes).map_err(|e| match e {
+    clients::set_allowed_scopes(db, target, scopes).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
-    audit_ok(db, actor, "client.set_allowed_scopes", Some(target.to_string()));
+    audit_ok(db, actor, "client.set_allowed_scopes", Some(target.to_string())).await;
     Ok(())
 }
 
 /// Replace the `post_logout_redirect_uris` for a client.
-pub fn set_client_post_logout_redirect_uris(
+pub async fn set_client_post_logout_redirect_uris(
     db: &Database,
     actor: UserId,
     target: ClientId,
     uris: &[String],
 ) -> CoreResult<()> {
-    require_admin(db, actor)?;
+    require_admin(db, actor).await?;
     for uri in uris {
         validate_redirect_uri(uri)?;
     }
-    clients::set_post_logout_redirect_uris(db, target, uris).map_err(|e| match e {
+    clients::set_post_logout_redirect_uris(db, target, uris).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
@@ -436,21 +436,21 @@ pub fn set_client_post_logout_redirect_uris(
         actor,
         "client.set_post_logout_redirect_uris",
         Some(target.to_string()),
-    );
+    ).await;
     Ok(())
 }
 
 /// Update the basic client metadata: human-readable name and the
 /// authorization redirect URIs. The id, type (confidential vs public),
 /// and `secret_hash` are immutable.
-pub fn update_client_basic(
+pub async fn update_client_basic(
     db: &Database,
     actor: UserId,
     target: ClientId,
     name: &str,
     redirect_uris: &[String],
 ) -> CoreResult<()> {
-    require_admin(db, actor)?;
+    require_admin(db, actor).await?;
     if name.trim().is_empty() {
         return Err(CoreError::BadRequest("client name must not be empty".into()));
     }
@@ -462,38 +462,38 @@ pub fn update_client_basic(
     for uri in redirect_uris {
         validate_redirect_uri(uri)?;
     }
-    clients::update_basic(db, target, Some(name.trim()), Some(redirect_uris)).map_err(|e| {
+    clients::update_basic(db, target, Some(name.trim()), Some(redirect_uris)).await.map_err(|e| {
         match e {
             sui_id_store::StoreError::NotFound => CoreError::NotFound,
             other => CoreError::from(other),
         }
     })?;
-    audit_ok(db, actor, "client.update", Some(target.to_string()));
+    audit_ok(db, actor, "client.update", Some(target.to_string())).await;
     Ok(())
 }
 
 /// Convenience: fetch a single client (admin-gated).
-pub fn get_client(db: &Database, actor: UserId, target: ClientId) -> CoreResult<ClientRow> {
-    require_admin(db, actor)?;
-    clients::get(db, target).map_err(|e| match e {
+pub async fn get_client(db: &Database, actor: UserId, target: ClientId) -> CoreResult<ClientRow> {
+    require_admin(db, actor).await?;
+    clients::get(db, target).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })
 }
 
-pub fn list_clients(db: &Database, actor: UserId) -> CoreResult<Vec<ClientRow>> {
-    require_admin(db, actor)?;
-    Ok(clients::list(db)?)
+pub async fn list_clients(db: &Database, actor: UserId) -> CoreResult<Vec<ClientRow>> {
+    require_admin(db, actor).await?;
+    Ok(clients::list(db).await?)
 }
 
-pub fn update_client(
+pub async fn update_client(
     db: &Database,
     actor: UserId,
     target: ClientId,
     name: Option<&str>,
     redirect_uris: Option<&[String]>,
 ) -> CoreResult<()> {
-    require_admin(db, actor)?;
+    require_admin(db, actor).await?;
     if let Some(uris) = redirect_uris {
         if uris.is_empty() {
             return Err(CoreError::BadRequest(
@@ -504,56 +504,56 @@ pub fn update_client(
             validate_redirect_uri(u)?;
         }
     }
-    clients::update_basic(db, target, name, redirect_uris).map_err(|e| match e {
+    clients::update_basic(db, target, name, redirect_uris).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
-    audit_ok(db, actor, "client.update", Some(target.to_string()));
+    audit_ok(db, actor, "client.update", Some(target.to_string())).await;
     Ok(())
 }
 
-pub fn set_client_disabled(
+pub async fn set_client_disabled(
     db: &Database,
     actor: UserId,
     target: ClientId,
     disabled: bool,
 ) -> CoreResult<()> {
-    require_admin(db, actor)?;
-    clients::set_disabled(db, target, disabled).map_err(|e| match e {
+    require_admin(db, actor).await?;
+    clients::set_disabled(db, target, disabled).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
     if disabled {
-        refresh_tokens::revoke_all_for_client(db, target)?;
+        refresh_tokens::revoke_all_for_client(db, target).await?;
     }
     audit_ok(
         db,
         actor,
         if disabled { "client.disable" } else { "client.enable" },
         Some(target.to_string()),
-    );
+    ).await;
     Ok(())
 }
 
-pub fn delete_client(db: &Database, actor: UserId, target: ClientId) -> CoreResult<()> {
-    require_admin(db, actor)?;
-    clients::soft_delete(db, target).map_err(|e| match e {
+pub async fn delete_client(db: &Database, actor: UserId, target: ClientId) -> CoreResult<()> {
+    require_admin(db, actor).await?;
+    clients::soft_delete(db, target).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
-    refresh_tokens::revoke_all_for_client(db, target)?;
-    audit_ok(db, actor, "client.delete", Some(target.to_string()));
+    refresh_tokens::revoke_all_for_client(db, target).await?;
+    audit_ok(db, actor, "client.delete", Some(target.to_string())).await;
     Ok(())
 }
 
 // ---------- signing keys ----------
 
-pub fn list_signing_keys(
+pub async fn list_signing_keys(
     db: &Database,
     actor: UserId,
 ) -> CoreResult<Vec<sui_id_store::models::SigningKeyRow>> {
-    require_admin(db, actor)?;
-    Ok(sui_id_store::repos::signing_keys::list_published(db)?)
+    require_admin(db, actor).await?;
+    Ok(sui_id_store::repos::signing_keys::list_published(db).await?)
 }
 
 /// Generate a fresh Ed25519 signing key, persist it as the new active key,
@@ -564,7 +564,7 @@ pub fn list_signing_keys(
 /// administrator.
 ///
 /// Returns the new key id.
-pub fn rotate_signing_key(
+pub async fn rotate_signing_key(
     db: &Database,
     clock: &SharedClock,
     actor: UserId,
@@ -574,7 +574,7 @@ pub fn rotate_signing_key(
     use sui_id_shared::ids::SigningKeyId;
     use sui_id_store::repos::signing_keys;
 
-    require_admin(db, actor)?;
+    require_admin(db, actor).await?;
 
     // Generate the new key material first (outside the DB lock).
     let mut rng = OsRng;
@@ -592,28 +592,28 @@ pub fn rotate_signing_key(
         "EdDSA",
         sk.to_bytes().as_ref(),
         pk.to_bytes().as_ref(),
-    )?;
+    ).await?;
     let _ = clock;
-    audit_ok(db, actor, "signing_key.rotate", Some(new_id.to_string()));
+    audit_ok(db, actor, "signing_key.rotate", Some(new_id.to_string())).await;
     Ok(new_id)
 }
 
 /// Permanently delete a retired signing key. Refuses to delete the
 /// currently active key.
-pub fn delete_signing_key(
+pub async fn delete_signing_key(
     db: &Database,
     actor: UserId,
     target: sui_id_shared::ids::SigningKeyId,
 ) -> CoreResult<()> {
-    require_admin(db, actor)?;
-    sui_id_store::repos::signing_keys::delete(db, target).map_err(|e| match e {
+    require_admin(db, actor).await?;
+    sui_id_store::repos::signing_keys::delete(db, target).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         sui_id_store::StoreError::Conflict => CoreError::Conflict(
             "cannot delete the active signing key; rotate first".into(),
         ),
         other => CoreError::from(other),
     })?;
-    audit_ok(db, actor, "signing_key.delete", Some(target.to_string()));
+    audit_ok(db, actor, "signing_key.delete", Some(target.to_string())).await;
     Ok(())
 }
 

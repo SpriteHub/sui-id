@@ -50,10 +50,10 @@ pub struct LocaleInputs<'a> {
 /// Database access is at most two short reads (one for the user,
 /// one for the server-settings singleton). Both are skipped when
 /// an earlier tier already matched.
-pub fn resolve(db: &Database, inputs: &LocaleInputs<'_>) -> CoreResult<Locale> {
+pub async fn resolve(db: &Database, inputs: &LocaleInputs<'_>) -> CoreResult<Locale> {
     // 1. user preference
     if let Some(uid) = inputs.user_id {
-        if let Some(row) = users::find_by_id_opt(db, uid)? {
+        if let Some(row) = users::find_by_id_opt(db, uid).await? {
             if let Some(tag) = row.preferred_lang.as_deref() {
                 if let Some(loc) = Locale::parse(tag) {
                     return Ok(loc);
@@ -77,7 +77,7 @@ pub fn resolve(db: &Database, inputs: &LocaleInputs<'_>) -> CoreResult<Locale> {
         }
     }
     // 4. server default
-    let row = server_settings::get(db)?;
+    let row = server_settings::get(db).await?;
     if let Some(loc) = Locale::parse(&row.default_lang) {
         return Ok(loc);
     }
@@ -101,7 +101,7 @@ mod tests {
         Database::open_in_memory(key).expect("db")
     }
 
-    fn make_user(db: &Database, preferred_lang: Option<&str>) -> UserId {
+    async fn make_user(db: &Database, preferred_lang: Option<&str>) -> UserId {
         let id = UserId::new();
         let now = Utc::now();
         users::create(
@@ -123,9 +123,9 @@ mod tests {
                 email_normalized: None,
                 email_verified_at: None,
             },
-        )
+        ).await
         .expect("user");
-        let _ = hash_password("alice-the-tester-password");
+        let _ = hash_password("alice-the-tester-password").await;
         let _ = CredentialRow {
             user_id: id,
             password_hash: String::new(),
@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn user_preference_wins() {
         let db = fresh_db();
-        let uid = make_user(&db, Some("en"));
+        let uid = make_user(&db, Some("en")).await;
         let loc = resolve(
             &db,
             &LocaleInputs {
@@ -146,7 +146,7 @@ mod tests {
                 cookie: Some("ja"),
                 accept_language: Some("ja"),
             },
-        )
+        ).await
         .expect("resolve");
         assert_eq!(loc, Locale::En);
     }
@@ -161,7 +161,7 @@ mod tests {
                 cookie: Some("en"),
                 accept_language: Some("ja"),
             },
-        )
+        ).await
         .expect("resolve");
         assert_eq!(loc, Locale::En);
     }
@@ -176,7 +176,7 @@ mod tests {
                 cookie: None,
                 accept_language: Some("en-US,en;q=0.9"),
             },
-        )
+        ).await
         .expect("resolve");
         assert_eq!(loc, Locale::En);
     }
@@ -192,7 +192,7 @@ mod tests {
                 cookie: None,
                 accept_language: Some("zh"),
             },
-        )
+        ).await
         .expect("resolve");
         assert_eq!(loc, Locale::Ja);
     }
@@ -203,7 +203,7 @@ mod tests {
         // we don't recognise. Resolution should not error; it
         // should fall through to subsequent tiers.
         let db = fresh_db();
-        let uid = make_user(&db, Some("zh"));
+        let uid = make_user(&db, Some("zh")).await;
         let loc = resolve(
             &db,
             &LocaleInputs {
@@ -211,7 +211,7 @@ mod tests {
                 cookie: Some("en"),
                 accept_language: None,
             },
-        )
+        ).await
         .expect("resolve");
         assert_eq!(loc, Locale::En);
     }

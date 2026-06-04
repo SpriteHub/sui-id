@@ -47,8 +47,8 @@ const SELECT_COLUMNS: &str = "id, default_lang, hibp_mode, \
 
 /// Fetch the singleton server-settings row. Migration 0016 inserts
 /// the default row, so post-migration this never returns NotFound.
-pub fn get(db: &Database) -> StoreResult<ServerSettingsRow> {
-    db.with_conn(|conn| {
+pub async fn get(db: &Database) -> StoreResult<ServerSettingsRow> {
+    db.with_conn(move |conn| {
         conn.query_row(
             &format!("SELECT {SELECT_COLUMNS} FROM server_settings WHERE id = ?1"),
             [SINGLETON_ID],
@@ -58,18 +58,19 @@ pub fn get(db: &Database) -> StoreResult<ServerSettingsRow> {
             rusqlite::Error::QueryReturnedNoRows => StoreError::NotFound,
             other => StoreError::from(other),
         })
-    })
+    }).await
 }
 
 /// Update the server default UI language. `lang` is a BCP-47 tag
 /// — application-layer validation should ensure it is one of
 /// `Locale::ALL` before calling.
-pub fn update_default_lang(
+pub async fn update_default_lang(
     db: &Database,
     lang: &str,
     now: DateTime<Utc>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    let lang = lang.to_owned();
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE server_settings SET default_lang = ?1, updated_at = ?2 WHERE id = ?3",
             params![lang, now, SINGLETON_ID],
@@ -79,16 +80,16 @@ pub fn update_default_lang(
         } else {
             Ok(())
         }
-    })
+    }).await
 }
 
 /// Update the server-wide Pwned Passwords (HIBP) check mode.
-pub fn update_hibp_mode(
+pub async fn update_hibp_mode(
     db: &Database,
     mode: HibpMode,
     now: DateTime<Utc>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE server_settings SET hibp_mode = ?1, updated_at = ?2 WHERE id = ?3",
             params![mode.as_str(), now, SINGLETON_ID],
@@ -98,19 +99,19 @@ pub fn update_hibp_mode(
         } else {
             Ok(())
         }
-    })
+    }).await
 }
 
 /// Update the idle-session-timeout value, in seconds. `0` means
 /// the feature is disabled. Application-layer validation should
 /// pin the value to an operationally sensible range before
 /// calling.
-pub fn update_idle_session_timeout(
+pub async fn update_idle_session_timeout(
     db: &Database,
     secs: i64,
     now: DateTime<Utc>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE server_settings SET idle_session_timeout_secs = ?1, \
              updated_at = ?2 WHERE id = ?3",
@@ -121,18 +122,18 @@ pub fn update_idle_session_timeout(
         } else {
             Ok(())
         }
-    })
+    }).await
 }
 
 /// Update the concurrent-session cap. `0` means no cap. The
 /// application enforces FIFO eviction at login time when the
 /// resulting count would exceed this.
-pub fn update_max_concurrent_sessions(
+pub async fn update_max_concurrent_sessions(
     db: &Database,
     cap: i64,
     now: DateTime<Utc>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE server_settings SET max_concurrent_sessions = ?1, \
              updated_at = ?2 WHERE id = ?3",
@@ -143,5 +144,5 @@ pub fn update_max_concurrent_sessions(
         } else {
             Ok(())
         }
-    })
+    }).await
 }

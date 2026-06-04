@@ -333,7 +333,7 @@ impl Context {
 ///
 /// Either side of (1) and (2) failing logs a warning but does not
 /// propagate — observability work must never break the request.
-pub fn emit(db: &Database, clock: &SharedClock, ctx: &Context, event: SecurityEvent) {
+pub async fn emit(db: &Database, clock: &SharedClock, ctx: &Context, event: SecurityEvent) {
     let name = event.name();
     let outcome = event.outcome();
     let target = event.target();
@@ -387,7 +387,7 @@ pub fn emit(db: &Database, clock: &SharedClock, ctx: &Context, event: SecurityEv
             result: outcome.as_str().into(),
             note,
         },
-    ) {
+    ).await {
         // Don't fail the caller; the tracing line above is still
         // there as a fallback record.
         tracing::warn!(

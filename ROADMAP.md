@@ -60,6 +60,23 @@ index, userinfo email claims, normalize_email helper).
   admin-domain UI work (notably RFC 002's admin-domain i18n).
   Land ahead of those.
 
+**Near-term UX / bug fixes (v0.29.x observation):**
+
+- **[Bug] Duplicate username error redirects to root** — When a `POST
+  /admin/users` request creates a user whose username already exists, a
+  `Conflict` error should flash and return the operator to the creation
+  form. Current behaviour redirects to `/admin/`. No RFC needed; fix
+  directly.
+- **Admin logout** — No logout button exists in the admin panel.
+  See [RFC 026](./rfcs/proposed/026-admin-logout-session-self-management.md).
+- **Client scope configuration UX** — New clients default to no
+  permitted scopes, blocking first OIDC integrations.
+  See [RFC 027](./rfcs/proposed/027-client-scope-configuration-ux.md).
+- **Copy-to-clipboard for credential values** — Improve ergonomics for
+  Client ID, client secret, and related values.
+  See [RFC 028](./rfcs/proposed/028-copy-to-clipboard-ux.md).
+- **Text selection contrast** — Covered under RFC 023 (visual design system).
+
 **Low-medium priority — internal cleanup:**
 
 - **Documentation file consolidation** —

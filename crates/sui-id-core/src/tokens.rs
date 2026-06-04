@@ -99,7 +99,7 @@ pub struct TokenSet {
 /// claims. Pass `&[]` for grant types that don't have a session
 /// underneath them; the ID token will then carry no `acr` / `amr`.
 #[allow(clippy::too_many_arguments)]
-pub fn issue_token_set(
+pub async fn issue_token_set(
     issuer: &str,
     user: UserId,
     client: ClientId,
@@ -122,9 +122,9 @@ pub fn issue_token_set(
         iat,
         exp: iat + lifetimes.access_secs,
         scope: scope.to_owned(),
-        jti: random_token(16),
+        jti: random_token(16).await,
     };
-    let access_token = jwt::sign(kid, signing_key, &access_claims)?;
+    let access_token = jwt::sign(kid, signing_key, &access_claims).await?;
 
     let id_token = if include_id_token {
         let (acr, amr) = if auth_methods.is_empty() {
@@ -142,11 +142,11 @@ pub fn issue_token_set(
             iat,
             exp: iat + lifetimes.id_secs,
             nonce: nonce.map(str::to_owned),
-            jti: random_token(16),
+            jti: random_token(16).await,
             acr,
             amr,
         };
-        Some(jwt::sign(kid, signing_key, &claims)?)
+        Some(jwt::sign(kid, signing_key, &claims).await?)
     } else {
         None
     };
@@ -154,13 +154,13 @@ pub fn issue_token_set(
     Ok(TokenSet {
         access_token,
         id_token,
-        refresh_token: random_token(32),
+        refresh_token: random_token(32).await,
         access_expires_in: lifetimes.access_secs,
     })
 }
 
 /// Cryptographically random URL-safe token string.
-pub fn random_token(byte_len: usize) -> String {
+pub async fn random_token(byte_len: usize) -> String {
     let mut buf = vec![0u8; byte_len];
     OsRng.fill_bytes(&mut buf);
     let mut out = vec![0u8; byte_len * 2 + 4];
@@ -191,7 +191,7 @@ pub fn sha256_hex(s: &str) -> String {
 /// point — if that check ever regresses, this layer still refuses
 /// to verify. A relying party that needs `plain` (none should in
 /// 2026) must run a different IdP.
-pub fn verify_pkce(method: &str, verifier: &str, expected_challenge: &str) -> CoreResult<()> {
+pub async fn verify_pkce(method: &str, verifier: &str, expected_challenge: &str) -> CoreResult<()> {
     use subtle::ConstantTimeEq;
     let computed = match method {
         "S256" => {
@@ -230,7 +230,7 @@ pub fn verify_pkce(method: &str, verifier: &str, expected_challenge: &str) -> Co
 /// `accept_expired` allows passing tokens that have aged out — used by
 /// RP-initiated logout, where the spec encourages accepting expired hints
 /// so the user can still sign out after their token has aged.
-pub fn verify_id_token(
+pub async fn verify_id_token(
     db: &sui_id_store::Database,
     clock: &crate::time::SharedClock,
     token: &str,
@@ -239,13 +239,14 @@ pub fn verify_id_token(
     use ed25519_dalek::VerifyingKey;
     use sui_id_store::repos::signing_keys;
 
+    // Fetch signing keys eagerly (cannot .await inside a sync closure).
+    let published_keys = signing_keys::list_published(db).await.ok().unwrap_or_default();
     let resolver = |kid: &str| -> Option<VerifyingKey> {
-        let rows = signing_keys::list_published(db).ok()?;
-        let m = rows.into_iter().find(|r| r.id.to_string() == kid)?;
+        let m = published_keys.iter().find(|r| r.id.to_string() == kid)?;
         let arr: [u8; 32] = m.public_key.as_slice().try_into().ok()?;
         VerifyingKey::from_bytes(&arr).ok()
     };
-    let decoded: crate::jwt::Decoded<IdTokenClaims> = crate::jwt::verify(token, resolver)?;
+    let decoded: crate::jwt::Decoded<IdTokenClaims> = crate::jwt::verify(token, resolver).await?;
     if !accept_expired && decoded.claims.exp < clock.now().timestamp() {
         return Err(crate::CoreError::Unauthenticated);
     }
@@ -257,7 +258,7 @@ pub fn verify_id_token(
 ///
 /// This wraps the `jwt::verify` + JWKS lookup + expiry check so that the
 /// HTTP layer does not have to know about Ed25519 specifics.
-pub fn verify_access_token(
+pub async fn verify_access_token(
     db: &sui_id_store::Database,
     clock: &crate::time::SharedClock,
     token: &str,
@@ -265,14 +266,15 @@ pub fn verify_access_token(
     use ed25519_dalek::VerifyingKey;
     use sui_id_store::repos::signing_keys;
 
+    // Fetch signing keys eagerly (cannot .await inside a sync closure).
+    let published_keys = signing_keys::list_published(db).await.ok().unwrap_or_default();
     let resolver = |kid: &str| -> Option<VerifyingKey> {
-        let rows = signing_keys::list_published(db).ok()?;
-        let m = rows.into_iter().find(|r| r.id.to_string() == kid)?;
+        let m = published_keys.iter().find(|r| r.id.to_string() == kid)?;
         let arr: [u8; 32] = m.public_key.as_slice().try_into().ok()?;
         VerifyingKey::from_bytes(&arr).ok()
     };
     let decoded: crate::jwt::Decoded<AccessTokenClaims> =
-        crate::jwt::verify(token, resolver)?;
+        crate::jwt::verify(token, resolver).await?;
     if decoded.claims.exp < clock.now().timestamp() {
         return Err(crate::CoreError::Unauthenticated);
     }

@@ -33,9 +33,10 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRow> {
 const SELECT_COLS: &str =
     "id, user_id, expires_at, created_at, revoked_at, auth_methods, last_step_up_at, last_used_at";
 
-pub fn insert(db: &Database, s: &SessionRow) -> StoreResult<()> {
+pub async fn insert(db: &Database, s: &SessionRow) -> StoreResult<()> {
     let methods_json = serde_json::to_string(&s.auth_methods)?;
-    db.with_conn(|conn| {
+    let s = s.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO sessions(id, user_id, expires_at, created_at, revoked_at, \
              auth_methods, last_step_up_at, last_used_at) \
@@ -52,11 +53,11 @@ pub fn insert(db: &Database, s: &SessionRow) -> StoreResult<()> {
             ],
         )?;
         Ok(())
-    })
+    }).await
 }
 
-pub fn get(db: &Database, id: SessionId) -> StoreResult<SessionRow> {
-    db.with_conn(|conn| {
+pub async fn get(db: &Database, id: SessionId) -> StoreResult<SessionRow> {
+    db.with_conn(move |conn| {
         conn.query_row(
             &format!("SELECT {SELECT_COLS} FROM sessions WHERE id = ?1"),
             [id.to_string()],
@@ -66,27 +67,27 @@ pub fn get(db: &Database, id: SessionId) -> StoreResult<SessionRow> {
             rusqlite::Error::QueryReturnedNoRows => StoreError::NotFound,
             other => StoreError::from(other),
         })
-    })
+    }).await
 }
 
-pub fn revoke(db: &Database, id: SessionId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn revoke(db: &Database, id: SessionId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         conn.execute(
             "UPDATE sessions SET revoked_at = ?1 WHERE id = ?2 AND revoked_at IS NULL",
             params![Utc::now(), id.to_string()],
         )?;
         Ok(())
-    })
+    }).await
 }
 
-pub fn revoke_all_for_user(db: &Database, user_id: UserId) -> StoreResult<usize> {
-    db.with_conn(|conn| {
+pub async fn revoke_all_for_user(db: &Database, user_id: UserId) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE sessions SET revoked_at = ?1 WHERE user_id = ?2 AND revoked_at IS NULL",
             params![Utc::now(), user_id.to_string()],
         )?;
         Ok(n)
-    })
+    }).await
 }
 
 /// Same as [`revoke_all_for_user`] but runs inside a caller-owned
@@ -105,23 +106,23 @@ pub fn revoke_all_for_user_within_tx(
 
 /// Delete sessions that are past their expiry. Hygiene only — expired
 /// sessions are already filtered out at lookup time.
-pub fn purge_expired(db: &Database) -> StoreResult<usize> {
-    db.with_conn(|conn| {
+pub async fn purge_expired(db: &Database) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "DELETE FROM sessions WHERE expires_at < ?1",
             [Utc::now()],
         )?;
         Ok(n)
-    })
+    }).await
 }
 
 /// List every currently-active session belonging to a given user, newest first.
-pub fn list_active_for_user(
+pub async fn list_active_for_user(
     db: &Database,
     user_id: UserId,
 ) -> StoreResult<Vec<SessionRow>> {
     let now = Utc::now();
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(
             &format!("SELECT {SELECT_COLS} FROM sessions \
                       WHERE user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2 \
@@ -131,23 +132,23 @@ pub fn list_active_for_user(
             .query_map(params![user_id.to_string(), now], map)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
-    })
+    }).await
 }
 
 /// Revoke every active session for the user *except* the supplied id.
-pub fn revoke_all_for_user_except(
+pub async fn revoke_all_for_user_except(
     db: &Database,
     user_id: UserId,
     keep: SessionId,
 ) -> StoreResult<usize> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE sessions SET revoked_at = ?1 \
              WHERE user_id = ?2 AND id != ?3 AND revoked_at IS NULL",
             params![Utc::now(), user_id.to_string(), keep.to_string()],
         )?;
         Ok(n)
-    })
+    }).await
 }
 
 /// Update a session's `last_step_up_at` timestamp to `at`. Used after a
@@ -159,18 +160,18 @@ pub fn revoke_all_for_user_except(
 /// check) and a race where the session is revoked between resolve and
 /// touch is benign: a revoked session can't be used for anything
 /// regardless of step-up state.
-pub fn touch_step_up(
+pub async fn touch_step_up(
     db: &Database,
     id: SessionId,
     at: DateTime<Utc>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         conn.execute(
             "UPDATE sessions SET last_step_up_at = ?1 WHERE id = ?2",
             params![at, id.to_string()],
         )?;
         Ok(())
-    })
+    }).await
 }
 
 /// Update `last_used_at` to `at`. Called by the application layer
@@ -178,29 +179,29 @@ pub fn touch_step_up(
 /// produces at most one UPDATE per minute (see
 /// `core::session::touch_last_used`). A revoked session being
 /// touched is benign.
-pub fn touch_last_used(
+pub async fn touch_last_used(
     db: &Database,
     id: SessionId,
     at: DateTime<Utc>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         conn.execute(
             "UPDATE sessions SET last_used_at = ?1 WHERE id = ?2",
             params![at, id.to_string()],
         )?;
         Ok(())
-    })
+    }).await
 }
 
 /// Count the active (un-expired, un-revoked) sessions for a user
 /// at the given moment. Used by the concurrent-session-cap check
 /// at login time.
-pub fn count_active_for_user(
+pub async fn count_active_for_user(
     db: &Database,
     user_id: UserId,
     now: DateTime<Utc>,
 ) -> StoreResult<i64> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n: i64 = conn.query_row(
             "SELECT COUNT(*) FROM sessions \
              WHERE user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2",
@@ -208,7 +209,7 @@ pub fn count_active_for_user(
             |row| row.get(0),
         )?;
         Ok(n)
-    })
+    }).await
 }
 
 /// Return up to `limit` of the oldest active sessions for a user,
@@ -216,13 +217,13 @@ pub fn count_active_for_user(
 /// path: at login time, when the post-insert active count would
 /// exceed the cap by `k`, the application revokes the `k` oldest
 /// rows returned here.
-pub fn oldest_active_for_user(
+pub async fn oldest_active_for_user(
     db: &Database,
     user_id: UserId,
     now: DateTime<Utc>,
     limit: i64,
 ) -> StoreResult<Vec<SessionRow>> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {SELECT_COLS} FROM sessions \
              WHERE user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2 \
@@ -232,5 +233,5 @@ pub fn oldest_active_for_user(
             .query_map(params![user_id.to_string(), now, limit], map)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
-    })
+    }).await
 }

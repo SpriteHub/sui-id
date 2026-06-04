@@ -51,7 +51,7 @@ use webauthn_rs::prelude::{
 /// Accepted combinations:
 /// - `https://` with any host
 /// - `http://` with `localhost`, `127.0.0.1`, or `::1`
-pub fn build(issuer_url: &str) -> CoreResult<Webauthn> {
+pub async fn build(issuer_url: &str) -> CoreResult<Webauthn> {
     let parsed = url::Url::parse(issuer_url)
         .map_err(|_| CoreError::Internal)?;
     let scheme = parsed.scheme();
@@ -93,14 +93,14 @@ pub struct RegistrationStart {
     pub pending_id: WebauthnPendingId,
 }
 
-pub fn start_registration(
+pub async fn start_registration(
     db: &Database,
     clock: &SharedClock,
     issuer_url: &str,
     user_id: UserId,
 ) -> CoreResult<RegistrationStart> {
-    let webauthn = build(issuer_url)?;
-    let user = users::get(db, user_id).map_err(|e| match e {
+    let webauthn = build(issuer_url).await?;
+    let user = users::get(db, user_id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
@@ -112,7 +112,7 @@ pub fn start_registration(
     // second-attempt scan from the same authenticator gets a useful
     // error rather than a duplicate.
     let exclude: Vec<webauthn_rs::prelude::CredentialID> =
-        user_webauthn_credentials::list_for_user(db, user_id)?
+        user_webauthn_credentials::list_for_user(db, user_id).await?
             .into_iter()
             .map(|c| webauthn_rs::prelude::CredentialID::from(c.credential_id))
             .collect();
@@ -130,7 +130,7 @@ pub fn start_registration(
         expires_at: now + Duration::seconds(PENDING_TTL_SECS),
         created_at: now,
     };
-    webauthn_pending::insert(db, &pending)?;
+    webauthn_pending::insert(db, &pending).await?;
     let challenge_json = serde_json::to_string(&ccr).map_err(|_| CoreError::Internal)?;
     Ok(RegistrationStart {
         challenge_json,
@@ -138,7 +138,7 @@ pub fn start_registration(
     })
 }
 
-pub fn finish_registration(
+pub async fn finish_registration(
     db: &Database,
     clock: &SharedClock,
     issuer_url: &str,
@@ -147,14 +147,14 @@ pub fn finish_registration(
     nickname: &str,
     credential: &RegisterPublicKeyCredential,
 ) -> CoreResult<UserWebauthnCredentialRow> {
-    let webauthn = build(issuer_url)?;
-    let pending = webauthn_pending::get(db, pending_id)?
+    let webauthn = build(issuer_url).await?;
+    let pending = webauthn_pending::get(db, pending_id).await?
         .ok_or(CoreError::Unauthenticated)?;
     if pending.expires_at < clock.now()
         || pending.kind != WebauthnPendingKind::Register
         || pending.user_id != Some(user_id)
     {
-        let _ = webauthn_pending::delete(db, pending_id);
+        let _ = webauthn_pending::delete(db, pending_id).await;
         return Err(CoreError::Unauthenticated);
     }
     let reg_state: PasskeyRegistration = serde_json::from_str(&pending.state_json)
@@ -179,8 +179,8 @@ pub fn finish_registration(
         created_at: now,
         last_used_at: None,
     };
-    user_webauthn_credentials::create(db, &row, &passkey_json)?;
-    let _ = webauthn_pending::delete(db, pending_id);
+    user_webauthn_credentials::create(db, &row, &passkey_json).await?;
+    let _ = webauthn_pending::delete(db, pending_id).await;
     Ok(row)
 }
 
@@ -191,14 +191,14 @@ pub struct AuthenticationStart {
     pub pending_id: WebauthnPendingId,
 }
 
-pub fn start_authentication(
+pub async fn start_authentication(
     db: &Database,
     clock: &SharedClock,
     issuer_url: &str,
     user_id: UserId,
 ) -> CoreResult<AuthenticationStart> {
-    let webauthn = build(issuer_url)?;
-    let creds = user_webauthn_credentials::list_for_user(db, user_id)?;
+    let webauthn = build(issuer_url).await?;
+    let creds = user_webauthn_credentials::list_for_user(db, user_id).await?;
     if creds.is_empty() {
         return Err(CoreError::BadRequest(
             "no WebAuthn credentials enrolled for this user".into(),
@@ -206,7 +206,7 @@ pub fn start_authentication(
     }
     let mut passkeys: Vec<Passkey> = Vec::with_capacity(creds.len());
     for c in &creds {
-        let blob = user_webauthn_credentials::decrypt_passkey(db, c)?;
+        let blob = user_webauthn_credentials::decrypt_passkey(db, c).await?;
         let pk: Passkey = serde_json::from_slice(&blob).map_err(|_| CoreError::Internal)?;
         passkeys.push(pk);
     }
@@ -223,7 +223,7 @@ pub fn start_authentication(
         expires_at: now + Duration::seconds(PENDING_TTL_SECS),
         created_at: now,
     };
-    webauthn_pending::insert(db, &pending)?;
+    webauthn_pending::insert(db, &pending).await?;
     let challenge_json = serde_json::to_string(&rcr).map_err(|_| CoreError::Internal)?;
     Ok(AuthenticationStart {
         challenge_json,
@@ -231,7 +231,7 @@ pub fn start_authentication(
     })
 }
 
-pub fn finish_authentication(
+pub async fn finish_authentication(
     db: &Database,
     clock: &SharedClock,
     issuer_url: &str,
@@ -239,14 +239,14 @@ pub fn finish_authentication(
     expected_user_id: UserId,
     credential: &PublicKeyCredential,
 ) -> CoreResult<()> {
-    let webauthn = build(issuer_url)?;
-    let pending = webauthn_pending::get(db, pending_id)?
+    let webauthn = build(issuer_url).await?;
+    let pending = webauthn_pending::get(db, pending_id).await?
         .ok_or(CoreError::Unauthenticated)?;
     if pending.expires_at < clock.now()
         || pending.kind != WebauthnPendingKind::Authenticate
         || pending.user_id != Some(expected_user_id)
     {
-        let _ = webauthn_pending::delete(db, pending_id);
+        let _ = webauthn_pending::delete(db, pending_id).await;
         return Err(CoreError::Unauthenticated);
     }
     let auth_state: PasskeyAuthentication = serde_json::from_str(&pending.state_json)
@@ -257,7 +257,7 @@ pub fn finish_authentication(
 
     // Update the matching credential's stored passkey blob (for the
     // signature counter, in particular) and bump last_used_at.
-    let row = user_webauthn_credentials::find_by_credential_id(db, result.cred_id().as_ref())?
+    let row = user_webauthn_credentials::find_by_credential_id(db, result.cred_id().as_ref()).await?
         .ok_or(CoreError::Unauthenticated)?;
     if row.user_id != expected_user_id {
         // The credential id points at a different user — protocol
@@ -265,13 +265,13 @@ pub fn finish_authentication(
         return Err(CoreError::Unauthenticated);
     }
     let mut passkey: Passkey = {
-        let blob = user_webauthn_credentials::decrypt_passkey(db, &row)?;
+        let blob = user_webauthn_credentials::decrypt_passkey(db, &row).await?;
         serde_json::from_slice(&blob).map_err(|_| CoreError::Internal)?
     };
     let _changed = passkey.update_credential(&result);
     let new_blob = serde_json::to_vec(&passkey).map_err(|_| CoreError::Internal)?;
-    user_webauthn_credentials::update_passkey(db, row.id, &new_blob)?;
-    let _ = webauthn_pending::delete(db, pending_id);
+    user_webauthn_credentials::update_passkey(db, row.id, &new_blob).await?;
+    let _ = webauthn_pending::delete(db, pending_id).await;
     Ok(())
 }
 
@@ -284,8 +284,8 @@ pub struct CredentialDescriptor {
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-pub fn list_for_user(db: &Database, user_id: UserId) -> CoreResult<Vec<CredentialDescriptor>> {
-    Ok(user_webauthn_credentials::list_for_user(db, user_id)?
+pub async fn list_for_user(db: &Database, user_id: UserId) -> CoreResult<Vec<CredentialDescriptor>> {
+    Ok(user_webauthn_credentials::list_for_user(db, user_id).await?
         .into_iter()
         .map(|r| CredentialDescriptor {
             id: r.id,
@@ -296,8 +296,8 @@ pub fn list_for_user(db: &Database, user_id: UserId) -> CoreResult<Vec<Credentia
         .collect())
 }
 
-pub fn delete(db: &Database, user_id: UserId, credential_id: WebauthnCredentialId) -> CoreResult<()> {
-    user_webauthn_credentials::delete(db, credential_id, user_id).map_err(|e| match e {
+pub async fn delete(db: &Database, user_id: UserId, credential_id: WebauthnCredentialId) -> CoreResult<()> {
+    user_webauthn_credentials::delete(db, credential_id, user_id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
         other => CoreError::from(other),
     })?;
@@ -305,8 +305,8 @@ pub fn delete(db: &Database, user_id: UserId, credential_id: WebauthnCredentialI
 }
 
 /// True if the user has at least one passkey registered.
-pub fn has_credentials(db: &Database, user_id: UserId) -> CoreResult<bool> {
-    Ok(user_webauthn_credentials::count_for_user(db, user_id)? > 0)
+pub async fn has_credentials(db: &Database, user_id: UserId) -> CoreResult<bool> {
+    Ok(user_webauthn_credentials::count_for_user(db, user_id).await? > 0)
 }
 
 #[cfg(test)]
@@ -315,19 +315,19 @@ mod tests {
 
     #[test]
     fn build_accepts_https_url() {
-        let w = build("https://idp.example/").expect("build");
+        let w = build("https://idp.example/").await.expect("build");
         let _ = w; // we just want it to construct without panicking.
     }
 
     #[test]
     fn build_accepts_https_with_port() {
-        let w = build("https://idp.example:8443/").expect("build");
+        let w = build("https://idp.example:8443/").await.expect("build");
         let _ = w;
     }
 
     #[test]
     fn build_accepts_localhost_http() {
-        let w = build("http://localhost:8080/").expect("localhost http");
+        let w = build("http://localhost:8080/").await.expect("localhost http");
         let _ = w;
     }
 
@@ -340,7 +340,7 @@ mod tests {
         // numeric address, for local dev.  We test that we reach the builder
         // stage (i.e., our transport guard doesn't reject it) by checking that
         // the error, if any, is *not* a ConfigError.
-        let r = build("http://127.0.0.1:8801/");
+        let r = build("http://127.0.0.1:8801/").await;
         match r {
             Ok(_) => {} // webauthn-rs accepted it — fine
             Err(CoreError::ConfigError(_)) => {
@@ -353,7 +353,7 @@ mod tests {
     // RFC 011: http on a non-localhost host must be rejected at startup.
     #[test]
     fn build_rejects_http_on_public_host() {
-        let r = build("http://idp.example/");
+        let r = build("http://idp.example/").await;
         assert!(
             r.is_err(),
             "http on a non-localhost host must be rejected (RFC 011)"
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn build_rejects_url_without_host() {
         // file:// has no host — webauthn-rs (and our wrapper) reject this.
-        let r = build("file:///etc/passwd");
+        let r = build("file:///etc/passwd").await;
         assert!(r.is_err());
     }
 }
@@ -382,7 +382,7 @@ mod integration_tests {
     use sui_id_store::repos::{users, webauthn_pending};
     use sui_id_store::Database;
 
-    fn fresh_db_with_user() -> (Database, UserId) {
+    async fn fresh_db_with_user() -> (Database, UserId) {
         let key = MasterKey::generate();
         let db = Database::open_in_memory(key).expect("db");
         let uid = UserId::new();
@@ -405,19 +405,19 @@ mod integration_tests {
                 email_normalized: None,
                 email_verified_at: None,
             },
-        )
+        ).await
         .expect("insert user");
         (db, uid)
     }
 
     #[test]
-    fn start_registration_persists_pending_row_and_returns_challenge_json() {
-        let (db, uid) = fresh_db_with_user();
-        let clock = system_clock();
+    async fn start_registration_persists_pending_row_and_returns_challenge_json() {
+        let (db, uid) = fresh_db_with_user().await;
+        let clock = system_clock().await;
         let started =
-            start_registration(&db, &clock, "https://idp.example", uid).expect("start");
+            start_registration(&db, &clock, "https://idp.example", uid).await.expect("start");
         // Pending row must exist and be of kind Register.
-        let row = webauthn_pending::get(&db, started.pending_id)
+        let row = webauthn_pending::get(&db, started.pending_id).await
             .expect("get")
             .expect("present");
         assert_eq!(
@@ -433,19 +433,19 @@ mod integration_tests {
 
     #[test]
     fn start_authentication_rejects_users_with_no_credentials() {
-        let (db, uid) = fresh_db_with_user();
-        let clock = system_clock();
-        let r = start_authentication(&db, &clock, "https://idp.example", uid);
+        let (db, uid) = fresh_db_with_user().await;
+        let clock = system_clock().await;
+        let r = start_authentication(&db, &clock, "https://idp.example", uid).await;
         assert!(matches!(r, Err(crate::errors::CoreError::BadRequest(_))));
     }
 
     #[test]
-    fn finish_registration_rejects_expired_pending_row() {
+    async fn finish_registration_rejects_expired_pending_row() {
         // Manufacture a pending row that has already expired and verify
         // finish_registration refuses it (returns Unauthenticated).
         use sui_id_store::models::{WebauthnPendingKind, WebauthnPendingRow};
-        let (db, uid) = fresh_db_with_user();
-        let clock = system_clock();
+        let (db, uid) = fresh_db_with_user().await;
+        let clock = system_clock().await;
         let now = clock.now();
         let pending_id = sui_id_shared::ids::WebauthnPendingId::new();
         webauthn_pending::insert(
@@ -458,7 +458,7 @@ mod integration_tests {
                 expires_at: now - chrono::Duration::seconds(1),
                 created_at: now - chrono::Duration::seconds(601),
             },
-        )
+        ).await
         .expect("insert");
         // Build a dummy credential JSON; we never get past the expiry
         // check, so its content does not matter — but it must
@@ -476,7 +476,7 @@ mod integration_tests {
             uid,
             "test",
             &dummy,
-        );
+        ).await;
         assert!(matches!(
             r,
             Err(crate::errors::CoreError::Unauthenticated)

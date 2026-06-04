@@ -15,8 +15,9 @@ pub struct RevokedAccessTokenRow {
     pub revoked_by_client: Option<ClientId>,
 }
 
-pub fn insert(db: &Database, row: &RevokedAccessTokenRow) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn insert(db: &Database, row: &RevokedAccessTokenRow) -> StoreResult<()> {
+    let row = row.clone();
+    db.with_conn(move |conn| {
         // ON CONFLICT DO NOTHING — RFC 7009 specifies revocation is
         // idempotent: revoking an already-revoked token must succeed
         // silently, so we should not error on duplicate insert.
@@ -34,27 +35,28 @@ pub fn insert(db: &Database, row: &RevokedAccessTokenRow) -> StoreResult<()> {
             ],
         )?;
         Ok(())
-    })
+    }).await
 }
 
-pub fn is_revoked(db: &Database, jti: &str) -> StoreResult<bool> {
-    db.with_conn(|conn| {
+pub async fn is_revoked(db: &Database, jti: &str) -> StoreResult<bool> {
+    let jti = jti.to_owned();
+    db.with_conn(move |conn| {
         let n: i64 = conn.query_row(
             "SELECT COUNT(*) FROM revoked_access_tokens WHERE jti = ?1",
             [jti],
             |r| r.get(0),
         )?;
         Ok(n > 0)
-    })
+    }).await
 }
 
 /// Drop entries whose underlying token has expired anyway.
-pub fn purge_expired(db: &Database) -> StoreResult<usize> {
-    db.with_conn(|conn| {
+pub async fn purge_expired(db: &Database) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "DELETE FROM revoked_access_tokens WHERE exp < ?1",
             [Utc::now()],
         )?;
         Ok(n)
-    })
+    }).await
 }

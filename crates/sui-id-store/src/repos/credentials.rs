@@ -20,8 +20,9 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<CredentialRow> {
     })
 }
 
-pub fn upsert(db: &Database, cred: &CredentialRow) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn upsert(db: &Database, cred: &CredentialRow) -> StoreResult<()> {
+    let cred = cred.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO credentials(user_id, password_hash, must_change, updated_at) \
              VALUES(?1, ?2, ?3, ?4) \
@@ -37,7 +38,7 @@ pub fn upsert(db: &Database, cred: &CredentialRow) -> StoreResult<()> {
             ],
         )?;
         Ok(())
-    })
+    }).await
 }
 
 /// Same as [`upsert`] but runs inside a caller-owned transaction.
@@ -62,8 +63,8 @@ pub fn upsert_within_tx(
     Ok(())
 }
 
-pub fn get(db: &Database, user_id: UserId) -> StoreResult<CredentialRow> {
-    db.with_conn(|conn| {
+pub async fn get(db: &Database, user_id: UserId) -> StoreResult<CredentialRow> {
+    db.with_conn(move |conn| {
         conn.query_row(
             "SELECT user_id, password_hash, must_change, updated_at FROM credentials WHERE user_id = ?1",
             [user_id.to_string()],
@@ -73,5 +74,5 @@ pub fn get(db: &Database, user_id: UserId) -> StoreResult<CredentialRow> {
             rusqlite::Error::QueryReturnedNoRows => StoreError::NotFound,
             other => StoreError::from(other),
         })
-    })
+    }).await
 }

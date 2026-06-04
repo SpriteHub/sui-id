@@ -69,7 +69,7 @@ pub async fn token_endpoint(
         // credentials), but echoing an origin we won't honour on the
         // POST is misleading; align with the actual policy.
         if let Some(o) = &origin {
-            if origin_matches_any_redirect_uri(&state, o) {
+            if origin_matches_any_redirect_uri(&state, o).await {
                 return preflight_response_with_origin(
                     "POST, OPTIONS",
                     "Authorization, Content-Type",
@@ -85,7 +85,7 @@ pub async fn token_endpoint(
 
     let mut resp = next.run(req).await;
     if let Some(o) = origin {
-        if origin_matches_any_redirect_uri(&state, &o) {
+        if origin_matches_any_redirect_uri(&state, &o).await {
             if let Ok(v) = HeaderValue::from_str(&o) {
                 resp.headers_mut().insert(ACAO, v);
                 // Caches must vary on Origin since the response is
@@ -97,7 +97,7 @@ pub async fn token_endpoint(
     resp
 }
 
-fn origin_matches_any_redirect_uri(state: &crate::AppState, origin: &str) -> bool {
+async fn origin_matches_any_redirect_uri(state: &crate::AppState, origin: &str) -> bool {
     // Pull every active client's redirect URIs and ask whether any
     // shares the supplied origin (scheme + host + port).
     //
@@ -111,7 +111,7 @@ fn origin_matches_any_redirect_uri(state: &crate::AppState, origin: &str) -> boo
         Some(t) => t,
         None => return false,
     };
-    let clients = match sui_id_store::repos::clients::list(&state.db) {
+    let clients = match sui_id_store::repos::clients::list(&state.db).await {
         Ok(c) => c,
         Err(_) => return false,
     };

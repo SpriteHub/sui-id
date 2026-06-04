@@ -25,6 +25,24 @@ not aiming to replace large IDaaS products. It is built for the case where you
 want an OIDC provider that one person can hold in their head and one operator
 can keep healthy on a single VM.
 
+## Scope
+
+sui-id is a **single-realm, first-party IdP.** It manages one flat
+namespace of users, one flat namespace of clients, and one global
+admin role. There is no `tenant_id` column, no organisation table,
+no group table, and no per-tenant scoping anywhere in the schema.
+This is a deliberate design choice, not an oversight.
+
+If your use-case is a **single organisation or product** where all
+users belong to the same namespace and all clients are first-party
+or trusted third-party apps, sui-id is built for you.
+
+If you need **multi-tenant isolation** (separate user namespaces per
+customer, per-tenant admin roles, cross-tenant federation), sui-id
+is not the right tool today. RFC 025 sketches the expansion path for
+a future multi-tenant capability, but that work is explicitly
+not-yet-scheduled.
+
 ## Why
 
 Running an IDaaS in production usually means accepting one of two trade-offs:

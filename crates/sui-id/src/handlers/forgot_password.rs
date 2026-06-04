@@ -31,7 +31,7 @@ use sui_id_core::errors::CoreError;
 use sui_id_web::{Flash, FlashKind};
 
 async fn smtp_active(db: &sui_id_store::Database) -> Result<bool, HttpError> {
-    let cfg = sui_id_store::repos::smtp_config::get(db)
+    let cfg = sui_id_store::repos::smtp_config::get(db).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     Ok(cfg.map(|c| c.enabled).unwrap_or(false))
 }
@@ -93,8 +93,7 @@ pub async fn forgot_password_post(
         app.mailer.as_ref(),
         &form.email,
         Some(&ip_str),
-    )
-    .await;
+    ).await;
 
     // Always return the same neutral acknowledgement.
     let token = csrf::ensure_token(&jar);
@@ -123,7 +122,7 @@ pub async fn reset_password_get(
         let html = sui_id_web::render_reset_password_invalid(lang);
         return Ok(with_csrf_cookie(Html(html).into_response(), &app, &token));
     }
-    match sui_id_core::forgot_password::validate_token(&app.db, &app.clock, &q.token) {
+    match sui_id_core::forgot_password::validate_token(&app.db, &app.clock, &q.token).await {
         Ok(_user_id) => {
             let html =
                 sui_id_web::render_reset_password(q.token.clone(), token.clone(), None, lang);
@@ -179,7 +178,7 @@ pub async fn reset_password_post(
     }
 
     // RFC 003: load HIBP settings for this request.
-    let hibp_mode = sui_id_store::repos::server_settings::get(&app.db)
+    let hibp_mode = sui_id_store::repos::server_settings::get(&app.db).await
         .map(|s| s.hibp_mode)
         .unwrap_or_default();
 
@@ -193,8 +192,7 @@ pub async fn reset_password_post(
         &form.token,
         &form.password,
         Some(&ip_str),
-    )
-    .await
+    ).await
     {
         Ok(()) => Ok(Redirect::to("/admin/login?reset=ok").into_response()),
         Err(CoreError::InvalidCredentials) => {

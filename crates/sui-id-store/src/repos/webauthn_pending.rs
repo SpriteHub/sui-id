@@ -48,8 +48,9 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<WebauthnPendingRow> {
     })
 }
 
-pub fn insert(db: &Database, row: &WebauthnPendingRow) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn insert(db: &Database, row: &WebauthnPendingRow) -> StoreResult<()> {
+    let row = row.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO webauthn_pending(id, kind, user_id, state_json, expires_at, created_at) \
              VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
@@ -63,19 +64,19 @@ pub fn insert(db: &Database, row: &WebauthnPendingRow) -> StoreResult<()> {
             ],
         )?;
         Ok(())
-    })
+    }).await
 }
 
-pub fn get(db: &Database, id: WebauthnPendingId) -> StoreResult<Option<WebauthnPendingRow>> {
-    db.with_conn(|conn| {
+pub async fn get(db: &Database, id: WebauthnPendingId) -> StoreResult<Option<WebauthnPendingRow>> {
+    db.with_conn(move |conn| {
         Ok(conn
             .query_row(&format!("{SELECT} WHERE id = ?1"), [id.to_string()], map)
             .optional()?)
-    })
+    }).await
 }
 
-pub fn delete(db: &Database, id: WebauthnPendingId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn delete(db: &Database, id: WebauthnPendingId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "DELETE FROM webauthn_pending WHERE id = ?1",
             [id.to_string()],
@@ -84,16 +85,16 @@ pub fn delete(db: &Database, id: WebauthnPendingId) -> StoreResult<()> {
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Hygiene: drop expired ceremonies. Called from the GC task.
-pub fn purge_expired(db: &Database) -> StoreResult<usize> {
-    db.with_conn(|conn| {
+pub async fn purge_expired(db: &Database) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "DELETE FROM webauthn_pending WHERE expires_at < ?1",
             [Utc::now()],
         )?;
         Ok(n)
-    })
+    }).await
 }

@@ -56,7 +56,7 @@ pub fn lockout_backoff(failures: i64, max_secs: i64) -> Option<Duration> {
     Some(Duration::seconds(secs.min(max_secs)))
 }
 
-fn record_login_failure(db: &Database, clock: &SharedClock, username: &str, reason: &str) {
+async fn record_login_failure(db: &Database, clock: &SharedClock, username: &str, reason: &str) {
     let _ = audit::append(
         db,
         &AuditLogRow {
@@ -67,10 +67,10 @@ fn record_login_failure(db: &Database, clock: &SharedClock, username: &str, reas
             result: "denied".into(),
             note: Some(reason.to_owned()),
         },
-    );
+    ).await;
 }
 
-fn record_login_success(db: &Database, clock: &SharedClock, user_id: UserId) {
+async fn record_login_success(db: &Database, clock: &SharedClock, user_id: UserId) {
     let _ = audit::append(
         db,
         &AuditLogRow {
@@ -81,17 +81,17 @@ fn record_login_success(db: &Database, clock: &SharedClock, user_id: UserId) {
             result: "ok".into(),
             note: None,
         },
-    );
+    ).await;
 }
 
-pub fn login(
+pub async fn login(
     db: &Database,
     clock: &SharedClock,
     username: &str,
     password: &str,
     max_lockout_secs: i64,
 ) -> CoreResult<SessionRow> {
-    match login_with_mfa(db, clock, username, password, max_lockout_secs)? {
+    match login_with_mfa(db, clock, username, password, max_lockout_secs).await? {
         LoginOutcome::SessionEstablished(row) => Ok(row),
         LoginOutcome::MfaRequired { .. } => Err(CoreError::Unauthenticated),
     }
@@ -115,27 +115,27 @@ pub enum LoginOutcome {
 }
 
 /// Password authentication that respects per-user MFA enrolment.
-pub fn login_with_mfa(
+pub async fn login_with_mfa(
     db: &Database,
     clock: &SharedClock,
     username: &str,
     password: &str,
     max_lockout_secs: i64,
 ) -> CoreResult<LoginOutcome> {
-    let user = match users::find_by_username(db, username) {
+    let user = match users::find_by_username(db, username).await {
         Ok(u) => u,
         Err(sui_id_store::StoreError::NotFound) => {
             // Constant-time-ish dummy verify regardless of branch.
-            let _ = verify_password(password, DUMMY_PHC);
-            record_login_failure(db, clock, username, "unknown user");
+            let _ = verify_password(password, DUMMY_PHC).await;
+            record_login_failure(db, clock, username, "unknown user").await;
             return Err(CoreError::InvalidCredentials);
         }
         Err(e) => return Err(e.into()),
     };
 
     if user.is_disabled || user.is_deleted {
-        let _ = verify_password(password, DUMMY_PHC);
-        record_login_failure(db, clock, username, "user disabled or deleted");
+        let _ = verify_password(password, DUMMY_PHC).await;
+        record_login_failure(db, clock, username, "user disabled or deleted").await;
         return Err(CoreError::InvalidCredentials);
     }
 
@@ -146,11 +146,11 @@ pub fn login_with_mfa(
     // path, we still run a dummy Argon2 verify before returning.
     if let Some(locked_until) = user.locked_until {
         if locked_until > clock.now() {
-            let _ = verify_password(password, DUMMY_PHC);
+            let _ = verify_password(password, DUMMY_PHC).await;
             // Audit-logged with a different reason so operators can
             // distinguish a brute-force attempt from honest typos.
             // The HTTP response is the same generic 401 either way.
-            record_login_failure(db, clock, username, "account locked");
+            record_login_failure(db, clock, username, "account locked").await;
             return Err(CoreError::InvalidCredentials);
         }
         // Stale lock — `locked_until` is in the past. Fall through;
@@ -160,20 +160,20 @@ pub fn login_with_mfa(
         // has our knowledge of them).
     }
 
-    let cred = credentials::get(db, user.id).map_err(|e| match e {
+    let cred = credentials::get(db, user.id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::InvalidCredentials,
         other => other.into(),
     })?;
 
-    if let Err(e) = verify_password(password, &cred.password_hash) {
+    if let Err(e) = verify_password(password, &cred.password_hash).await {
         // Wrong password: bump the counter, possibly stamp a lock,
         // and audit. The lock window is computed from the new count
         // — so the third failure stamps the first 30-second lock,
         // the fourth stamps a one-minute lock, and so on.
-        let next_count = users::record_login_failure(db, user.id, None).unwrap_or(0);
+        let next_count = users::record_login_failure(db, user.id, None).await.unwrap_or(0);
         if let Some(window) = lockout_backoff(next_count, max_lockout_secs) {
             let until = clock.now() + window;
-            let _ = users::record_login_failure(db, user.id, Some(until));
+            let _ = users::record_login_failure(db, user.id, Some(until)).await;
             // Re-emit the audit row with the lock-applied note so
             // the same /admin/login submission yields one informative
             // event in the log, not two.
@@ -190,19 +190,19 @@ pub fn login_with_mfa(
                         window.num_seconds()
                     )),
                 },
-            );
+            ).await;
         } else {
-            record_login_failure(db, clock, username, "wrong password");
+            record_login_failure(db, clock, username, "wrong password").await;
         }
         return Err(e);
     }
 
     // Password OK: reset counter and clear any stale lock.
-    let _ = users::clear_lockout(db, user.id);
+    let _ = users::clear_lockout(db, user.id).await;
 
     // Branch on MFA enrolment.
-    if crate::mfa::is_mfa_enabled(db, user.id)? {
-        let pending = crate::mfa::issue_pending_mfa(db, clock, user.id)?;
+    if crate::mfa::is_mfa_enabled(db, user.id).await? {
+        let pending = crate::mfa::issue_pending_mfa(db, clock, user.id).await?;
         // Audit success of the *password* step. The MFA step issues its
         // own audit entry on completion.
         let _ = audit::append(
@@ -215,7 +215,7 @@ pub fn login_with_mfa(
                 result: "ok".into(),
                 note: None,
             },
-        );
+        ).await;
         return Ok(LoginOutcome::MfaRequired { pending });
     }
 
@@ -238,9 +238,9 @@ pub fn login_with_mfa(
         last_step_up_at: None,
             last_used_at: None,
     };
-    sessions::insert(db, &row)?;
-    enforce_concurrent_session_cap(db, clock, user.id);
-    record_login_success(db, clock, user.id);
+    sessions::insert(db, &row).await?;
+    enforce_concurrent_session_cap(db, clock, user.id).await;
+    record_login_success(db, clock, user.id).await;
     Ok(LoginOutcome::SessionEstablished(row))
 }
 
@@ -257,12 +257,12 @@ pub fn login_with_mfa(
 /// the user from signing in — at worst the cap is briefly
 /// exceeded until the next login or until the next idle-timeout
 /// pass cleans things up.
-pub(crate) fn enforce_concurrent_session_cap(
+pub(crate) async fn enforce_concurrent_session_cap(
     db: &Database,
     clock: &SharedClock,
     user_id: UserId,
 ) {
-    let settings = match sui_id_store::repos::server_settings::get(db) {
+    let settings = match sui_id_store::repos::server_settings::get(db).await {
         Ok(s) => s,
         Err(_) => return,
     };
@@ -271,7 +271,7 @@ pub(crate) fn enforce_concurrent_session_cap(
         return;
     }
     let now = clock.now();
-    let count = match sessions::count_active_for_user(db, user_id, now) {
+    let count = match sessions::count_active_for_user(db, user_id, now).await {
         Ok(c) => c,
         Err(_) => return,
     };
@@ -279,12 +279,12 @@ pub(crate) fn enforce_concurrent_session_cap(
         return;
     }
     let evict = count - cap;
-    let oldest = match sessions::oldest_active_for_user(db, user_id, now, evict) {
+    let oldest = match sessions::oldest_active_for_user(db, user_id, now, evict).await {
         Ok(rows) => rows,
         Err(_) => return,
     };
     for old in oldest {
-        let _ = sessions::revoke(db, old.id);
+        let _ = sessions::revoke(db, old.id).await;
     }
 }
 
@@ -303,8 +303,8 @@ pub(crate) fn enforce_concurrent_session_cap(
 /// treated as "as old as `created_at`" — the conservative choice
 /// that aligns pre-migration sessions with the same idle policy
 /// as new ones.
-pub fn resolve(db: &Database, clock: &SharedClock, id: SessionId) -> CoreResult<UserId> {
-    let row = sessions::get(db, id).map_err(|e| match e {
+pub async fn resolve(db: &Database, clock: &SharedClock, id: SessionId) -> CoreResult<UserId> {
+    let row = sessions::get(db, id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Unauthenticated,
         other => other.into(),
     })?;
@@ -313,7 +313,7 @@ pub fn resolve(db: &Database, clock: &SharedClock, id: SessionId) -> CoreResult<
         return Err(CoreError::Unauthenticated);
     }
     // Idle-timeout enforcement.
-    if let Ok(settings) = sui_id_store::repos::server_settings::get(db) {
+    if let Ok(settings) = sui_id_store::repos::server_settings::get(db).await {
         let timeout = settings.idle_session_timeout_secs;
         if timeout > 0 {
             let reference = row.last_used_at.unwrap_or(row.created_at);
@@ -323,7 +323,7 @@ pub fn resolve(db: &Database, clock: &SharedClock, id: SessionId) -> CoreResult<
                 // is best-effort; if it fails, the next request
                 // for the same id will simply re-evaluate and
                 // reach the same conclusion.
-                let _ = sessions::revoke(db, id);
+                let _ = sessions::revoke(db, id).await;
                 return Err(CoreError::Unauthenticated);
             }
         }
@@ -341,13 +341,13 @@ pub fn resolve(db: &Database, clock: &SharedClock, id: SessionId) -> CoreResult<
 /// stored separately; the throttle decision is made by comparing
 /// the row's existing `last_used_at` against `now -
 /// LAST_USED_AT_THROTTLE_SECS`.
-pub fn touch_last_used(
+pub async fn touch_last_used(
     db: &Database,
     clock: &SharedClock,
     id: SessionId,
 ) -> CoreResult<()> {
     let now = clock.now();
-    let row = match sessions::get(db, id) {
+    let row = match sessions::get(db, id).await {
         Ok(r) => r,
         Err(sui_id_store::StoreError::NotFound) => return Ok(()),
         Err(other) => return Err(other.into()),
@@ -357,7 +357,7 @@ pub fn touch_last_used(
         None => true,
     };
     if stale {
-        sessions::touch_last_used(db, id, now)?;
+        sessions::touch_last_used(db, id, now).await?;
     }
     Ok(())
 }
@@ -371,18 +371,18 @@ pub fn touch_last_used(
 /// reflect actual usage).
 pub const LAST_USED_AT_THROTTLE_SECS: i64 = 60;
 
-pub fn logout(db: &Database, id: SessionId) -> CoreResult<()> {
-    sessions::revoke(db, id)?;
+pub async fn logout(db: &Database, id: SessionId) -> CoreResult<()> {
+    sessions::revoke(db, id).await?;
     Ok(())
 }
 
 /// End a user's RP-facing session. Revokes the named session and **all**
 /// outstanding refresh tokens for that user. Used by RP-initiated logout
 /// where we want a clean slate, not just one expired cookie.
-pub fn logout_user(db: &Database, clock: &SharedClock, user_id: UserId) -> CoreResult<()> {
+pub async fn logout_user(db: &Database, clock: &SharedClock, user_id: UserId) -> CoreResult<()> {
     let _ = clock; // signature kept symmetric with other lifecycle fns
-    sessions::revoke_all_for_user(db, user_id)?;
-    sui_id_store::repos::refresh_tokens::revoke_all_for_user(db, user_id)?;
+    sessions::revoke_all_for_user(db, user_id).await?;
+    sui_id_store::repos::refresh_tokens::revoke_all_for_user(db, user_id).await?;
     Ok(())
 }
 
@@ -401,13 +401,13 @@ mod lockout_tests {
         // Operators routinely fat-finger a password; the first two
         // attempts must have no observable consequence beyond
         // bumping the failure counter.
-        assert_eq!(lockout_backoff(1, 24 * 60 * 60), None);
-        assert_eq!(lockout_backoff(2, 24 * 60 * 60), None);
+        assert_eq!(lockout_backoff(1, 24 * 60 * 60).await, None);
+        assert_eq!(lockout_backoff(2, 24 * 60 * 60).await, None);
     }
 
     #[test]
     fn third_failure_yields_a_short_lock() {
-        let d = lockout_backoff(3, 24 * 60 * 60).expect("lock at 3rd failure");
+        let d = lockout_backoff(3, 24 * 60 * 60).await.expect("lock at 3rd failure");
         assert_eq!(d.num_seconds(), 30);
     }
 
@@ -417,7 +417,7 @@ mod lockout_tests {
         // we should see exactly 1 hour, never higher.
         let cap = 60 * 60;
         for n in 9..20 {
-            let d = lockout_backoff(n, cap).expect("locked");
+            let d = lockout_backoff(n, cap).await.expect("locked");
             assert!(
                 d.num_seconds() <= cap,
                 "failure {n} produced {} s, exceeds cap {} s",
@@ -445,8 +445,8 @@ mod lockout_tests {
             b in 1i64..15,
         ) {
             prop_assume!(a <= b);
-            let da = lockout_backoff(a, cap).map(|d| d.num_seconds()).unwrap_or(0);
-            let db = lockout_backoff(b, cap).map(|d| d.num_seconds()).unwrap_or(0);
+            let da = lockout_backoff(a, cap).await.map(|d| d.num_seconds()).unwrap_or(0);
+            let db = lockout_backoff(b, cap).await.map(|d| d.num_seconds()).unwrap_or(0);
             prop_assert!(db >= da, "{a} -> {da}s, {b} -> {db}s");
         }
 
@@ -479,7 +479,7 @@ mod session_limit_tests {
         Database::open_in_memory(MasterKey::generate()).expect("db")
     }
 
-    fn make_user(db: &Database) -> UserId {
+    async fn make_user(db: &Database) -> UserId {
         use sui_id_store::models::UserRow;
         use sui_id_store::repos::users;
         let id = UserId::new();
@@ -503,7 +503,7 @@ mod session_limit_tests {
                 email_normalized: None,
                 email_verified_at: None,
             },
-        )
+        ).await
         .expect("user");
         id
     }
@@ -527,7 +527,7 @@ mod session_limit_tests {
                 last_step_up_at: None,
                 last_used_at,
             },
-        )
+        ).await
         .expect("insert");
         id
     }
@@ -535,26 +535,26 @@ mod session_limit_tests {
     #[test]
     fn resolve_passes_when_idle_timeout_disabled() {
         let db = fresh_db();
-        let clock = system_clock();
-        let uid = make_user(&db);
+        let clock = system_clock().await;
+        let uid = make_user(&db).await;
         // last_used_at is far in the past; default settings have
         // idle_session_timeout_secs = 0 = disabled, so resolve
         // must succeed.
         let stale = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
         let sid = insert_session(&db, uid, Utc::now(), Some(stale));
-        assert_eq!(resolve(&db, &clock, sid).expect("resolve"), uid);
+        assert_eq!(resolve(&db, &clock, sid).await.expect("resolve"), uid);
     }
 
     #[test]
-    fn resolve_revokes_after_idle_window() {
+    async fn resolve_revokes_after_idle_window() {
         let db = fresh_db();
-        let uid = make_user(&db);
+        let uid = make_user(&db).await;
         // Configure a 60-second idle timeout.
         sui_id_store::repos::server_settings::update_idle_session_timeout(
             &db,
             60,
             Utc::now(),
-        )
+        ).await
         .expect("set timeout");
         // Make a session that was last used 2 minutes ago and a
         // mock clock at "now", so elapsed = 120s > 60s.
@@ -564,40 +564,40 @@ mod session_limit_tests {
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
         // First call: idle window exceeded → revoke + Unauth.
         assert!(matches!(
-            resolve(&db, &clock, sid),
+            resolve(&db, &clock, sid).await,
             Err(CoreError::Unauthenticated)
         ));
         // The session is now revoked in the DB.
-        let row = sessions::get(&db, sid).expect("get");
+        let row = sessions::get(&db, sid).await.expect("get");
         assert!(row.revoked_at.is_some());
     }
 
     #[test]
-    fn resolve_passes_within_idle_window() {
+    async fn resolve_passes_within_idle_window() {
         let db = fresh_db();
-        let uid = make_user(&db);
+        let uid = make_user(&db).await;
         sui_id_store::repos::server_settings::update_idle_session_timeout(
             &db,
             300,
             Utc::now(),
-        )
+        ).await
         .expect("set timeout");
         let now = Utc::now();
         let recent = now - ChronoDuration::seconds(10);
         let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(recent));
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
-        assert_eq!(resolve(&db, &clock, sid).expect("resolve"), uid);
+        assert_eq!(resolve(&db, &clock, sid).await.expect("resolve"), uid);
     }
 
     #[test]
-    fn resolve_treats_null_last_used_at_as_created_at() {
+    async fn resolve_treats_null_last_used_at_as_created_at() {
         let db = fresh_db();
-        let uid = make_user(&db);
+        let uid = make_user(&db).await;
         sui_id_store::repos::server_settings::update_idle_session_timeout(
             &db,
             60,
             Utc::now(),
-        )
+        ).await
         .expect("set timeout");
         // last_used_at = None: created 2 minutes ago, so falling
         // back to created_at means 120 > 60 = revoked.
@@ -605,45 +605,45 @@ mod session_limit_tests {
         let sid = insert_session(&db, uid, now - ChronoDuration::seconds(120), None);
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
         assert!(matches!(
-            resolve(&db, &clock, sid),
+            resolve(&db, &clock, sid).await,
             Err(CoreError::Unauthenticated)
         ));
     }
 
     #[test]
-    fn touch_last_used_throttles_within_window() {
+    async fn touch_last_used_throttles_within_window() {
         let db = fresh_db();
-        let uid = make_user(&db);
+        let uid = make_user(&db).await;
         let now = Utc::now();
         let original = now - ChronoDuration::seconds(10);
         let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(original));
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
         // Throttle window is 60s; 10s old should not write.
-        touch_last_used(&db, &clock, sid).expect("touch");
-        let row = sessions::get(&db, sid).expect("get");
+        touch_last_used(&db, &clock, sid).await.expect("touch");
+        let row = sessions::get(&db, sid).await.expect("get");
         assert_eq!(row.last_used_at, Some(original));
     }
 
     #[test]
-    fn touch_last_used_writes_when_stale() {
+    async fn touch_last_used_writes_when_stale() {
         let db = fresh_db();
-        let uid = make_user(&db);
+        let uid = make_user(&db).await;
         let now = Utc::now();
         let stale = now - ChronoDuration::seconds(120);
         let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(stale));
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
-        touch_last_used(&db, &clock, sid).expect("touch");
-        let row = sessions::get(&db, sid).expect("get");
+        touch_last_used(&db, &clock, sid).await.expect("touch");
+        let row = sessions::get(&db, sid).await.expect("get");
         // The new value should be ~now, definitely not the stale one.
         let updated = row.last_used_at.expect("set");
         assert!(updated > stale);
     }
 
     #[test]
-    fn enforce_cap_does_nothing_when_cap_zero() {
+    async fn enforce_cap_does_nothing_when_cap_zero() {
         let db = fresh_db();
-        let clock = system_clock();
-        let uid = make_user(&db);
+        let clock = system_clock().await;
+        let uid = make_user(&db).await;
         // Insert 5 active sessions; cap = 0 = disabled.
         for i in 0..5 {
             let _ = insert_session(
@@ -653,23 +653,23 @@ mod session_limit_tests {
                 None,
             );
         }
-        enforce_concurrent_session_cap(&db, &clock, uid);
+        enforce_concurrent_session_cap(&db, &clock, uid).await;
         let active =
-            sessions::count_active_for_user(&db, uid, Utc::now()).expect("count");
+            sessions::count_active_for_user(&db, uid, Utc::now()).await.expect("count");
         assert_eq!(active, 5);
     }
 
     #[test]
-    fn enforce_cap_evicts_oldest_in_fifo_order() {
+    async fn enforce_cap_evicts_oldest_in_fifo_order() {
         let db = fresh_db();
-        let clock = system_clock();
-        let uid = make_user(&db);
+        let clock = system_clock().await;
+        let uid = make_user(&db).await;
         // Cap = 2; insert 4 sessions with distinct created_at.
         sui_id_store::repos::server_settings::update_max_concurrent_sessions(
             &db,
             2,
             Utc::now(),
-        )
+        ).await
         .expect("set cap");
         let base = Utc::now() - ChronoDuration::hours(1);
         let s1 = insert_session(&db, uid, base, None);
@@ -678,9 +678,9 @@ mod session_limit_tests {
         let s4 = insert_session(&db, uid, base + ChronoDuration::seconds(3), None);
         // Run eviction: 4 active, cap 2 → 2 oldest (s1, s2)
         // are revoked.
-        enforce_concurrent_session_cap(&db, &clock, uid);
+        enforce_concurrent_session_cap(&db, &clock, uid).await;
         let still_active = |sid: SessionId| {
-            sessions::get(&db, sid).expect("get").revoked_at.is_none()
+            sessions::get(&db, sid).await.expect("get").revoked_at.is_none()
         };
         assert!(!still_active(s1), "s1 should be revoked");
         assert!(!still_active(s2), "s2 should be revoked");

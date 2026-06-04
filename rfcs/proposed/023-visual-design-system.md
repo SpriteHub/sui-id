@@ -640,3 +640,36 @@ CSS itself is not a security boundary, but two notes:
 4. **Print styles.** Out of scope. sui-id pages are not
    typically printed. Re-evaluate if an audit-log export
    request comes in.
+
+## Addendum — Text selection contrast (v0.29.x observation)
+
+Operators reported that mouse text selection is difficult to see, especially
+on UUID/credential values rendered in the admin panel (Client ID field was
+specifically cited). Root cause: the current stylesheet does not set
+`::selection` styles, so the browser default is used — which can be very
+low-contrast depending on OS/theme and the element's background colour.
+
+**Required change (part of this RFC's deliverables):**
+
+```css
+/* Light mode */
+::selection {
+    background-color: var(--color-primary-200);  /* defined in token set */
+    color: var(--color-text-primary);
+}
+
+/* Dark mode — usually handled automatically if the token resolves correctly,
+   but explicit overrides may be needed for high-contrast themes */
+@media (prefers-color-scheme: dark) {
+    ::selection {
+        background-color: var(--color-primary-600);
+        color: var(--color-text-inverted);
+    }
+}
+```
+
+The selection colour must meet WCAG 2.1 SC 1.4.3 contrast requirements
+(4.5:1 for normal text, 3:1 for large text) in both light and dark modes.
+
+This fix is separate from and complementary to RFC 028 (copy buttons),
+which addresses the same ergonomic pain point from the interaction side.

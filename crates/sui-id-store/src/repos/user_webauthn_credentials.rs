@@ -39,8 +39,8 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserWebauthnCredentialRow> {
 const SELECT: &str = "SELECT id, user_id, credential_id, passkey_enc, nickname, \
                       created_at, last_used_at FROM user_webauthn_credentials";
 
-pub fn list_for_user(db: &Database, user_id: UserId) -> StoreResult<Vec<UserWebauthnCredentialRow>> {
-    db.with_conn(|conn| {
+pub async fn list_for_user(db: &Database, user_id: UserId) -> StoreResult<Vec<UserWebauthnCredentialRow>> {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(&format!(
             "{SELECT} WHERE user_id = ?1 ORDER BY created_at ASC"
         ))?;
@@ -48,25 +48,26 @@ pub fn list_for_user(db: &Database, user_id: UserId) -> StoreResult<Vec<UserWeba
             .query_map([user_id.to_string()], map)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
-    })
+    }).await
 }
 
-pub fn count_for_user(db: &Database, user_id: UserId) -> StoreResult<usize> {
-    db.with_conn(|conn| {
+pub async fn count_for_user(db: &Database, user_id: UserId) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
         let n: i64 = conn.query_row(
             "SELECT COUNT(*) FROM user_webauthn_credentials WHERE user_id = ?1",
             [user_id.to_string()],
             |r| r.get(0),
         )?;
         Ok(n as usize)
-    })
+    }).await
 }
 
-pub fn find_by_credential_id(
+pub async fn find_by_credential_id(
     db: &Database,
     credential_id: &[u8],
 ) -> StoreResult<Option<UserWebauthnCredentialRow>> {
-    db.with_conn(|conn| {
+    let credential_id = credential_id.to_vec();
+    db.with_conn(move |conn| {
         Ok(conn
             .query_row(
                 &format!("{SELECT} WHERE credential_id = ?1"),
@@ -74,16 +75,17 @@ pub fn find_by_credential_id(
                 map,
             )
             .optional()?)
-    })
+    }).await
 }
 
-pub fn create(
+pub async fn create(
     db: &Database,
     row: &UserWebauthnCredentialRow,
     passkey_json_plain: &[u8],
 ) -> StoreResult<()> {
     let enc = seal(db.key(), passkey_json_plain, AAD)?;
-    db.with_conn(|conn| {
+    let row = row.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO user_webauthn_credentials \
              (id, user_id, credential_id, passkey_enc, nickname, created_at, last_used_at) \
@@ -107,22 +109,22 @@ pub fn create(
             other => StoreError::from(other),
         })?;
         Ok(())
-    })
+    }).await
 }
 
-pub fn decrypt_passkey(db: &Database, row: &UserWebauthnCredentialRow) -> StoreResult<Vec<u8>> {
+pub async fn decrypt_passkey(db: &Database, row: &UserWebauthnCredentialRow) -> StoreResult<Vec<u8>> {
     Ok(open(db.key(), &row.passkey_enc, AAD)?)
 }
 
 /// Replace the sealed passkey blob (used after authentication when the
 /// signature counter advances).
-pub fn update_passkey(
+pub async fn update_passkey(
     db: &Database,
     id: WebauthnCredentialId,
     passkey_json_plain: &[u8],
 ) -> StoreResult<()> {
     let enc = seal(db.key(), passkey_json_plain, AAD)?;
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE user_webauthn_credentials SET passkey_enc = ?1, last_used_at = ?2 WHERE id = ?3",
             params![enc, Utc::now(), id.to_string()],
@@ -131,13 +133,13 @@ pub fn update_passkey(
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
-pub fn delete(db: &Database, id: WebauthnCredentialId, user_id: UserId) -> StoreResult<()> {
+pub async fn delete(db: &Database, id: WebauthnCredentialId, user_id: UserId) -> StoreResult<()> {
     // Scoped to user_id so a stray id can't delete another user's
     // credential even via a server-side path.
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "DELETE FROM user_webauthn_credentials WHERE id = ?1 AND user_id = ?2",
             params![id.to_string(), user_id.to_string()],
@@ -146,7 +148,7 @@ pub fn delete(db: &Database, id: WebauthnCredentialId, user_id: UserId) -> Store
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Re-seal every `passkey_enc` row under `new_key`. Used by

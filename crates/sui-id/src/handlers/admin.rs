@@ -58,7 +58,7 @@ pub async fn login_get(
     // Already logged in?
     if let Some(cookie) = jar.get(SESSION_COOKIE) {
         if let Ok(sid) = SessionId::from_str(cookie.value()) {
-            if session::resolve(&app.db, &app.clock, sid).is_ok() {
+            if session::resolve(&app.db, &app.clock, sid).await.is_ok() {
                 return Ok(Redirect::to("/admin").into_response());
             }
         }
@@ -87,7 +87,7 @@ pub async fn login_post(
         form.username.trim(),
         &form.password,
         app.config.security.max_lockout.as_secs(),
-    ) {
+    ).await {
         Ok(session::LoginOutcome::SessionEstablished(row)) => {
             let cookie = session_cookie(row.id.to_string(), app.config.server.cookie_secure);
             let jar = jar.add(cookie);
@@ -148,14 +148,18 @@ pub async fn mfa_challenge_get(
     // whether the user has any passkeys so the page can offer that
     // path. If we can't (cookie missing or row gone), default to
     // hiding the passkey button — the user can still type a TOTP code.
-    let has_passkey = jar
-        .get(crate::handlers::PENDING_MFA_COOKIE)
-        .and_then(|c| c.value().parse::<sui_id_shared::ids::PendingMfaId>().ok())
-        .and_then(|pid| sui_id_store::repos::login_pending_mfa::get(&app.db, pid).ok().flatten())
-        .map(|row| {
-            sui_id_core::webauthn::has_credentials(&app.db, row.user_id).unwrap_or(false)
-        })
-        .unwrap_or(false);
+    let has_passkey = {
+        let pid_opt = jar
+            .get(crate::handlers::PENDING_MFA_COOKIE)
+            .and_then(|c| c.value().parse::<sui_id_shared::ids::PendingMfaId>().ok());
+        if let Some(pid) = pid_opt {
+            let row_opt = sui_id_store::repos::login_pending_mfa::get(&app.db, pid)
+                .await.ok().flatten();
+            if let Some(row) = row_opt {
+                sui_id_core::webauthn::has_credentials(&app.db, row.user_id).await.unwrap_or(false)
+            } else { false }
+        } else { false }
+    };
     let token = crate::csrf::ensure_token(&jar);
     let resp =
         Html(sui_id_web::render_mfa_challenge(None, token.clone(), has_passkey, lang)).into_response();
@@ -197,7 +201,7 @@ pub async fn mfa_challenge_post(
         Ok(id) => id,
         Err(_) => return Ok(Redirect::to("/admin/login").into_response()),
     };
-    match sui_id_core::mfa::verify_pending(&app.db, &app.clock, pending_id, &form.code) {
+    match sui_id_core::mfa::verify_pending(&app.db, &app.clock, pending_id, &form.code).await {
         Ok(session) => {
             let cookie =
                 session_cookie(session.id.to_string(), app.config.server.cookie_secure);
@@ -218,7 +222,7 @@ pub async fn mfa_challenge_post(
                     result: "ok".into(),
                     note: None,
                 },
-            );
+            ).await;
             let jar = jar
                 .add(cookie)
                 .add(clear_pending_mfa_cookie(app.config.server.cookie_secure))
@@ -241,19 +245,19 @@ pub async fn mfa_challenge_post(
                     result: "denied".into(),
                     note: None,
                 },
-            );
-            let has_passkey = jar
-                .get(crate::handlers::PENDING_MFA_COOKIE)
-                .and_then(|c| c.value().parse::<sui_id_shared::ids::PendingMfaId>().ok())
-                .and_then(|pid| {
-                    sui_id_store::repos::login_pending_mfa::get(&app.db, pid)
-                        .ok()
-                        .flatten()
-                })
-                .map(|row| {
-                    sui_id_core::webauthn::has_credentials(&app.db, row.user_id).unwrap_or(false)
-                })
-                .unwrap_or(false);
+            ).await;
+            let has_passkey = {
+                let pid_opt2 = jar
+                    .get(crate::handlers::PENDING_MFA_COOKIE)
+                    .and_then(|c| c.value().parse::<sui_id_shared::ids::PendingMfaId>().ok());
+                if let Some(pid) = pid_opt2 {
+                    let row_opt2 = sui_id_store::repos::login_pending_mfa::get(&app.db, pid)
+                        .await.ok().flatten();
+                    if let Some(row) = row_opt2 {
+                        sui_id_core::webauthn::has_credentials(&app.db, row.user_id).await.unwrap_or(false)
+                    } else { false }
+                } else { false }
+            };
             let token = crate::csrf::ensure_token(&jar);
             let resp = (
                 StatusCode::UNAUTHORIZED,
@@ -277,7 +281,7 @@ pub async fn logout(
     let State(app) = state_ext;
     if let Some(c) = jar.get(SESSION_COOKIE) {
         if let Ok(sid) = SessionId::from_str(c.value()) {
-            let _ = session::logout(&app.db, sid);
+            let _ = session::logout(&app.db, sid).await;
         }
     }
     let jar = jar.add(clear_session_cookie(app.config.server.cookie_secure));
@@ -293,11 +297,11 @@ pub async fn dashboard(
     axum::extract::Query(q): axum::extract::Query<DashboardQuery>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let admin = users::get(&app.db, admin_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
-    let users_n = users::list(&app.db)
+    let admin = users::get(&app.db, admin_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let users_n = users::list(&app.db).await
         .map(|v| v.len())
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
-    let clients_n = clients::list(&app.db)
+    let clients_n = clients::list(&app.db).await
         .map(|v| v.len())
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
 
@@ -308,7 +312,7 @@ pub async fn dashboard(
         .as_deref()
         .and_then(sui_id_core::dashboard::SparklineRange::from_query)
         .unwrap_or_default();
-    let activity = sui_id_core::dashboard::login_activity(&app.db, &app.clock, range)
+    let activity = sui_id_core::dashboard::login_activity(&app.db, &app.clock, range).await
         .map_err(HttpError::html)?;
 
     // Format bucket labels per the bucket size — 1-hour buckets get
@@ -367,29 +371,24 @@ pub async fn users_get(
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let admin = users::get(&app.db, admin_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
-    let rows = admin_uc::list_users(&app.db, admin_id).map_err(HttpError::html)?;
-    let summaries: Vec<UserSummary> = rows
-        .into_iter()
-        .map(|r| {
-            // We tolerate MFA-lookup errors per row by treating them as
-            // "MFA off" — the worst that does is hide the Reset button,
-            // which is recoverable. Failing the whole list page on a
-            // single read error would be hostile.
-            let mfa_enabled =
-                sui_id_core::mfa::is_mfa_enabled(&app.db, r.id).unwrap_or(false);
-            UserSummary {
-                id: r.id,
-                username: r.username,
-                display_name: r.display_name,
-                is_admin: r.is_admin,
-                is_disabled: r.is_disabled,
-                is_deleted: r.is_deleted,
-                mfa_enabled,
-                created_at: r.created_at,
-            }
-        })
-        .collect();
+    let admin = users::get(&app.db, admin_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let rows = admin_uc::list_users(&app.db, admin_id).await.map_err(HttpError::html)?;
+    let mut summaries = Vec::with_capacity(rows.len());
+    for r in rows {
+        let mfa_enabled =
+            sui_id_core::mfa::is_mfa_enabled(&app.db, r.id).await.unwrap_or(false);
+        summaries.push(UserSummary {
+            id: r.id,
+            username: r.username,
+            display_name: r.display_name,
+            is_admin: r.is_admin,
+            is_disabled: r.is_disabled,
+            is_deleted: r.is_deleted,
+            mfa_enabled,
+            created_at: r.created_at,
+        });
+    }
+    // summaries already collected in for loop above
     let token = crate::csrf::ensure_token(&jar);
     let resp = Html(render_users(summaries, None, admin.username, token.clone())).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
@@ -443,7 +442,7 @@ pub async fn users_create(
             email,
             is_admin,
         },
-    )
+    ).await
     .map_err(HttpError::html)?;
     let _ = &app; // hush
     Ok(Redirect::to("/admin/users").into_response())
@@ -468,7 +467,7 @@ pub async fn users_set_disabled(
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
     let value = matches!(form.disabled.as_str(), "true" | "on" | "1");
-    admin_uc::set_user_disabled(&app.db, admin_id, target, value).map_err(HttpError::html)?;
+    admin_uc::set_user_disabled(&app.db, admin_id, target, value).await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/users").into_response())
 }
 
@@ -490,13 +489,13 @@ pub async fn users_delete(
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
     if let Err(redirect) =
-        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/users")
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/users").await
     {
         return Ok(redirect);
     }
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
-    admin_uc::delete_user(&app.db, admin_id, target).map_err(HttpError::html)?;
+    admin_uc::delete_user(&app.db, admin_id, target).await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/users").into_response())
 }
 
@@ -513,13 +512,13 @@ pub async fn users_mfa_reset(
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
     if let Err(redirect) =
-        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/users")
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/users").await
     {
         return Ok(redirect);
     }
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
-    admin_uc::admin_reset_mfa(&app.db, admin_id, target).map_err(HttpError::html)?;
+    admin_uc::admin_reset_mfa(&app.db, admin_id, target).await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/users").into_response())
 }
 
@@ -531,7 +530,7 @@ pub async fn clients_get(
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let rows = admin_uc::list_clients(&app.db, admin_id).map_err(HttpError::html)?;
+    let rows = admin_uc::list_clients(&app.db, admin_id).await.map_err(HttpError::html)?;
     let summaries: Vec<ClientSummary> = rows
         .into_iter()
         .map(|r| ClientSummary {
@@ -611,11 +610,11 @@ pub async fn clients_create(
             allowed_scopes,
             post_logout_redirect_uris: &post_logout_uris,
         },
-    )
+    ).await
     .map_err(HttpError::html)?;
 
     // Re-list and pass the secret through to the page so it is shown once.
-    let rows = admin_uc::list_clients(&app.db, admin_id).map_err(HttpError::html)?;
+    let rows = admin_uc::list_clients(&app.db, admin_id).await.map_err(HttpError::html)?;
     let summaries: Vec<ClientSummary> = rows
         .into_iter()
         .map(|r| ClientSummary {
@@ -650,7 +649,7 @@ pub async fn clients_set_disabled(
     let target = ClientId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
     let value = matches!(form.disabled.as_str(), "true" | "on" | "1");
-    admin_uc::set_client_disabled(&app.db, admin_id, target, value).map_err(HttpError::html)?;
+    admin_uc::set_client_disabled(&app.db, admin_id, target, value).await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/clients").into_response())
 }
 
@@ -665,13 +664,13 @@ pub async fn clients_delete(
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
     if let Err(redirect) =
-        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/clients")
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/clients").await
     {
         return Ok(redirect);
     }
     let target = ClientId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
-    admin_uc::delete_client(&app.db, admin_id, target).map_err(HttpError::html)?;
+    admin_uc::delete_client(&app.db, admin_id, target).await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/clients").into_response())
 }
 
@@ -684,7 +683,7 @@ pub async fn clients_edit_get(
     let State(app) = state_ext;
     let target = ClientId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
-    let row = admin_uc::get_client(&app.db, admin_id, target).map_err(HttpError::html)?;
+    let row = admin_uc::get_client(&app.db, admin_id, target).await.map_err(HttpError::html)?;
     let token = crate::csrf::ensure_token(&jar);
     let resp = Html(sui_id_web::render_client_edit(
         sui_id_web::ClientEditData {
@@ -742,21 +741,21 @@ pub async fn clients_edit_post(
     // separately; the operator sees three audit-log entries per save,
     // which is desirable — it makes it possible to track exactly which
     // facet of a client changed when.
-    admin_uc::update_client_basic(&app.db, admin_id, target, form.name.trim(), &uris)
+    admin_uc::update_client_basic(&app.db, admin_id, target, form.name.trim(), &uris).await
         .map_err(HttpError::html)?;
     admin_uc::set_client_allowed_scopes(
         &app.db,
         admin_id,
         target,
         form.allowed_scopes.trim(),
-    )
+    ).await
     .map_err(HttpError::html)?;
     admin_uc::set_client_post_logout_redirect_uris(
         &app.db,
         admin_id,
         target,
         &post_logout_uris,
-    )
+    ).await
     .map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/clients").into_response())
 }
@@ -769,7 +768,7 @@ pub async fn audit_get(
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let entries = audit::recent(&app.db, 200)
+    let entries = audit::recent(&app.db, 200).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     let dtos: Vec<AuditLogEntryDto> = entries
         .into_iter()
@@ -795,7 +794,7 @@ pub async fn signing_keys_get(
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let rows = admin_uc::list_signing_keys(&app.db, admin_id).map_err(HttpError::html)?;
+    let rows = admin_uc::list_signing_keys(&app.db, admin_id).await.map_err(HttpError::html)?;
     let summaries: Vec<sui_id_shared::api::SigningKeySummary> = rows
         .into_iter()
         .map(|r| sui_id_shared::api::SigningKeySummary {
@@ -821,11 +820,11 @@ pub async fn signing_keys_rotate(
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
     if let Err(redirect) =
-        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/signing-keys")
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/signing-keys").await
     {
         return Ok(redirect);
     }
-    admin_uc::rotate_signing_key(&app.db, &app.clock, admin_id).map_err(HttpError::html)?;
+    admin_uc::rotate_signing_key(&app.db, &app.clock, admin_id).await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/signing-keys").into_response())
 }
 
@@ -840,13 +839,13 @@ pub async fn signing_keys_delete(
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
     if let Err(redirect) =
-        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/signing-keys")
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/signing-keys").await
     {
         return Ok(redirect);
     }
     let target = sui_id_shared::ids::SigningKeyId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid signing key id".into())))?;
-    admin_uc::delete_signing_key(&app.db, admin_id, target).map_err(HttpError::html)?;
+    admin_uc::delete_signing_key(&app.db, admin_id, target).await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/signing-keys").into_response())
 }
 
@@ -859,12 +858,12 @@ pub async fn profile_get(
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
-    let totp_enabled = sui_id_store::repos::user_totp::get(&app.db, user_id)
+    let user = users::get(&app.db, user_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let totp_enabled = sui_id_store::repos::user_totp::get(&app.db, user_id).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?
         .map(|r| r.enabled)
         .unwrap_or(false);
-    let passkeys = sui_id_core::webauthn::list_for_user(&app.db, user_id)
+    let passkeys = sui_id_core::webauthn::list_for_user(&app.db, user_id).await
         .map_err(HttpError::html)?
         .into_iter()
         .map(|d| sui_id_web::PasskeyDescriptor {
@@ -927,7 +926,7 @@ pub async fn profile_lang_post(
     };
 
     let now = app.clock.now();
-    sui_id_store::repos::users::set_preferred_lang(&app.db, user_id, lang_to_store, now)
+    sui_id_store::repos::users::set_preferred_lang(&app.db, user_id, lang_to_store, now).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
 
     // Mirror the choice into the lang cookie so pages without
@@ -970,18 +969,18 @@ pub async fn profile_mfa_enroll_start(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
-    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let user = users::get(&app.db, user_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
     let ticket = sui_id_core::mfa::start_enrollment(
         &app.db,
         app.issuer(),
         user_id,
         &user.username,
-    )
+    ).await
     .map_err(HttpError::html)?;
 
     // Render QR as SVG via the qrcode crate.
     let qr_svg = render_qr_svg(&ticket.otpauth_uri);
-    let secret_b32 = sui_id_core::totp::base32_encode(&ticket.secret);
+    let secret_b32 = sui_id_core::totp::base32_encode(&ticket.secret).await;
     let otpauth_uri = ticket.otpauth_uri;
     // The raw secret bytes drop with `ticket` here. sui_id_core::mfa::
     // start_enrollment keeps no caller-visible copy beyond what it
@@ -1024,7 +1023,7 @@ pub async fn profile_mfa_enroll_confirm(
         .trim()
         .parse()
         .map_err(|_| HttpError::html(CoreError::BadRequest("verification code must be 6 digits".into())))?;
-    let codes = sui_id_core::mfa::confirm_enrollment(&app.db, &app.clock, user_id, code)
+    let codes = sui_id_core::mfa::confirm_enrollment(&app.db, &app.clock, user_id, code).await
         .map_err(HttpError::html)?;
     let _ = sui_id_store::repos::audit::append(
         &app.db,
@@ -1036,8 +1035,8 @@ pub async fn profile_mfa_enroll_confirm(
             result: "ok".into(),
             note: None,
         },
-    );
-    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    ).await;
+    let user = users::get(&app.db, user_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
     let token = crate::csrf::ensure_token(&jar);
     let t = lang.strings();
     let resp = Html(sui_id_web::render_profile(
@@ -1045,7 +1044,7 @@ pub async fn profile_mfa_enroll_confirm(
             username: user.username,
             totp_enabled: true,
             fresh_recovery_codes: Some(codes),
-            passkeys: sui_id_core::webauthn::list_for_user(&app.db, user_id)
+            passkeys: sui_id_core::webauthn::list_for_user(&app.db, user_id).await
                 .map_err(HttpError::html)?
                 .into_iter()
                 .map(|d| sui_id_web::PasskeyDescriptor {
@@ -1076,7 +1075,7 @@ pub async fn profile_mfa_disable(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
-    sui_id_core::mfa::disable(&app.db, user_id).map_err(HttpError::html)?;
+    sui_id_core::mfa::disable(&app.db, user_id).await.map_err(HttpError::html)?;
     let _ = sui_id_store::repos::audit::append(
         &app.db,
         &sui_id_store::models::AuditLogRow {
@@ -1087,7 +1086,7 @@ pub async fn profile_mfa_disable(
             result: "ok".into(),
             note: None,
         },
-    );
+    ).await;
     Ok(Redirect::to("/admin/profile").into_response())
 }
 
@@ -1100,7 +1099,7 @@ pub async fn profile_mfa_regenerate_recovery(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
-    let codes = sui_id_core::mfa::regenerate_recovery_codes(&app.db, user_id)
+    let codes = sui_id_core::mfa::regenerate_recovery_codes(&app.db, user_id).await
         .map_err(HttpError::html)?;
     let _ = sui_id_store::repos::audit::append(
         &app.db,
@@ -1112,8 +1111,8 @@ pub async fn profile_mfa_regenerate_recovery(
             result: "ok".into(),
             note: None,
         },
-    );
-    let user = users::get(&app.db, user_id).map_err(|e| HttpError::html(CoreError::from(e)))?;
+    ).await;
+    let user = users::get(&app.db, user_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
     let token = crate::csrf::ensure_token(&jar);
     let t = lang.strings();
     let resp = Html(sui_id_web::render_profile(
@@ -1121,7 +1120,7 @@ pub async fn profile_mfa_regenerate_recovery(
             username: user.username,
             totp_enabled: true,
             fresh_recovery_codes: Some(codes),
-            passkeys: sui_id_core::webauthn::list_for_user(&app.db, user_id)
+            passkeys: sui_id_core::webauthn::list_for_user(&app.db, user_id).await
                 .map_err(HttpError::html)?
                 .into_iter()
                 .map(|d| sui_id_web::PasskeyDescriptor {
@@ -1171,7 +1170,7 @@ pub struct WebauthnRegisterStartForm {
 }
 
 /// Start a passkey-registration ceremony. Returns the
-/// `CreationChallengeResponse` JSON for `navigator.credentials.create()`
+/// `CreationChallengeResponse` JSON for `navigator.credentials.create().await`
 /// and sets a `sui_id_webauthn_pending` cookie that the matching
 /// completion endpoint reads. Nickname is buffered in a query param for
 /// the completion call (we keep server state minimal — the pending row
@@ -1189,7 +1188,7 @@ pub async fn webauthn_register_start(
         &app.clock,
         app.issuer(),
         user_id,
-    )
+    ).await
     .map_err(HttpError::html)?;
     // Stash the nickname in a second cookie so the completion call
     // can pick it up without requiring the JS to echo it back.
@@ -1256,7 +1255,7 @@ pub async fn webauthn_register_complete(
         user_id,
         &nickname,
         &credential,
-    )
+    ).await
     .map_err(HttpError::html)?;
     let _ = sui_id_store::repos::audit::append(
         &app.db,
@@ -1268,7 +1267,7 @@ pub async fn webauthn_register_complete(
             result: "ok".into(),
             note: None,
         },
-    );
+    ).await;
     let jar = jar
         .add(crate::handlers::clear_webauthn_pending_cookie(
             app.config.server.cookie_secure,
@@ -1294,7 +1293,7 @@ pub async fn webauthn_delete(
     let id = cred_id.parse::<sui_id_shared::ids::WebauthnCredentialId>().map_err(|_| {
         HttpError::html(CoreError::BadRequest("invalid credential id".into()))
     })?;
-    sui_id_core::webauthn::delete(&app.db, user_id, id).map_err(HttpError::html)?;
+    sui_id_core::webauthn::delete(&app.db, user_id, id).await.map_err(HttpError::html)?;
     let _ = sui_id_store::repos::audit::append(
         &app.db,
         &sui_id_store::models::AuditLogRow {
@@ -1305,7 +1304,7 @@ pub async fn webauthn_delete(
             result: "ok".into(),
             note: None,
         },
-    );
+    ).await;
     Ok(Redirect::to("/admin/profile").into_response())
 }
 
@@ -1336,7 +1335,7 @@ pub async fn webauthn_auth_start(
         .parse::<sui_id_shared::ids::PendingMfaId>()
         .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
     // Look up the user via the pending-MFA row.
-    let pending = sui_id_store::repos::login_pending_mfa::get(&app.db, pending_mfa_id)
+    let pending = sui_id_store::repos::login_pending_mfa::get(&app.db, pending_mfa_id).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?
         .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
     if pending.expires_at < app.clock.now() {
@@ -1347,7 +1346,7 @@ pub async fn webauthn_auth_start(
         &app.clock,
         app.issuer(),
         pending.user_id,
-    )
+    ).await
     .map_err(HttpError::html)?;
     let cookie = crate::handlers::webauthn_pending_cookie(
         started.pending_id.to_string(),
@@ -1391,7 +1390,7 @@ pub async fn webauthn_auth_complete(
         .get(crate::handlers::WEBAUTHN_PENDING_COOKIE)
         .and_then(|c| c.value().parse::<sui_id_shared::ids::WebauthnPendingId>().ok())
         .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
-    let pending = sui_id_store::repos::login_pending_mfa::get(&app.db, pending_mfa_id)
+    let pending = sui_id_store::repos::login_pending_mfa::get(&app.db, pending_mfa_id).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?
         .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
     if pending.expires_at < app.clock.now() {
@@ -1408,14 +1407,14 @@ pub async fn webauthn_auth_complete(
         webauthn_pending_id,
         pending.user_id,
         &credential,
-    )
+    ).await
     .map_err(HttpError::html)?;
     let session = sui_id_core::mfa::verify_pending_webauthn(
         &app.db,
         &app.clock,
         pending_mfa_id,
         pending.user_id,
-    )
+    ).await
     .map_err(HttpError::html)?;
     let _ = sui_id_store::repos::audit::append(
         &app.db,
@@ -1427,7 +1426,7 @@ pub async fn webauthn_auth_complete(
             result: "ok".into(),
             note: Some("webauthn".into()),
         },
-    );
+    ).await;
     let next = jar
         .get(PENDING_MFA_NEXT_COOKIE)
         .map(|c| c.value().to_owned())

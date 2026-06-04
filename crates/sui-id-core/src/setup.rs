@@ -25,7 +25,7 @@ pub struct CreatedInitialAdmin {
 
 /// Create the first administrator and bootstrap a signing key. Fails if the
 /// system is already initialized or the supplied setup token is wrong.
-pub fn create_initial_admin(
+pub async fn create_initial_admin(
     db: &Database,
     clock: &SharedClock,
     expected_setup_token: &str,
@@ -46,7 +46,7 @@ pub fn create_initial_admin(
     if username.trim().is_empty() {
         return Err(CoreError::BadRequest("username must not be empty".into()));
     }
-    check_password_policy(password)?;
+    check_password_policy(password).await?;
 
     let now = clock.now();
 
@@ -77,23 +77,23 @@ pub fn create_initial_admin(
         failed_login_count: 0,
         locked_until: None,
     };
-    users::create(db, &user).map_err(|e| match e {
+    users::create(db, &user).await.map_err(|e| match e {
         sui_id_store::StoreError::Conflict => CoreError::Conflict("username already in use".into()),
         other => other.into(),
     })?;
 
     // 2. Persist password hash.
-    let hash = hash_password(password)?;
+    let hash = hash_password(password).await?;
     let cred = CredentialRow {
         user_id: user.id,
         password_hash: hash,
         must_change: false,
         updated_at: now,
     };
-    credentials::upsert(db, &cred)?;
+    credentials::upsert(db, &cred).await?;
 
     // 3. Bootstrap an Ed25519 signing key if one isn't there yet.
-    if signing_keys::active(db).is_err() {
+    if signing_keys::active(db).await.is_err() {
         let mut rng = OsRng;
         let sk = SigningKey::generate(&mut rng);
         let pk = sk.verifying_key();
@@ -104,7 +104,7 @@ pub fn create_initial_admin(
             sk.to_bytes().as_ref(),
             pk.to_bytes().as_ref(),
             true,
-        )?;
+        ).await?;
     }
 
     // 4. Mark system initialized.
@@ -121,7 +121,7 @@ pub fn create_initial_admin(
             result: "ok".into(),
             note: None,
         },
-    )?;
+    ).await?;
 
     Ok(CreatedInitialAdmin {
         user_id: user.id,

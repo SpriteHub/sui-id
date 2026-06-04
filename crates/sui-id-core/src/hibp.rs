@@ -235,7 +235,7 @@ pub enum HibpEnforcement {
 /// The synchronous client call should be wrapped in
 /// `tokio::task::spawn_blocking` at the HTTP-handler call site
 /// so the axum runtime is not blocked.
-pub fn enforce_hibp(
+pub async fn enforce_hibp(
     mode: HibpMode,
     client: Option<&dyn HibpClient>,
     password: &str,
@@ -262,12 +262,12 @@ pub fn enforce_hibp(
 /// `CoreError::BadRequest` with a friendly message; pass-through
 /// otherwise. Caller picks the audit-event handling for `Allowed`
 /// / `AllowedWithWarning`.
-pub fn enforce_hibp_or_reject(
+pub async fn enforce_hibp_or_reject(
     mode: HibpMode,
     client: Option<&dyn HibpClient>,
     password: &str,
 ) -> CoreResult<HibpEnforcement> {
-    let result = enforce_hibp(mode, client, password);
+    let result = enforce_hibp(mode, client, password).await;
     match result {
         HibpEnforcement::Blocked { .. } => Err(CoreError::BadRequest(
             "このパスワードは過去のデータ漏洩で確認されています。別のものを選んでください。"
@@ -291,7 +291,7 @@ pub mod test_support {
 
     pub struct InMemoryHibpClient {
         // Map password -> count (0 means "respond Unavailable",
-        // not in map means "NotBreached").
+        // not in map means "NotBreached").await.
         plan: Mutex<HashMap<String, BreachCount>>,
     }
 
@@ -376,7 +376,7 @@ mod tests {
         let body = "0001E1559DBC1641BCFD3A30E18AAB52CDA:1\r\n\
                     2DC183F740EE76F27B78EB39C8AD972A757:42\r\n\
                     FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF:99\r\n";
-        let result = parse_response(body, "2DC183F740EE76F27B78EB39C8AD972A757");
+        let result = parse_response(body, "2DC183F740EE76F27B78EB39C8AD972A757").await;
         assert_eq!(result, HibpCheckOutcome::Breached { count: 42 });
     }
 
@@ -384,7 +384,7 @@ mod tests {
     fn parse_response_returns_not_breached_on_no_match() {
         let body = "0001E1559DBC1641BCFD3A30E18AAB52CDA:1\r\n\
                     FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF:99\r\n";
-        let result = parse_response(body, "2DC183F740EE76F27B78EB39C8AD972A757");
+        let result = parse_response(body, "2DC183F740EE76F27B78EB39C8AD972A757").await;
         assert_eq!(result, HibpCheckOutcome::NotBreached);
     }
 
@@ -393,14 +393,14 @@ mod tests {
         // Add-Padding lines have count 0; we treat a match with
         // count 0 as not-breached out of caution.
         let body = "2DC183F740EE76F27B78EB39C8AD972A757:0\r\n";
-        let result = parse_response(body, "2DC183F740EE76F27B78EB39C8AD972A757");
+        let result = parse_response(body, "2DC183F740EE76F27B78EB39C8AD972A757").await;
         assert_eq!(result, HibpCheckOutcome::NotBreached);
     }
 
     #[test]
     fn parse_response_is_case_insensitive_on_suffix() {
         let body = "2dc183f740ee76f27b78eb39c8ad972a757:5\r\n";
-        let result = parse_response(body, "2DC183F740EE76F27B78EB39C8AD972A757");
+        let result = parse_response(body, "2DC183F740EE76F27B78EB39C8AD972A757").await;
         assert_eq!(result, HibpCheckOutcome::Breached { count: 5 });
     }
 
@@ -409,42 +409,42 @@ mod tests {
         // Passing a "would-be-breached" stub but mode=Off must
         // not even consult the client.
         let stub = StubBreached(99);
-        let result = enforce_hibp(HibpMode::Off, Some(&stub), "anything");
+        let result = enforce_hibp(HibpMode::Off, Some(&stub), "anything").await;
         assert_eq!(result, HibpEnforcement::Allowed);
     }
 
     #[test]
     fn enforce_warn_lets_breached_through_with_count() {
         let stub = StubBreached(42);
-        let result = enforce_hibp(HibpMode::Warn, Some(&stub), "p");
+        let result = enforce_hibp(HibpMode::Warn, Some(&stub), "p").await;
         assert_eq!(result, HibpEnforcement::AllowedWithWarning { count: 42 });
     }
 
     #[test]
     fn enforce_block_refuses_breached() {
         let stub = StubBreached(42);
-        let result = enforce_hibp(HibpMode::Block, Some(&stub), "p");
+        let result = enforce_hibp(HibpMode::Block, Some(&stub), "p").await;
         assert_eq!(result, HibpEnforcement::Blocked { count: 42 });
     }
 
     #[test]
     fn enforce_warn_lets_clean_through() {
         let stub = StubClean;
-        let result = enforce_hibp(HibpMode::Warn, Some(&stub), "p");
+        let result = enforce_hibp(HibpMode::Warn, Some(&stub), "p").await;
         assert_eq!(result, HibpEnforcement::Allowed);
     }
 
     #[test]
     fn enforce_block_lets_clean_through() {
         let stub = StubClean;
-        let result = enforce_hibp(HibpMode::Block, Some(&stub), "p");
+        let result = enforce_hibp(HibpMode::Block, Some(&stub), "p").await;
         assert_eq!(result, HibpEnforcement::Allowed);
     }
 
     #[test]
     fn enforce_warn_fail_open_when_unavailable() {
         let stub = StubUnavailable;
-        let result = enforce_hibp(HibpMode::Warn, Some(&stub), "p");
+        let result = enforce_hibp(HibpMode::Warn, Some(&stub), "p").await;
         assert_eq!(result, HibpEnforcement::Allowed);
     }
 
@@ -453,14 +453,14 @@ mod tests {
         // Crucial: block mode must NOT block when the API is
         // unreachable. This is the documented fail-open policy.
         let stub = StubUnavailable;
-        let result = enforce_hibp(HibpMode::Block, Some(&stub), "p");
+        let result = enforce_hibp(HibpMode::Block, Some(&stub), "p").await;
         assert_eq!(result, HibpEnforcement::Allowed);
     }
 
     #[test]
     fn enforce_hibp_or_reject_returns_bad_request_on_block() {
         let stub = StubBreached(7);
-        let err = enforce_hibp_or_reject(HibpMode::Block, Some(&stub), "p")
+        let err = enforce_hibp_or_reject(HibpMode::Block, Some(&stub), "p").await
             .expect_err("should reject");
         match err {
             CoreError::BadRequest(_) => {}

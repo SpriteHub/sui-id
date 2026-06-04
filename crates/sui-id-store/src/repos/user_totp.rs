@@ -35,8 +35,8 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserTotpRow> {
 const SELECT: &str = "SELECT user_id, secret_enc, enabled, recovery_codes_enc, \
                       last_used_step, created_at, confirmed_at FROM user_totp";
 
-pub fn get(db: &Database, user_id: UserId) -> StoreResult<Option<UserTotpRow>> {
-    db.with_conn(|conn| {
+pub async fn get(db: &Database, user_id: UserId) -> StoreResult<Option<UserTotpRow>> {
+    db.with_conn(move |conn| {
         Ok(conn
             .query_row(
                 &format!("{SELECT} WHERE user_id = ?1"),
@@ -44,18 +44,18 @@ pub fn get(db: &Database, user_id: UserId) -> StoreResult<Option<UserTotpRow>> {
                 map,
             )
             .optional()?)
-    })
+    }).await
 }
 
 /// Insert (or replace) a TOTP enrolment for the user. Used by both the
 /// initial unconfirmed insert and by the "regenerate secret" path.
-pub fn upsert_pending(
+pub async fn upsert_pending(
     db: &Database,
     user_id: UserId,
     plaintext_secret: &[u8],
 ) -> StoreResult<()> {
     let enc = seal(db.key(), plaintext_secret, AAD)?;
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT OR REPLACE INTO user_totp \
              (user_id, secret_enc, enabled, recovery_codes_enc, last_used_step, created_at, confirmed_at) \
@@ -63,24 +63,24 @@ pub fn upsert_pending(
             params![user_id.to_string(), enc, Utc::now()],
         )?;
         Ok(())
-    })
+    }).await
 }
 
 /// Decrypt and return the raw TOTP secret. Caller must zero the buffer.
-pub fn decrypt_secret(db: &Database, row: &UserTotpRow) -> StoreResult<Vec<u8>> {
+pub async fn decrypt_secret(db: &Database, row: &UserTotpRow) -> StoreResult<Vec<u8>> {
     Ok(open(db.key(), &row.secret_enc, AAD)?)
 }
 
 /// Mark the enrolment as confirmed and store the (already-hashed) recovery
 /// codes JSON. Atomic — the user is only "MFA enabled" once both fields
 /// are written.
-pub fn confirm_with_recovery(
+pub async fn confirm_with_recovery(
     db: &Database,
     user_id: UserId,
     recovery_codes_json_plain: &[u8],
 ) -> StoreResult<()> {
     let enc = seal(db.key(), recovery_codes_json_plain, RECOVERY_AAD)?;
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE user_totp SET enabled = 1, recovery_codes_enc = ?1, confirmed_at = ?2 \
              WHERE user_id = ?3",
@@ -90,12 +90,12 @@ pub fn confirm_with_recovery(
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Decrypt the recovery codes JSON. Returns `None` when the user has
 /// never confirmed enrolment.
-pub fn decrypt_recovery_codes(db: &Database, row: &UserTotpRow) -> StoreResult<Option<Vec<u8>>> {
+pub async fn decrypt_recovery_codes(db: &Database, row: &UserTotpRow) -> StoreResult<Option<Vec<u8>>> {
     match &row.recovery_codes_enc {
         Some(blob) => Ok(Some(open(db.key(), blob, RECOVERY_AAD)?)),
         None => Ok(None),
@@ -104,13 +104,13 @@ pub fn decrypt_recovery_codes(db: &Database, row: &UserTotpRow) -> StoreResult<O
 
 /// Replace the recovery codes blob (used when the user regenerates them
 /// after MFA is already enabled).
-pub fn set_recovery_codes(
+pub async fn set_recovery_codes(
     db: &Database,
     user_id: UserId,
     recovery_codes_json_plain: &[u8],
 ) -> StoreResult<()> {
     let enc = seal(db.key(), recovery_codes_json_plain, RECOVERY_AAD)?;
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE user_totp SET recovery_codes_enc = ?1 WHERE user_id = ?2",
             params![enc, user_id.to_string()],
@@ -119,25 +119,25 @@ pub fn set_recovery_codes(
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Update the replay-defence cursor. Should be called immediately after
 /// a successful TOTP code verification.
-pub fn set_last_used_step(db: &Database, user_id: UserId, step: i64) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn set_last_used_step(db: &Database, user_id: UserId, step: i64) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         conn.execute(
             "UPDATE user_totp SET last_used_step = ?1 WHERE user_id = ?2",
             params![step, user_id.to_string()],
         )?;
         Ok(())
-    })
+    }).await
 }
 
 /// Disable TOTP for the user (delete the row entirely). Used by the
 /// admin "disable MFA" action and by the user's own profile page.
-pub fn delete(db: &Database, user_id: UserId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn delete(db: &Database, user_id: UserId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "DELETE FROM user_totp WHERE user_id = ?1",
             [user_id.to_string()],
@@ -146,7 +146,7 @@ pub fn delete(db: &Database, user_id: UserId) -> StoreResult<()> {
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Re-seal both `secret_enc` and `recovery_codes_enc` columns

@@ -43,7 +43,7 @@ pub async fn basic_get(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let cfg = app.config.as_ref();
-    let server_settings = sui_id_store::repos::server_settings::get(&app.db)
+    let server_settings = sui_id_store::repos::server_settings::get(&app.db).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     let token = csrf::ensure_token(&jar);
     let data = sui_id_web::SettingsBasicData {
@@ -87,7 +87,7 @@ pub async fn basic_lang_post(
         )));
     }
     let now = app.clock.now();
-    sui_id_store::repos::server_settings::update_default_lang(&app.db, &form.default_lang, now)
+    sui_id_store::repos::server_settings::update_default_lang(&app.db, &form.default_lang, now).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     Ok(axum::response::Redirect::to("/admin/settings/basic").into_response())
 }
@@ -101,7 +101,7 @@ pub async fn security_get(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let cfg = app.config.as_ref();
-    let server_settings = sui_id_store::repos::server_settings::get(&app.db)
+    let server_settings = sui_id_store::repos::server_settings::get(&app.db).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     let token = csrf::ensure_token(&jar);
     let data = sui_id_web::SettingsSecurityData {
@@ -147,7 +147,7 @@ pub async fn idle_timeout_post(
         )));
     }
     let now = app.clock.now();
-    sui_id_store::repos::server_settings::update_idle_session_timeout(&app.db, form.secs, now)
+    sui_id_store::repos::server_settings::update_idle_session_timeout(&app.db, form.secs, now).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     Ok(axum::response::Redirect::to("/admin/settings/security").into_response())
 }
@@ -177,7 +177,7 @@ pub async fn max_sessions_post(
         )));
     }
     let now = app.clock.now();
-    sui_id_store::repos::server_settings::update_max_concurrent_sessions(&app.db, form.cap, now)
+    sui_id_store::repos::server_settings::update_max_concurrent_sessions(&app.db, form.cap, now).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     Ok(axum::response::Redirect::to("/admin/settings/security").into_response())
 }
@@ -226,30 +226,26 @@ pub async fn logs_get(
     // interesting actions. We do four queries rather than one
     // because count_by_action_in_window groups per bucket; for the
     // logs tab we just want totals.
-    let count_in = |action: &'static str| -> Result<i64, HttpError> {
-        let buckets = audit::count_by_action_in_window(
-            &app.db,
-            &[action],
-            since_24h,
-            now,
-            // Single 24-hour bucket — the function works either
-            // way, but a wide bucket means at most one row.
-            60 * 24,
-        )
-        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    async fn count_action(db: &sui_id_store::Database, action: &str, since: chrono::DateTime<chrono::Utc>, until: chrono::DateTime<chrono::Utc>) -> Result<i64, HttpError> {
+        let buckets = audit::count_by_action_in_window(db, &[action], since, until, 60 * 24)
+            .await
+            .map_err(|e| HttpError::html(CoreError::from(e)))?;
         Ok(buckets.iter().map(|b| b.count).sum())
-    };
-
+    }
+    let login_success = count_action(&app.db, "auth.login.success", since_24h, now).await?;
+    let login_failure = count_action(&app.db, "auth.login.failure", since_24h, now).await?;
+    let login_locked = count_action(&app.db, "auth.login.locked", since_24h, now).await?;
+    let password_changed = count_action(&app.db, "auth.password.changed_self", since_24h, now).await?;
     let data = sui_id_web::SettingsLogsData {
         log_format: app.config.log.format.clone(),
         log_filter: app.config.log.filter.clone(),
-        login_success_24h: count_in("auth.login.success")?,
-        login_failure_24h: count_in("auth.login.failure")?,
-        login_locked_24h: count_in("auth.login.locked")?,
-        password_changed_self_24h: count_in("auth.password.changed_self")?,
+        login_success_24h: login_success,
+        login_failure_24h: login_failure,
+        login_locked_24h: login_locked,
+        password_changed_self_24h: password_changed,
         // Audit chain status — small tail check, same shape the
         // boot-time verifier uses.
-        chain_report: audit::verify_chain_tail(&app.db, 100)
+        chain_report: audit::verify_chain_tail(&app.db, 100).await
             .map(|r| sui_id_web::SettingsChainStatus {
                 checked: r.checked,
                 broken_at_seq: r.broken_at_seq,
@@ -272,10 +268,10 @@ pub async fn other_get(
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let cfg = app.config.as_ref();
-    let user_count = users::list(&app.db)
+    let user_count = users::list(&app.db).await
         .map(|v| v.len())
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
-    let client_count = clients::list(&app.db)
+    let client_count = clients::list(&app.db).await
         .map(|v| v.len())
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     let data = sui_id_web::SettingsOtherData {
@@ -323,7 +319,7 @@ pub async fn email_get(
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let cfg_row = sui_id_store::repos::smtp_config::get(&app.db)
+    let cfg_row = sui_id_store::repos::smtp_config::get(&app.db).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     let data = build_email_data(cfg_row.as_ref());
     let token = csrf::ensure_token(&jar);
@@ -371,13 +367,13 @@ pub async fn email_post(
         .unwrap_or(false);
 
     // Password handling: empty string means "keep existing".
-    let existing = sui_id_store::repos::smtp_config::get(&app.db)
+    let existing = sui_id_store::repos::smtp_config::get(&app.db).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     let password_enc = if form.password.is_empty() {
         existing.as_ref().and_then(|r| r.password_enc.clone())
     } else {
         Some(
-            sui_id_store::repos::smtp_config::seal_password(&form.password, app.db.key())
+            sui_id_store::repos::smtp_config::seal_password(&form.password, app.db.key()).await
                 .map_err(|e| HttpError::html(CoreError::from(e)))?,
         )
     };
@@ -396,7 +392,7 @@ pub async fn email_post(
         created_at,
         updated_at: now,
     };
-    sui_id_store::repos::smtp_config::upsert(&app.db, &row)
+    sui_id_store::repos::smtp_config::upsert(&app.db, &row).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
 
     let _ = sui_id_store::repos::audit::append(
@@ -414,7 +410,7 @@ pub async fn email_post(
                 row.tls_mode.as_str()
             )),
         },
-    );
+    ).await;
 
     Ok(Redirect::to("/admin/settings/email").into_response())
 }
@@ -444,7 +440,7 @@ pub async fn email_test(
     );
     let result = probe.test_connection().await;
 
-    let cfg_row = sui_id_store::repos::smtp_config::get(&app.db)
+    let cfg_row = sui_id_store::repos::smtp_config::get(&app.db).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     let data = build_email_data(cfg_row.as_ref());
     let token = csrf::ensure_token(&jar);

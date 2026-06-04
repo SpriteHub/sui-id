@@ -143,14 +143,14 @@ where
         let raw = jar.get(SESSION_COOKIE).ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
         let id = SessionId::from_str(raw.value())
             .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
-        let user_id = session::resolve(&app.db, &app.clock, id).map_err(HttpError::html)?;
+        let user_id = session::resolve(&app.db, &app.clock, id).await.map_err(HttpError::html)?;
         // Refresh the session's `last_used_at` so the v0.25.0
         // idle-timeout check has an accurate reference. Throttled
         // by the core layer (~one DB write per minute per
         // session); failures here do not affect auth — at worst
         // the row stays at its previous value and the next
         // request retries.
-        let _ = session::touch_last_used(&app.db, &app.clock, id);
+        let _ = session::touch_last_used(&app.db, &app.clock, id).await;
         Ok(CurrentUser(user_id))
     }
 }
@@ -181,8 +181,8 @@ where
             .ok_or_else(|| HttpError::html(CoreError::Unauthenticated))?;
         let id = SessionId::from_str(raw.value())
             .map_err(|_| HttpError::html(CoreError::Unauthenticated))?;
-        let user_id = session::resolve(&app.db, &app.clock, id).map_err(HttpError::html)?;
-        let _ = session::touch_last_used(&app.db, &app.clock, id);
+        let user_id = session::resolve(&app.db, &app.clock, id).await.map_err(HttpError::html)?;
+        let _ = session::touch_last_used(&app.db, &app.clock, id).await;
         Ok(SessionContext {
             user_id,
             session_id: id,
@@ -203,7 +203,7 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let CurrentUser(uid) = CurrentUser::from_request_parts(parts, state).await?;
         let app: AppState = AppState::from_ref(state);
-        let user = users::get(&app.db, uid).map_err(|_| HttpError::html(CoreError::Forbidden))?;
+        let user = users::get(&app.db, uid).await.map_err(|_| HttpError::html(CoreError::Forbidden))?;
         if !user.is_admin || user.is_disabled || user.is_deleted {
             return Err(HttpError::html(CoreError::Forbidden));
         }
@@ -230,9 +230,9 @@ where
         let raw = jar.get(SESSION_COOKIE).ok_or_else(|| HttpError::api(CoreError::Unauthenticated))?;
         let id = SessionId::from_str(raw.value())
             .map_err(|_| HttpError::api(CoreError::Unauthenticated))?;
-        let uid = session::resolve(&app.db, &app.clock, id).map_err(HttpError::api)?;
-        let _ = session::touch_last_used(&app.db, &app.clock, id);
-        let user = users::get(&app.db, uid).map_err(|_| HttpError::api(CoreError::Forbidden))?;
+        let uid = session::resolve(&app.db, &app.clock, id).await.map_err(HttpError::api)?;
+        let _ = session::touch_last_used(&app.db, &app.clock, id).await;
+        let user = users::get(&app.db, uid).await.map_err(|_| HttpError::api(CoreError::Forbidden))?;
         if !user.is_admin || user.is_disabled || user.is_deleted {
             return Err(HttpError::api(CoreError::Forbidden));
         }
@@ -350,14 +350,18 @@ where
         // is read-only and a stale session-id pointing at a real
         // user is fine). Auth gating happens in dedicated
         // extractors elsewhere.
-        let user_id = jar
-            .get(crate::handlers::SESSION_COOKIE)
-            .and_then(|c| c.value().parse().ok())
-            .and_then(|sid| {
+        let user_id = {
+            let sid_opt = jar
+                .get(crate::handlers::SESSION_COOKIE)
+                .and_then(|c| c.value().parse().ok());
+            if let Some(sid) = sid_opt {
                 sui_id_store::repos::sessions::get(&app.db, sid)
-                    .ok()
+                    .await.ok()
                     .map(|row| row.user_id)
-            });
+            } else {
+                None
+            }
+        };
 
         // Tier 2: cookie.
         let cookie_lang = jar.get(LANG_COOKIE).map(|c| c.value().to_owned());
@@ -374,7 +378,7 @@ where
             cookie: cookie_lang.as_deref(),
             accept_language: accept_language.as_deref(),
         };
-        let locale = sui_id_core::i18n::resolve(&app.db, &inputs)
+        let locale = sui_id_core::i18n::resolve(&app.db, &inputs).await
             .unwrap_or_default();
         Ok(RequestLocale(locale))
     }
@@ -530,12 +534,12 @@ use cookie::time as cookie_time;
 /// We don't try to use `?` for this because the redirect isn't an
 /// error in the application sense (the handler is doing exactly
 /// what it should); it's just an alternative response.
-pub fn require_fresh_step_up(
+pub async fn require_fresh_step_up(
     app: &AppState,
     ctx: &SessionContext,
     return_to: &str,
 ) -> Result<(), axum::response::Response> {
-    let session_row = match sui_id_store::repos::sessions::get(&app.db, ctx.session_id) {
+    let session_row = match sui_id_store::repos::sessions::get(&app.db, ctx.session_id).await {
         Ok(r) => r,
         Err(e) => {
             // Genuine DB error or the session vanished. Punt to
@@ -551,7 +555,7 @@ pub fn require_fresh_step_up(
         ctx.user_id,
         session_row.last_step_up_at,
         sui_id_core::step_up::STEP_UP_FRESHNESS_SECS,
-    ) {
+    ).await {
         Ok(d) => d,
         Err(e) => return Err(HttpError::html(e).into_response()),
     };

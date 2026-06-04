@@ -418,7 +418,7 @@ pub struct SeededClient {
 
 /// Run the full dev-mode seed against `db`, using `setup_token`
 /// for the initial-admin creation step.
-pub fn apply_seed(
+pub async fn apply_seed(
     db: &Database,
     clock: &SharedClock,
     setup_token: &str,
@@ -433,7 +433,7 @@ pub fn apply_seed(
         &seed.admin.password,
         seed.admin.display_name.as_deref(),
         seed.admin.email.as_deref(),
-    )
+    ).await
     .context("creating dev-mode admin")?;
     let admin_id = created.user_id;
 
@@ -449,7 +449,7 @@ pub fn apply_seed(
                 email: u.email.as_deref(),
                 is_admin: false,
             },
-        )
+        ).await
         .with_context(|| format!("creating dev-mode user {:?}", u.username))?;
     }
 
@@ -471,7 +471,7 @@ pub fn apply_seed(
                 allowed_scopes: &c.allowed_scopes,
                 post_logout_redirect_uris: &c.post_logout_redirect_uris,
             },
-        )
+        ).await
         .with_context(|| format!("creating dev-mode client {:?}", c.name))?;
 
         // The runtime API auto-generates a secret for confidential
@@ -482,13 +482,13 @@ pub fn apply_seed(
         let effective_secret = if confidential {
             match c.client_secret.as_deref() {
                 Some(custom) if !custom.is_empty() => {
-                    let hash = sui_id_core::password::hash_password(custom)
+                    let hash = sui_id_core::password::hash_password(custom).await
                         .context("hashing dev-mode client_secret")?;
                     sui_id_store::repos::clients::set_dev_secret_hash(
                         db,
                         created_client.row.id,
                         Some(&hash),
-                    )
+                    ).await
                     .context("patching dev-mode client_secret_hash")?;
                     Some(custom.to_owned())
                 }

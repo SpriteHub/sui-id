@@ -27,7 +27,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<SigningKeyRow> {
 
 /// Insert a new signing key. Pass the *plaintext* private key bytes in
 /// `private_key_plain`; this function seals them before INSERT.
-pub fn insert_with_plaintext(
+pub async fn insert_with_plaintext(
     db: &Database,
     id: SigningKeyId,
     algorithm: &str,
@@ -37,7 +37,11 @@ pub fn insert_with_plaintext(
 ) -> StoreResult<SigningKeyRow> {
     let sealed = seal(db.key(), private_key_plain, AAD)?;
     let now = Utc::now();
-    db.with_conn(|conn| {
+    let algorithm = algorithm.to_owned();
+    let public_key = public_key.to_vec();
+    let algorithm_copy = algorithm.clone();
+    let public_key_copy = public_key.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO signing_keys(id, algorithm, private_key_enc, public_key, is_active, created_at, rotated_at) \
              VALUES(?1, ?2, ?3, ?4, ?5, ?6, NULL)",
@@ -51,12 +55,12 @@ pub fn insert_with_plaintext(
             ],
         )?;
         Ok(())
-    })?;
+    }).await?;
     Ok(SigningKeyRow {
         id,
-        algorithm: algorithm.to_owned(),
+        algorithm: algorithm_copy,
         private_key_enc: vec![],
-        public_key: public_key.to_vec(),
+        public_key: public_key_copy,
         is_active,
         created_at: now,
         rotated_at: None,
@@ -97,8 +101,8 @@ pub fn insert_sealed_on_conn(
 /// When more than one row has `is_active = 1` (which can briefly happen
 /// during a rotation transaction), the **most recently created** one wins.
 /// This is the key newly issued tokens should be signed with.
-pub fn active(db: &Database) -> StoreResult<SigningKeyRow> {
-    db.with_conn(|conn| {
+pub async fn active(db: &Database) -> StoreResult<SigningKeyRow> {
+    db.with_conn(move |conn| {
         conn.query_row(
             "SELECT id, algorithm, private_key_enc, public_key, is_active, created_at, rotated_at FROM signing_keys \
              WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1",
@@ -109,15 +113,15 @@ pub fn active(db: &Database) -> StoreResult<SigningKeyRow> {
             rusqlite::Error::QueryReturnedNoRows => StoreError::NotFound,
             other => StoreError::from(other),
         })
-    })
+    }).await
 }
 
 /// Mark a key as retired: set `is_active = 0` and stamp `rotated_at`.
 /// The row is **not** deleted — its public half stays in JWKS so that
 /// already-issued tokens can still be verified during the grace window.
 /// Returns `NotFound` if no key has the given id.
-pub fn retire(db: &Database, id: SigningKeyId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn retire(db: &Database, id: SigningKeyId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE signing_keys SET is_active = 0, rotated_at = ?1 \
              WHERE id = ?2 AND is_active = 1",
@@ -139,14 +143,14 @@ pub fn retire(db: &Database, id: SigningKeyId) -> StoreResult<()> {
             }
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Hard-delete a signing key row. Only permitted for already-retired keys
 /// — deleting an active key would break newly-minted token verification.
 /// Returns `Conflict` for an active row, `NotFound` for a missing one.
-pub fn delete(db: &Database, id: SigningKeyId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn delete(db: &Database, id: SigningKeyId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let row: Option<i64> = conn
             .query_row(
                 "SELECT is_active FROM signing_keys WHERE id = ?1",
@@ -165,17 +169,17 @@ pub fn delete(db: &Database, id: SigningKeyId) -> StoreResult<()> {
                 Ok(())
             }
         }
-    })
+    }).await
 }
 
 /// Decrypt the private key bytes for a row.
-pub fn unseal_private(db: &Database, row: &SigningKeyRow) -> StoreResult<Vec<u8>> {
+pub async fn unseal_private(db: &Database, row: &SigningKeyRow) -> StoreResult<Vec<u8>> {
     open(db.key(), &row.private_key_enc, AAD)
 }
 
 /// All currently active and recently retired keys, useful for JWKS.
-pub fn list_published(db: &Database) -> StoreResult<Vec<SigningKeyRow>> {
-    db.with_conn(|conn| {
+pub async fn list_published(db: &Database) -> StoreResult<Vec<SigningKeyRow>> {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, algorithm, private_key_enc, public_key, is_active, created_at, rotated_at FROM signing_keys \
              ORDER BY created_at DESC",
@@ -184,7 +188,7 @@ pub fn list_published(db: &Database) -> StoreResult<Vec<SigningKeyRow>> {
             .query_map([], map)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
-    })
+    }).await
 }
 
 /// Re-seal every `private_key_enc` row under `new_key`. Used by
@@ -228,7 +232,7 @@ pub fn reseal_all(
 /// observe the zero-active-keys gap between them.
 ///
 /// `private_key_plain` is sealed with the master key before the INSERT.
-pub fn rotate_atomic(
+pub async fn rotate_atomic(
     db: &Database,
     new_id: SigningKeyId,
     algorithm: &str,
@@ -238,22 +242,25 @@ pub fn rotate_atomic(
     // Seal outside the transaction so crypto work is not inside the mutex.
     let sealed = seal(db.key(), private_key_plain, AAD)?;
     let pk_vec = public_key.to_vec();
+    let pk_vec_ret = pk_vec.clone();
+    let algorithm_owned = algorithm.to_owned();
+    let algorithm_ret = algorithm_owned.clone();
     let now = Utc::now();
-    db.with_tx(|tx| {
+    db.with_tx(move |tx| {
         // Step 1: retire any currently active key.
         tx.execute(
             "UPDATE signing_keys SET is_active = 0, rotated_at = ?1 WHERE is_active = 1",
             params![now],
         )?;
         // Step 2: insert the new active key.
-        insert_sealed_on_conn(tx, new_id, algorithm, &sealed, &pk_vec, true)?;
+        insert_sealed_on_conn(tx, new_id, algorithm_owned.as_str(), &sealed, &pk_vec, true)?;
         Ok(())
-    })?;
+    }).await?;
     Ok(SigningKeyRow {
         id: new_id,
-        algorithm: algorithm.to_owned(),
+        algorithm: algorithm_ret,
         private_key_enc: vec![],
-        public_key: pk_vec,
+        public_key: pk_vec_ret,
         is_active: true,
         created_at: now,
         rotated_at: None,

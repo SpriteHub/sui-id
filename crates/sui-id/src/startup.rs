@@ -101,7 +101,7 @@ pub fn init_tracing(cfg: &crate::config::LogConfig) -> Option<tracing_appender::
     guard
 }
 
-pub fn prepare(cfg: Config) -> Result<Startup> {
+pub async fn prepare(cfg: Config) -> Result<Startup> {
     let log_guard = init_tracing(&cfg.log);
 
     // 1. Resolve master key.
@@ -139,7 +139,7 @@ pub fn prepare(cfg: Config) -> Result<Startup> {
     // We don't refuse to start on detection — that would let an
     // attacker DoS the IdP by corrupting one row — but we surface
     // the finding loudly so an operator's monitoring catches it.
-    match sui_id_store::repos::audit::verify_chain_tail(&db, AUDIT_VERIFY_TAIL) {
+    match sui_id_store::repos::audit::verify_chain_tail(&db, AUDIT_VERIFY_TAIL).await {
         Ok(report) => {
             if let Some(seq) = report.broken_at_seq {
                 tracing::error!(

@@ -29,8 +29,9 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PasswordResetTokenRow> {
 const SELECT_COLUMNS: &str =
     "id, user_id, token_hash, issued_at, expires_at, consumed_at, requester_ip";
 
-pub fn insert(db: &Database, row: &PasswordResetTokenRow) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn insert(db: &Database, row: &PasswordResetTokenRow) -> StoreResult<()> {
+    let row = row.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO password_reset_tokens(id, user_id, token_hash, issued_at, \
                                                  expires_at, consumed_at, requester_ip) \
@@ -54,14 +55,15 @@ pub fn insert(db: &Database, row: &PasswordResetTokenRow) -> StoreResult<()> {
             other => StoreError::from(other),
         })?;
         Ok(())
-    })
+    }).await
 }
 
 /// Look up a token row by its hashed value. Returns `None` if no
 /// row matches. The caller is responsible for checking that the row
 /// is unconsumed and not expired before honouring it.
-pub fn find_by_hash(db: &Database, token_hash: &[u8]) -> StoreResult<Option<PasswordResetTokenRow>> {
-    db.with_conn(|conn| {
+pub async fn find_by_hash(db: &Database, token_hash: &[u8]) -> StoreResult<Option<PasswordResetTokenRow>> {
+    let token_hash = token_hash.to_vec();
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {SELECT_COLUMNS} FROM password_reset_tokens WHERE token_hash = ?1"
         ))?;
@@ -71,19 +73,19 @@ pub fn find_by_hash(db: &Database, token_hash: &[u8]) -> StoreResult<Option<Pass
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
-    })
+    }).await
 }
 
 /// Mark a token row as consumed. Idempotent in practice: the
 /// caller checks `consumed_at IS NULL` before calling, and the
 /// row continues to exist post-consume so a replay attempt sees
 /// "consumed" rather than "missing".
-pub fn mark_consumed(
+pub async fn mark_consumed(
     db: &Database,
     id: PasswordResetTokenId,
     consumed_at: DateTime<Utc>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE password_reset_tokens SET consumed_at = ?1 WHERE id = ?2",
             params![consumed_at, id.to_string()],
@@ -93,7 +95,7 @@ pub fn mark_consumed(
         } else {
             Ok(())
         }
-    })
+    }).await
 }
 
 /// Same as [`mark_consumed`] but runs inside a caller-owned transaction.
@@ -117,25 +119,25 @@ pub fn mark_consumed_within_tx(
 /// the past *and* are unconsumed (or consumed long enough ago that
 /// keeping them adds no value). The cutoff comes from the caller so
 /// the test suite can drive deterministic clocks.
-pub fn delete_expired(db: &Database, before: DateTime<Utc>) -> StoreResult<usize> {
-    db.with_conn(|conn| {
+pub async fn delete_expired(db: &Database, before: DateTime<Utc>) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "DELETE FROM password_reset_tokens WHERE expires_at < ?1",
             params![before],
         )?;
         Ok(n)
-    })
+    }).await
 }
 
 /// Count outstanding (unconsumed, unexpired) reset tokens for a
 /// user. The forgot-password rate limit can use this to refuse
 /// "issue another token" beyond a small ceiling, regardless of IP.
-pub fn count_active_for_user(
+pub async fn count_active_for_user(
     db: &Database,
     user_id: UserId,
     now: DateTime<Utc>,
 ) -> StoreResult<i64> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n: i64 = conn.query_row(
             "SELECT COUNT(*) FROM password_reset_tokens \
              WHERE user_id = ?1 AND consumed_at IS NULL AND expires_at > ?2",
@@ -143,5 +145,5 @@ pub fn count_active_for_user(
             |row| row.get(0),
         )?;
         Ok(n)
-    })
+    }).await
 }

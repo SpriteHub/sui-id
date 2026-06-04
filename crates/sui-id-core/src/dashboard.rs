@@ -127,7 +127,7 @@ pub struct LoginActivity {
 /// is the behaviour any reasonable dashboard wants: the user sees
 /// "the last 7 buckets I've experienced", not "the period from
 /// exactly 168 hours ago".
-pub fn login_activity(
+pub async fn login_activity(
     db: &Database,
     clock: &SharedClock,
     range: SparklineRange,
@@ -145,7 +145,7 @@ pub fn login_activity(
         since,
         until,
         bucket_minutes,
-    )?;
+    ).await?;
 
     // Build the dense bucket array. Align the very first bucket
     // start to the Unix-epoch grid, the same alignment SQL used.
@@ -213,7 +213,7 @@ mod tests {
         Database::open_in_memory(MasterKey::generate()).expect("db")
     }
 
-    fn append(db: &Database, action: &str, at: DateTime<Utc>) {
+    async fn append(db: &Database, action: &str, at: DateTime<Utc>) {
         sui_id_store::repos::audit::append(
             db,
             &AuditLogRow {
@@ -224,16 +224,16 @@ mod tests {
                 result: "ok".into(),
                 note: None,
             },
-        )
+        ).await
         .expect("append");
     }
 
     #[test]
     fn empty_db_returns_zero_filled_dense_array_for_each_range() {
         let db = fresh_db();
-        let clock = system_clock();
+        let clock = system_clock().await;
         for &r in SparklineRange::all() {
-            let a = login_activity(&db, &clock, r).expect("activity");
+            let a = login_activity(&db, &clock, r).await.expect("activity");
             assert_eq!(a.buckets.len(), r.bucket_count(), "range {:?}", r);
             assert_eq!(a.total_success, 0);
             assert_eq!(a.total_failure, 0);
@@ -244,8 +244,8 @@ mod tests {
     #[test]
     fn bucket_starts_are_strictly_increasing_and_aligned() {
         let db = fresh_db();
-        let clock = system_clock();
-        let a = login_activity(&db, &clock, SparklineRange::Last7Days)
+        let clock = system_clock().await;
+        let a = login_activity(&db, &clock, SparklineRange::Last7Days).await
             .expect("activity");
         let secs = a.range.bucket_minutes() * 60;
         for w in a.buckets.windows(2) {
@@ -262,21 +262,21 @@ mod tests {
     #[test]
     fn rows_in_window_are_counted_into_the_right_bucket() {
         let db = fresh_db();
-        let clock = system_clock();
+        let clock = system_clock().await;
         let now = clock.now();
         // Insert events distributed across the last 24 hours.
         for h in 0..24 {
             let at = now - Duration::hours(h);
             for _ in 0..(h % 5) {
-                append(&db, "auth.login.success", at);
+                append(&db, "auth.login.success", at).await;
             }
             if h % 7 == 0 {
-                append(&db, "auth.login.failure", at);
+                append(&db, "auth.login.failure", at).await;
             }
             // An unrelated action — must NOT show up in totals.
-            append(&db, "auth.password.changed_self", at);
+            append(&db, "auth.password.changed_self", at).await;
         }
-        let a = login_activity(&db, &clock, SparklineRange::Last24Hours)
+        let a = login_activity(&db, &clock, SparklineRange::Last24Hours).await
             .expect("activity");
         // Total successes: sum_{h=0..24} (h % 5) = 4+5*(0+1+2+3+4) = 0+1+2+3+4 + 0+1+2+3+4 + ... 5 cycles
         // Easier: just compare against a hand recount.
@@ -295,13 +295,13 @@ mod tests {
     #[test]
     fn rows_outside_window_are_ignored() {
         let db = fresh_db();
-        let clock = system_clock();
+        let clock = system_clock().await;
         let now = clock.now();
         // 8 days ago for Last7Days view -> outside window.
-        append(&db, "auth.login.success", now - Duration::days(8));
+        append(&db, "auth.login.success", now - Duration::days(8)).await;
         // 5 days ago -> inside.
-        append(&db, "auth.login.success", now - Duration::days(5));
-        let a = login_activity(&db, &clock, SparklineRange::Last7Days)
+        append(&db, "auth.login.success", now - Duration::days(5)).await;
+        let a = login_activity(&db, &clock, SparklineRange::Last7Days).await
             .expect("activity");
         assert_eq!(a.total_success, 1, "only the in-window row should count");
     }
@@ -309,14 +309,14 @@ mod tests {
     #[test]
     fn unrelated_actions_are_never_counted() {
         let db = fresh_db();
-        let clock = system_clock();
+        let clock = system_clock().await;
         let now = clock.now();
         for _ in 0..100 {
-            append(&db, "auth.password.changed_self", now);
-            append(&db, "mfa.admin_reset", now);
-            append(&db, "auth.refresh.theft_detected", now);
+            append(&db, "auth.password.changed_self", now).await;
+            append(&db, "mfa.admin_reset", now).await;
+            append(&db, "auth.refresh.theft_detected", now).await;
         }
-        let a = login_activity(&db, &clock, SparklineRange::Last7Days)
+        let a = login_activity(&db, &clock, SparklineRange::Last7Days).await
             .expect("activity");
         assert_eq!(a.total_success, 0);
         assert_eq!(a.total_failure, 0);

@@ -79,14 +79,14 @@ pub enum StepUpDecision {
 /// - Otherwise, require `last_step_up_at >= now - freshness_secs`.
 ///   Sessions with `last_step_up_at = None` (password-only
 ///   established, or pre-migration row) always need to challenge.
-pub fn policy_for_session(
+pub async fn policy_for_session(
     db: &Database,
     clock: &SharedClock,
     user_id: UserId,
     last_step_up_at: Option<DateTime<chrono::Utc>>,
     freshness_secs: i64,
 ) -> CoreResult<StepUpDecision> {
-    if !user_has_mfa(db, user_id)? {
+    if !user_has_mfa(db, user_id).await? {
         return Ok(StepUpDecision::Allow);
     }
     let last = match last_step_up_at {
@@ -103,14 +103,14 @@ pub fn policy_for_session(
 
 /// Whether the user has any MFA factor enrolled (TOTP enabled
 /// *or* at least one WebAuthn credential).
-pub fn user_has_mfa(db: &Database, user_id: UserId) -> CoreResult<bool> {
-    let totp = user_totp::get(db, user_id)?
+pub async fn user_has_mfa(db: &Database, user_id: UserId) -> CoreResult<bool> {
+    let totp = user_totp::get(db, user_id).await?
         .map(|r| r.enabled)
         .unwrap_or(false);
     if totp {
         return Ok(true);
     }
-    let has_passkey = webauthn::has_credentials(db, user_id)?;
+    let has_passkey = webauthn::has_credentials(db, user_id).await?;
     Ok(has_passkey)
 }
 
@@ -118,12 +118,12 @@ pub fn user_has_mfa(db: &Database, user_id: UserId) -> CoreResult<bool> {
 /// challenge. The caller has *already* verified the second factor
 /// (TOTP code or WebAuthn assertion). This function only updates
 /// the session row's `last_step_up_at`.
-pub fn touch_step_up(
+pub async fn touch_step_up(
     db: &Database,
     clock: &SharedClock,
     session_id: SessionId,
 ) -> CoreResult<()> {
-    sessions::touch_step_up(db, session_id, clock.now())?;
+    sessions::touch_step_up(db, session_id, clock.now()).await?;
     Ok(())
 }
 
@@ -142,7 +142,7 @@ pub fn touch_step_up(
 /// accepted on the login MFA challenge: a user who has lost their
 /// authenticator app needs *some* path to perform a destructive
 /// action. The code is consumed (single-use) on a hit.
-pub fn verify_totp_code(
+pub async fn verify_totp_code(
     db: &Database,
     clock: &SharedClock,
     user_id: UserId,
@@ -153,7 +153,7 @@ pub fn verify_totp_code(
     use crate::totp;
     use zeroize::Zeroize;
 
-    let totp_row = user_totp::get(db, user_id)?
+    let totp_row = user_totp::get(db, user_id).await?
         .ok_or(CoreError::InvalidCredentials)?;
     if !totp_row.enabled {
         return Err(CoreError::InvalidCredentials);
@@ -161,27 +161,27 @@ pub fn verify_totp_code(
 
     let trimmed = code_input.trim();
     let accepted = if let Ok(digits) = trimmed.parse::<u32>() {
-        let mut secret = user_totp::decrypt_secret(db, &totp_row)?;
+        let mut secret = user_totp::decrypt_secret(db, &totp_row).await?;
         let now = clock.now().timestamp();
-        let result = totp::verify(&secret, now, digits, totp_row.last_used_step);
+        let result = totp::verify(&secret, now, digits, totp_row.last_used_step).await;
         secret.zeroize();
         match result {
             Some(step) => {
-                user_totp::set_last_used_step(db, user_id, step)?;
+                user_totp::set_last_used_step(db, user_id, step).await?;
                 true
             }
             None => false,
         }
     } else {
         // Recovery code path — same shape as in `mfa::verify_pending`.
-        mfa::consume_recovery_code(db, user_id, &totp_row, trimmed)?
+        mfa::consume_recovery_code(db, user_id, &totp_row, trimmed).await?
     };
 
     if !accepted {
         return Err(CoreError::InvalidCredentials);
     }
 
-    touch_step_up(db, clock, session_id)?;
+    touch_step_up(db, clock, session_id).await?;
     Ok(())
 }
 
@@ -201,13 +201,13 @@ pub fn verify_totp_code(
 // The handler-side flow is:
 //
 //   1. POST /me/security/step-up/webauthn/start
-//      → step_up::start_webauthn(...) → returns (challenge_json, pending_id)
+//      → step_up::start_webauthn(...).await → returns (challenge_json, pending_id)
 //      → handler streams challenge_json to JS, sets pending_id in
 //        a short-lived cookie
 //   2. JS calls navigator.credentials.get(...) and POSTs the
 //      assertion back to
 //      POST /me/security/step-up/webauthn/finish
-//      → step_up::finish_webauthn(...) → on success, last_step_up_at
+//      → step_up::finish_webauthn(...).await → on success, last_step_up_at
 //        is set
 //      → handler clears the pending_id cookie and 303s back to
 //        return_to
@@ -228,7 +228,7 @@ pub struct WebauthnStepUpStart {
 /// `kind = StepUp`. The user must already have at least one
 /// passkey enrolled; an empty credential list returns
 /// `BadRequest` with the same message the login flow uses.
-pub fn start_webauthn(
+pub async fn start_webauthn(
     db: &Database,
     clock: &SharedClock,
     issuer_url: &str,
@@ -241,14 +241,14 @@ pub fn start_webauthn(
     // Reuse the existing start function — it does the heavy
     // lifting (collect passkeys, build the challenge). Then we
     // peel its pending row out and re-tag it with our kind.
-    let started = webauthn::start_authentication(db, clock, issuer_url, user_id)?;
+    let started = webauthn::start_authentication(db, clock, issuer_url, user_id).await?;
     // start_authentication wrote a `kind = Authenticate` row.
     // Read it, replace it with a `kind = StepUp` row at the same
     // id, so the finish path can demand the right kind. This is
     // a tiny re-write, but the alternative — duplicating
     // start_authentication's body — would mean two places to keep
     // in sync if webauthn-rs ever changes shape.
-    let row = webauthn_pending::get(db, started.pending_id)?
+    let row = webauthn_pending::get(db, started.pending_id).await?
         .ok_or(CoreError::Internal)?;
     let stepped = WebauthnPendingRow {
         id: row.id,
@@ -258,8 +258,8 @@ pub fn start_webauthn(
         expires_at: row.expires_at,
         created_at: row.created_at,
     };
-    webauthn_pending::delete(db, row.id)?;
-    webauthn_pending::insert(db, &stepped)?;
+    webauthn_pending::delete(db, row.id).await?;
+    webauthn_pending::insert(db, &stepped).await?;
 
     Ok(WebauthnStepUpStart {
         challenge_json: started.challenge_json,
@@ -277,7 +277,7 @@ pub fn start_webauthn(
 /// Failures collapse to `InvalidCredentials` for the same
 /// information-hiding reason the TOTP path does — a step-up form
 /// must look the same to a typo as to an attacker probing.
-pub fn finish_webauthn(
+pub async fn finish_webauthn(
     db: &Database,
     clock: &SharedClock,
     issuer_url: &str,
@@ -296,7 +296,7 @@ pub fn finish_webauthn(
     // login-MFA flow that owns the row should still be able to
     // complete). The invariant we want: a step-up finish on a
     // login-MFA pending row is a no-op for the row.
-    let pending = webauthn_pending::get(db, pending_id)?
+    let pending = webauthn_pending::get(db, pending_id).await?
         .ok_or(CoreError::InvalidCredentials)?;
     if pending.kind != WebauthnPendingKind::StepUp {
         return Err(CoreError::InvalidCredentials);
@@ -332,8 +332,8 @@ pub fn finish_webauthn(
             expires_at: pending.expires_at,
             created_at: pending.created_at,
         };
-        webauthn_pending::delete(db, pending.id)?;
-        webauthn_pending::insert(db, &switched)?;
+        webauthn_pending::delete(db, pending.id).await?;
+        webauthn_pending::insert(db, &switched).await?;
     }
 
     match webauthn::finish_authentication(
@@ -343,9 +343,9 @@ pub fn finish_webauthn(
         pending_id,
         user_id,
         &credential,
-    ) {
+    ).await {
         Ok(()) => {
-            touch_step_up(db, clock, session_id)?;
+            touch_step_up(db, clock, session_id).await?;
             Ok(())
         }
         Err(_) => Err(CoreError::InvalidCredentials),
@@ -366,7 +366,7 @@ mod tests {
         Database::open_in_memory(MasterKey::generate()).expect("db")
     }
 
-    fn create_user(db: &Database) -> UserId {
+    async fn create_user(db: &Database) -> UserId {
         let id = UserId::new();
         let now = Utc::now();
         users::create(
@@ -388,9 +388,9 @@ mod tests {
                 email_normalized: None,
                 email_verified_at: None,
             },
-        )
+        ).await
         .expect("create user");
-        let phc = password::hash_password("the-tester-password").expect("hash");
+        let phc = password::hash_password("the-tester-password").await.expect("hash");
         credentials::upsert(
             db,
             &CredentialRow {
@@ -399,25 +399,25 @@ mod tests {
                 must_change: false,
                 updated_at: now,
             },
-        )
+        ).await
         .expect("cred");
         id
     }
 
-    fn enrol_totp(db: &Database, user_id: UserId) {
+    async fn enrol_totp(db: &Database, user_id: UserId) {
         // Enrolment goes through pending-then-confirm; for tests we
         // just need an "MFA enrolled" row, so do both halves.
-        user_totp::upsert_pending(db, user_id, b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09")
+        user_totp::upsert_pending(db, user_id, b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09").await
             .expect("upsert pending");
-        user_totp::confirm_with_recovery(db, user_id, b"[]").expect("confirm");
+        user_totp::confirm_with_recovery(db, user_id, b"[]").await.expect("confirm");
     }
 
     #[test]
     fn user_with_no_mfa_is_always_allowed() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user(&db);
-        let r = policy_for_session(&db, &clock, uid, None, STEP_UP_FRESHNESS_SECS).unwrap();
+        let clock = crate::time::system_clock().await;
+        let uid = create_user(&db).await;
+        let r = policy_for_session(&db, &clock, uid, None, STEP_UP_FRESHNESS_SECS).await.unwrap();
         assert_eq!(r, StepUpDecision::Allow);
         let r = policy_for_session(
             &db,
@@ -425,7 +425,7 @@ mod tests {
             uid,
             Some(Utc::now() - Duration::days(7)),
             STEP_UP_FRESHNESS_SECS,
-        )
+        ).await
         .unwrap();
         assert_eq!(r, StepUpDecision::Allow);
     }
@@ -433,41 +433,41 @@ mod tests {
     #[test]
     fn mfa_user_with_no_step_up_must_challenge() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user(&db);
-        enrol_totp(&db, uid);
-        let r = policy_for_session(&db, &clock, uid, None, STEP_UP_FRESHNESS_SECS).unwrap();
+        let clock = crate::time::system_clock().await;
+        let uid = create_user(&db).await;
+        enrol_totp(&db, uid).await;
+        let r = policy_for_session(&db, &clock, uid, None, STEP_UP_FRESHNESS_SECS).await.unwrap();
         assert_eq!(r, StepUpDecision::Challenge);
     }
 
     #[test]
     fn mfa_user_with_fresh_step_up_is_allowed() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user(&db);
-        enrol_totp(&db, uid);
+        let clock = crate::time::system_clock().await;
+        let uid = create_user(&db).await;
+        enrol_totp(&db, uid).await;
         let now = clock.now();
-        let r = policy_for_session(&db, &clock, uid, Some(now), STEP_UP_FRESHNESS_SECS).unwrap();
+        let r = policy_for_session(&db, &clock, uid, Some(now), STEP_UP_FRESHNESS_SECS).await.unwrap();
         assert_eq!(r, StepUpDecision::Allow);
     }
 
     #[test]
     fn mfa_user_with_stale_step_up_must_challenge_again() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user(&db);
-        enrol_totp(&db, uid);
+        let clock = crate::time::system_clock().await;
+        let uid = create_user(&db).await;
+        enrol_totp(&db, uid).await;
         let stale = clock.now() - Duration::seconds(STEP_UP_FRESHNESS_SECS + 60);
-        let r = policy_for_session(&db, &clock, uid, Some(stale), STEP_UP_FRESHNESS_SECS).unwrap();
+        let r = policy_for_session(&db, &clock, uid, Some(stale), STEP_UP_FRESHNESS_SECS).await.unwrap();
         assert_eq!(r, StepUpDecision::Challenge);
     }
 
     #[test]
-    fn touch_step_up_updates_session_row() {
+    async fn touch_step_up_updates_session_row() {
         use sui_id_store::models::SessionRow;
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user(&db);
+        let clock = crate::time::system_clock().await;
+        let uid = create_user(&db).await;
         let session_id = SessionId::new();
         let now = clock.now();
         sessions::insert(
@@ -482,15 +482,15 @@ mod tests {
                 last_step_up_at: None,
                 last_used_at: None,
             },
-        )
+        ).await
         .expect("insert");
 
-        touch_step_up(&db, &clock, session_id).expect("touch");
-        let row = sessions::get(&db, session_id).expect("get");
+        touch_step_up(&db, &clock, session_id).await.expect("touch");
+        let row = sessions::get(&db, session_id).await.expect("get");
         assert!(row.last_step_up_at.is_some());
     }
 
-    fn fresh_session(db: &Database, clock: &SharedClock, uid: UserId) -> SessionId {
+    async fn fresh_session(db: &Database, clock: &SharedClock, uid: UserId) -> SessionId {
         use sui_id_store::models::SessionRow;
         let session_id = SessionId::new();
         let now = clock.now();
@@ -506,53 +506,53 @@ mod tests {
                 last_step_up_at: None,
                 last_used_at: None,
             },
-        )
+        ).await
         .expect("insert session");
         session_id
     }
 
     #[test]
-    fn verify_totp_code_with_correct_code_marks_session_fresh() {
+    async fn verify_totp_code_with_correct_code_marks_session_fresh() {
         use crate::totp;
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user(&db);
+        let clock = crate::time::system_clock().await;
+        let uid = create_user(&db).await;
         // Enrol TOTP with a known secret so we can compute the
         // expected code locally.
         let secret = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09";
-        user_totp::upsert_pending(&db, uid, secret).expect("pending");
-        user_totp::confirm_with_recovery(&db, uid, b"[]").expect("confirm");
+        user_totp::upsert_pending(&db, uid, secret).await.expect("pending");
+        user_totp::confirm_with_recovery(&db, uid, b"[]").await.expect("confirm");
 
-        let session_id = fresh_session(&db, &clock, uid);
+        let session_id = fresh_session(&db, &clock, uid).await;
         let now = clock.now().timestamp();
         let step = now / 30;
-        let code = totp::code_for_step(secret, step);
+        let code = totp::code_for_step(secret, step).await;
 
-        verify_totp_code(&db, &clock, uid, session_id, &code.to_string())
+        verify_totp_code(&db, &clock, uid, session_id, &code.to_string()).await
             .expect("verify ok");
 
-        let row = sessions::get(&db, session_id).expect("get");
+        let row = sessions::get(&db, session_id).await.expect("get");
         assert!(row.last_step_up_at.is_some(), "session should be fresh");
     }
 
     #[test]
-    fn verify_totp_code_with_wrong_code_does_not_touch_session() {
+    async fn verify_totp_code_with_wrong_code_does_not_touch_session() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user(&db);
+        let clock = crate::time::system_clock().await;
+        let uid = create_user(&db).await;
         let secret = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09";
-        user_totp::upsert_pending(&db, uid, secret).expect("pending");
-        user_totp::confirm_with_recovery(&db, uid, b"[]").expect("confirm");
+        user_totp::upsert_pending(&db, uid, secret).await.expect("pending");
+        user_totp::confirm_with_recovery(&db, uid, b"[]").await.expect("confirm");
 
-        let session_id = fresh_session(&db, &clock, uid);
+        let session_id = fresh_session(&db, &clock, uid).await;
 
         // Pass a code that's almost certainly wrong (a fixed value
         // that's unlikely to coincide with the real one — and even
         // if it did, the next pass would still be wrong).
-        let result = verify_totp_code(&db, &clock, uid, session_id, "000000");
+        let result = verify_totp_code(&db, &clock, uid, session_id, "000000").await;
         assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
 
-        let row = sessions::get(&db, session_id).expect("get");
+        let row = sessions::get(&db, session_id).await.expect("get");
         assert!(
             row.last_step_up_at.is_none(),
             "session must NOT be marked fresh on a failed verify"
@@ -562,18 +562,18 @@ mod tests {
     #[test]
     fn verify_totp_code_for_user_without_totp_returns_invalid_credentials() {
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user(&db);
-        let session_id = fresh_session(&db, &clock, uid);
+        let clock = crate::time::system_clock().await;
+        let uid = create_user(&db).await;
+        let session_id = fresh_session(&db, &clock, uid).await;
 
-        let result = verify_totp_code(&db, &clock, uid, session_id, "123456");
+        let result = verify_totp_code(&db, &clock, uid, session_id, "123456").await;
         // Same error shape as a wrong code: a step-up form should
         // not leak whether MFA is enrolled.
         assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
     }
 
     #[test]
-    fn finish_webauthn_refuses_pending_with_wrong_kind() {
+    async fn finish_webauthn_refuses_pending_with_wrong_kind() {
         // A pending row tagged `Authenticate` (i.e. a login-MFA
         // ceremony) must NOT satisfy a step-up gate, even if the
         // user_id matches and the row hasn't expired. This test
@@ -584,9 +584,9 @@ mod tests {
         use sui_id_shared::ids::WebauthnPendingId;
 
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let uid = create_user(&db);
-        let session_id = fresh_session(&db, &clock, uid);
+        let clock = crate::time::system_clock().await;
+        let uid = create_user(&db).await;
+        let session_id = fresh_session(&db, &clock, uid).await;
         let pending_id = WebauthnPendingId::new();
         let now = clock.now();
         webauthn_pending::insert(
@@ -599,7 +599,7 @@ mod tests {
                 expires_at: now + Duration::seconds(60),
                 created_at: now,
             },
-        )
+        ).await
         .expect("insert");
 
         let issuer = "https://test.example";
@@ -612,20 +612,20 @@ mod tests {
             session_id,
             pending_id,
             r#"{"id":"x","rawId":"x","type":"public-key","response":{}}"#,
-        );
+        ).await;
         assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
 
         // The pending row is intact — refusing a step-up finish on
         // an Authenticate row must not consume it, so the legitimate
         // login-MFA flow that owns the row can still complete.
-        let still_there = webauthn_pending::get(&db, pending_id)
+        let still_there = webauthn_pending::get(&db, pending_id).await
             .expect("query")
             .expect("row preserved");
         assert_eq!(still_there.kind, WebauthnPendingKind::Authenticate);
     }
 
     #[test]
-    fn finish_webauthn_refuses_pending_for_other_user() {
+    async fn finish_webauthn_refuses_pending_for_other_user() {
         // Even a kind = StepUp pending must be refused if it
         // belongs to a different user. Prevents pending-id
         // smuggling across sessions.
@@ -634,8 +634,8 @@ mod tests {
         use sui_id_shared::ids::WebauthnPendingId;
 
         let db = fresh_db();
-        let clock = crate::time::system_clock();
-        let real_owner = create_user(&db);
+        let clock = crate::time::system_clock().await;
+        let real_owner = create_user(&db).await;
         // Create a *different* user we'll pretend is the one
         // signed in.
         let imposter = {
@@ -660,11 +660,11 @@ mod tests {
                     email_normalized: None,
                     email_verified_at: None,
                 },
-            )
+            ).await
             .expect("imposter");
             id
         };
-        let session_id = fresh_session(&db, &clock, imposter);
+        let session_id = fresh_session(&db, &clock, imposter).await;
         let pending_id = WebauthnPendingId::new();
         let now = clock.now();
         webauthn_pending::insert(
@@ -677,7 +677,7 @@ mod tests {
                 expires_at: now + Duration::seconds(60),
                 created_at: now,
             },
-        )
+        ).await
         .expect("insert");
 
         let result = finish_webauthn(
@@ -688,10 +688,10 @@ mod tests {
             session_id,
             pending_id,
             r#"{"id":"x","rawId":"x","type":"public-key","response":{}}"#,
-        );
+        ).await;
         assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
 
         // Pending row was NOT consumed — owner can still complete.
-        assert!(webauthn_pending::get(&db, pending_id).expect("query").is_some());
+        assert!(webauthn_pending::get(&db, pending_id).await.expect("query").is_some());
     }
 }

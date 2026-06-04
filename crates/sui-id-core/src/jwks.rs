@@ -44,8 +44,8 @@ fn to_jwk(row: &SigningKeyRow) -> Jwk {
 }
 
 /// Build the JWKS document published at `/.well-known/jwks.json`.
-pub fn build(db: &Database) -> Result<Jwks, sui_id_store::StoreError> {
-    let rows = signing_keys::list_published(db)?;
+pub async fn build(db: &Database) -> Result<Jwks, sui_id_store::StoreError> {
+    let rows = signing_keys::list_published(db).await?;
     Ok(Jwks {
         keys: rows.iter().map(to_jwk).collect(),
     })

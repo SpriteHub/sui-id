@@ -49,7 +49,7 @@ pub struct AcceptedAuthorize {
     pub params: AuthorizeParams,
 }
 
-pub fn begin_authorization(db: &Database, params: AuthorizeParams) -> CoreResult<AcceptedAuthorize> {
+pub async fn begin_authorization(db: &Database, params: AuthorizeParams) -> CoreResult<AcceptedAuthorize> {
     // RFC 6749 §4.1.1 — only "code" is supported.
     if params.response_type != "code" {
         return Err(CoreError::Protocol {
@@ -70,7 +70,7 @@ pub fn begin_authorization(db: &Database, params: AuthorizeParams) -> CoreResult
             description: "code_challenge_method must be S256".into(),
         });
     }
-    let client = clients::get(db, params.client_id).map_err(|e| match e {
+    let client = clients::get(db, params.client_id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Protocol {
             code: ProtocolError::InvalidClient,
             description: "unknown client_id".into(),
@@ -147,7 +147,7 @@ pub struct AuthorizationResponseRedirect {
     pub state: Option<String>,
 }
 
-pub fn complete_authorization(
+pub async fn complete_authorization(
     db: &Database,
     clock: &SharedClock,
     user_id: UserId,
@@ -155,7 +155,7 @@ pub fn complete_authorization(
     accepted: AcceptedAuthorize,
 ) -> CoreResult<AuthorizationResponseRedirect> {
     let now = clock.now();
-    let code_plain = tokens::random_token(32);
+    let code_plain = tokens::random_token(32).await;
     let code_hash = tokens::sha256_hex(&code_plain);
     let row = AuthorizationCodeRow {
         code_hash,
@@ -178,7 +178,7 @@ pub fn complete_authorization(
         // it's within its single-use lifetime.
         auth_methods: auth_methods.to_vec(),
     };
-    auth_codes::insert(db, &row)?;
+    auth_codes::insert(db, &row).await?;
     Ok(AuthorizationResponseRedirect {
         redirect_uri: accepted.params.redirect_uri,
         code: code_plain,
@@ -210,13 +210,13 @@ pub struct IssuanceContext<'a> {
 }
 
 /// Exchange a previously issued authorization code for a fresh token set.
-pub fn exchange_code(
+pub async fn exchange_code(
     db: &Database,
     clock: &SharedClock,
     ctx: IssuanceContext<'_>,
     req: CodeExchangeRequest,
 ) -> CoreResult<TokenSet> {
-    let client = clients::get(db, req.client_id).map_err(|e| match e {
+    let client = clients::get(db, req.client_id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Protocol {
             code: ProtocolError::InvalidClient,
             description: "unknown client".into(),
@@ -229,10 +229,10 @@ pub fn exchange_code(
             description: "client is not allowed".into(),
         });
     }
-    authenticate_client(&client, req.client_secret.as_deref())?;
+    authenticate_client(&client, req.client_secret.as_deref()).await?;
 
     let code_hash = tokens::sha256_hex(&req.code);
-    let row = auth_codes::consume(db, &code_hash).map_err(|e| match e {
+    let row = auth_codes::consume(db, &code_hash).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Protocol {
             code: ProtocolError::InvalidGrant,
             description: "code is unknown, expired, or already used".into(),
@@ -252,7 +252,7 @@ pub fn exchange_code(
             description: "redirect_uri does not match the original".into(),
         });
     }
-    tokens::verify_pkce(&row.code_challenge_method, &req.code_verifier, &row.code_challenge)?;
+    tokens::verify_pkce(&row.code_challenge_method, &req.code_verifier, &row.code_challenge).await?;
 
     // Re-check user state at exchange time. A user might have been
     // disabled or deleted in the ~60-second window between the
@@ -264,7 +264,7 @@ pub fn exchange_code(
     // The code is already consumed above, so a disabled-then-re-enabled
     // user must re-authenticate to obtain a fresh code anyway — the
     // consumed state is the correct outcome regardless.
-    let user = users::get(db, row.user_id).map_err(|e| match e {
+    let user = users::get(db, row.user_id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Protocol {
             code: ProtocolError::InvalidGrant,
             description: "user not found".into(),
@@ -282,7 +282,7 @@ pub fn exchange_code(
                 result: "denied".into(),
                 note: Some("user disabled or deleted during auth-code exchange window".into()),
             },
-        );
+        ).await;
         return Err(CoreError::Protocol {
             code: ProtocolError::InvalidGrant,
             description: "user account is not active".into(),
@@ -298,17 +298,17 @@ pub fn exchange_code(
         &row.scope,
         row.nonce.as_deref(),
         &row.auth_methods,
-    )
+    ).await
 }
 
 /// Exchange a refresh token for a fresh token set, rotating the refresh token.
-pub fn exchange_refresh(
+pub async fn exchange_refresh(
     db: &Database,
     clock: &SharedClock,
     ctx: IssuanceContext<'_>,
     req: RefreshExchangeRequest,
 ) -> CoreResult<TokenSet> {
-    let client = clients::get(db, req.client_id).map_err(|e| match e {
+    let client = clients::get(db, req.client_id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Protocol {
             code: ProtocolError::InvalidClient,
             description: "unknown client".into(),
@@ -321,7 +321,7 @@ pub fn exchange_refresh(
             description: "client is not allowed".into(),
         });
     }
-    authenticate_client(&client, req.client_secret.as_deref())?;
+    authenticate_client(&client, req.client_secret.as_deref()).await?;
 
     // Look up the token. We check `find_any` first — which returns
     // even revoked / expired rows — because finding the token in a
@@ -335,7 +335,7 @@ pub fn exchange_refresh(
     // detects the failure on its next refresh and re-authenticates.
     //
     // See OAuth 2.1 §6.1 / RFC 6819 §5.2.2.3.
-    let row = match refresh_tokens::find_any(db, &req.refresh_token) {
+    let row = match refresh_tokens::find_any(db, &req.refresh_token).await {
         Ok(r) => r,
         Err(sui_id_store::StoreError::NotFound) => {
             return Err(CoreError::Protocol {
@@ -359,7 +359,7 @@ pub fn exchange_refresh(
         // can correlate. We deliberately don't tell the caller what
         // happened — the response to legitimate-and-attacker traffic
         // looks identical.
-        let _ = refresh_tokens::revoke_family(db, &row.family_id);
+        let _ = refresh_tokens::revoke_family(db, &row.family_id).await;
         let _ = audit::append(
             db,
             &AuditLogRow {
@@ -373,7 +373,7 @@ pub fn exchange_refresh(
                     row.family_id, row.client_id
                 )),
             },
-        );
+        ).await;
         return Err(CoreError::Protocol {
             code: ProtocolError::InvalidGrant,
             description: "refresh token is unknown or revoked".into(),
@@ -389,7 +389,7 @@ pub fn exchange_refresh(
 
     // Rotation: revoke the old token *before* we issue the new set, so a
     // crash-mid-flow can never leave both valid simultaneously.
-    refresh_tokens::revoke(db, &row.id)?;
+    refresh_tokens::revoke(db, &row.id).await?;
 
     issue_for_with_family(
         db,
@@ -401,10 +401,10 @@ pub fn exchange_refresh(
         None,
         &row.auth_methods,
         Some(row.family_id.clone()),
-    )
+    ).await
 }
 
-fn authenticate_client(
+async fn authenticate_client(
     client: &sui_id_store::models::ClientRow,
     secret: Option<&str>,
 ) -> CoreResult<()> {
@@ -419,14 +419,14 @@ fn authenticate_client(
         code: ProtocolError::InvalidClient,
         description: "client_secret is required".into(),
     })?;
-    crate::password::verify_password(provided, stored).map_err(|_| CoreError::Protocol {
+    crate::password::verify_password(provided, stored).await.map_err(|_| CoreError::Protocol {
         code: ProtocolError::InvalidClient,
         description: "client authentication failed".into(),
     })
 }
 
 #[allow(clippy::too_many_arguments)]
-fn issue_for(
+async fn issue_for(
     db: &Database,
     clock: &SharedClock,
     ctx: IssuanceContext<'_>,
@@ -449,7 +449,7 @@ fn issue_for(
         nonce,
         auth_methods,
         None,
-    )
+    ).await
 }
 
 /// The actual issuance routine. `family_id` is `None` for initial
@@ -457,7 +457,7 @@ fn issue_for(
 /// refresh-token id) and `Some(parent_family_id)` for rotations
 /// (the new row inherits the family).
 #[allow(clippy::too_many_arguments)]
-fn issue_for_with_family(
+async fn issue_for_with_family(
     db: &Database,
     clock: &SharedClock,
     ctx: IssuanceContext<'_>,
@@ -468,11 +468,11 @@ fn issue_for_with_family(
     auth_methods: &[sui_id_shared::AuthMethod],
     family_id: Option<String>,
 ) -> CoreResult<TokenSet> {
-    let key_row = signing_keys::active(db).map_err(|e| match e {
+    let key_row = signing_keys::active(db).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Internal,
         other => CoreError::from(other),
     })?;
-    let private_bytes = signing_keys::unseal_private(db, &key_row)?;
+    let private_bytes = signing_keys::unseal_private(db, &key_row).await?;
     let sk_arr: [u8; 32] = private_bytes.as_slice().try_into().map_err(|_| CoreError::Internal)?;
     let sk = SigningKey::from_bytes(&sk_arr);
 
@@ -489,10 +489,10 @@ fn issue_for_with_family(
         ctx.lifetimes,
         clock,
         auth_methods,
-    )?;
+    ).await?;
 
     let now = clock.now();
-    let new_id = tokens::random_token(16);
+    let new_id = tokens::random_token(16).await;
     // First issuance roots a new family at this new row's id; a
     // rotation copies the parent's family forward unchanged.
     let family = family_id.unwrap_or_else(|| new_id.clone());
@@ -508,7 +508,7 @@ fn issue_for_with_family(
         auth_methods: auth_methods.to_vec(),
         family_id: family,
     };
-    refresh_tokens::insert(db, &rt_row)?;
+    refresh_tokens::insert(db, &rt_row).await?;
     Ok(set)
 }
 
@@ -547,7 +547,7 @@ mod redirect_uri_tests {
             uri in "[A-Za-z0-9:/._~?&=#@%-]{1,256}",
         ) {
             let registered = vec![uri.clone()];
-            prop_assert!(is_redirect_uri_registered(&registered, &uri));
+            prop_assert!(is_redirect_uri_registered(&registered, &uri).await);
         }
 
         /// A URI that differs by even one byte is rejected.
@@ -570,7 +570,7 @@ mod redirect_uri_tests {
             let submitted = String::from_utf8(submitted).unwrap();
             prop_assume!(submitted != base);
             let registered = vec![base];
-            prop_assert!(!is_redirect_uri_registered(&registered, &submitted));
+            prop_assert!(!is_redirect_uri_registered(&registered, &submitted).await);
         }
 
         /// Case differences are not folded — `/cb` and `/CB` are
@@ -583,8 +583,8 @@ mod redirect_uri_tests {
             let upper = format!("https://example.com/{}", stem.to_uppercase());
             prop_assume!(lower != upper);
             let registered = vec![lower.clone()];
-            prop_assert!(is_redirect_uri_registered(&registered, &lower));
-            prop_assert!(!is_redirect_uri_registered(&registered, &upper));
+            prop_assert!(is_redirect_uri_registered(&registered, &lower).await);
+            prop_assert!(!is_redirect_uri_registered(&registered, &upper).await);
         }
 
         /// A registered URI followed by extra junk is rejected — no
@@ -599,7 +599,7 @@ mod redirect_uri_tests {
             let registered = vec![base.clone()];
             let submitted = format!("{base}{suffix}");
             prop_assume!(submitted != base);
-            prop_assert!(!is_redirect_uri_registered(&registered, &submitted));
+            prop_assert!(!is_redirect_uri_registered(&registered, &submitted).await);
         }
 
         /// Multiple registered URIs: any one matching is enough; any
@@ -613,9 +613,9 @@ mod redirect_uri_tests {
         ) {
             prop_assume!(!uris.iter().any(|u| u == &outsider));
             for u in &uris {
-                prop_assert!(is_redirect_uri_registered(&uris, u));
+                prop_assert!(is_redirect_uri_registered(&uris, u).await);
             }
-            prop_assert!(!is_redirect_uri_registered(&uris, &outsider));
+            prop_assert!(!is_redirect_uri_registered(&uris, &outsider).await);
         }
     }
 }

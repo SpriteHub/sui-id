@@ -93,7 +93,7 @@ impl RotationReport {
 ///   `MasterKey::generate` or `from_base64`;
 /// - renaming the old key file out of the way after this
 ///   function returns successfully (the CLI does this).
-pub fn rotate_master_key(
+pub async fn rotate_master_key(
     db: &Database,
     new_key: &MasterKey,
 ) -> CoreResult<RotationReport> {
@@ -105,7 +105,7 @@ pub fn rotate_master_key(
     // out early on the first failure with the rest still intact.
     // SQLite-level transactionality is provided by `Database::with_conn`
     // running inside an implicit transaction that rolls back on Err.
-    db.with_tx(|tx| {
+    db.with_tx_sync(|tx| {
         report.signing_keys = signing_keys::reseal_all(tx, old_key, new_key)?;
         report.refresh_tokens = refresh_tokens::reseal_all(tx, old_key, new_key)?;
         let (totp_n, recovery_n) = user_totp::reseal_all(tx, old_key, new_key)?;
@@ -124,7 +124,7 @@ pub fn rotate_master_key(
 /// preserving the AAD. Implementation detail of the per-table
 /// `reseal_all` functions; lives here so it is unit-testable
 /// without requiring a database.
-pub fn reseal_one(
+pub async fn reseal_one(
     old_key: &MasterKey,
     new_key: &MasterKey,
     sealed: &[u8],
@@ -149,7 +149,7 @@ mod tests {
         let aad = b"test-aad";
         let plaintext = b"hello world".to_vec();
         let sealed = seal(&old, &plaintext, aad).expect("seal");
-        let resealed = reseal_one(&old, &new, &sealed, aad).expect("reseal");
+        let resealed = reseal_one(&old, &new, &sealed, aad).await.expect("reseal");
         // The re-sealed ciphertext must decrypt under the NEW key,
         // and must NOT decrypt under the OLD key.
         let opened_new = open(&new, &resealed, aad).expect("open with new");
@@ -165,7 +165,7 @@ mod tests {
         let aad = b"test-aad";
         let sealed = seal(&real_old, b"data", aad).expect("seal");
         // Wrong "old" key: open should fail, error propagates.
-        assert!(reseal_one(&wrong_old, &new, &sealed, aad).is_err());
+        assert!(reseal_one(&wrong_old, &new, &sealed, aad).await.is_err());
     }
 
     #[test]
@@ -173,7 +173,7 @@ mod tests {
         let old = MasterKey::generate();
         let new = MasterKey::generate();
         let sealed = seal(&old, b"data", b"correct-aad").expect("seal");
-        assert!(reseal_one(&old, &new, &sealed, b"wrong-aad").is_err());
+        assert!(reseal_one(&old, &new, &sealed, b"wrong-aad").await.is_err());
     }
 
     #[test]

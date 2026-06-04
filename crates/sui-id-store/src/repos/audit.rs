@@ -90,8 +90,9 @@ fn compute_hash(prev_hash_hex: &str, row: &AuditLogRow) -> String {
     hex_lower(h.finalize().as_slice())
 }
 
-pub fn append(db: &Database, row: &AuditLogRow) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn append(db: &Database, row: &AuditLogRow) -> StoreResult<()> {
+    let row = row.clone();
+    db.with_conn(move |conn| {
         let tx = conn.unchecked_transaction()?;
         // Read the latest hash inside the transaction so concurrent
         // appends serialise into a single chain.
@@ -102,7 +103,7 @@ pub fn append(db: &Database, row: &AuditLogRow) -> StoreResult<()> {
                 |r| r.get(0),
             )
             .unwrap_or_default();
-        let hash = compute_hash(&prev_hash, row);
+        let hash = compute_hash(&prev_hash, &row);
         tx.execute(
             "INSERT INTO audit_log(at, actor, action, target, result, note, prev_hash, hash) \
              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -119,11 +120,11 @@ pub fn append(db: &Database, row: &AuditLogRow) -> StoreResult<()> {
         )?;
         tx.commit()?;
         Ok(())
-    })
+    }).await
 }
 
-pub fn recent(db: &Database, limit: i64) -> StoreResult<Vec<AuditLogRow>> {
-    db.with_conn(|conn| {
+pub async fn recent(db: &Database, limit: i64) -> StoreResult<Vec<AuditLogRow>> {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(
             "SELECT at, actor, action, target, result, note FROM audit_log ORDER BY seq DESC LIMIT ?1",
         )?;
@@ -131,7 +132,7 @@ pub fn recent(db: &Database, limit: i64) -> StoreResult<Vec<AuditLogRow>> {
             .query_map([limit], map)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
-    })
+    }).await
 }
 
 /// Result of a tail-verification pass.
@@ -157,8 +158,8 @@ pub struct ChainVerifyReport {
 /// Intended to be called once at startup with a cheap limit (a few
 /// thousand rows): more than enough to catch a recent tampering
 /// attempt, cheap enough to not noticeably extend boot time.
-pub fn verify_chain_tail(db: &Database, limit: i64) -> StoreResult<ChainVerifyReport> {
-    let rows: Vec<(i64, AuditLogRow, String, String)> = db.with_conn(|conn| {
+pub async fn verify_chain_tail(db: &Database, limit: i64) -> StoreResult<ChainVerifyReport> {
+    let rows: Vec<(i64, AuditLogRow, String, String)> = db.with_conn(move |conn| {
         let mut stmt = conn.prepare(
             "SELECT seq, at, actor, action, target, result, note, prev_hash, hash \
              FROM audit_log ORDER BY seq DESC LIMIT ?1",
@@ -190,7 +191,7 @@ pub fn verify_chain_tail(db: &Database, limit: i64) -> StoreResult<ChainVerifyRe
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(collected)
-    })?;
+    }).await?;
 
     let mut report = ChainVerifyReport {
         checked: 0,
@@ -235,22 +236,22 @@ mod tests {
         }
     }
 
-    #[test]
-    fn appended_rows_form_a_consistent_chain() {
+    #[tokio::test]
+    async fn appended_rows_form_a_consistent_chain() {
         let db = fresh_db();
         for i in 0..5 {
-            append(&db, &sample_row(&format!("act.{i}"))).expect("append");
+            append(&db, &sample_row(&format!("act.{i}"))).await.expect("append");
         }
-        let r = verify_chain_tail(&db, 100).expect("verify");
+        let r = verify_chain_tail(&db, 100).await.expect("verify");
         assert_eq!(r.checked, 5);
         assert_eq!(r.broken_at_seq, None);
         assert_eq!(r.legacy_unhashed, 0);
     }
 
-    #[test]
-    fn first_row_chains_from_empty_prev_hash() {
+    #[tokio::test]
+    async fn first_row_chains_from_empty_prev_hash() {
         let db = fresh_db();
-        append(&db, &sample_row("first")).expect("append");
+        append(&db, &sample_row("first")).await.expect("append");
         let (prev, hash): (String, String) = db
             .with_conn(|c| {
                 let (p, h): (String, String) = c
@@ -261,17 +262,18 @@ mod tests {
                     )?;
                 Ok((p, h))
             })
+            .await
             .unwrap();
         assert_eq!(prev, "", "first row's prev_hash must be empty");
         assert_eq!(hash.len(), 64, "hash must be 64 hex chars (SHA-256)");
     }
 
-    #[test]
-    fn tampering_with_a_row_makes_chain_verification_fail() {
+    #[tokio::test]
+    async fn tampering_with_a_row_makes_chain_verification_fail() {
         let db = fresh_db();
-        append(&db, &sample_row("a")).expect("append");
-        append(&db, &sample_row("b")).expect("append");
-        append(&db, &sample_row("c")).expect("append");
+        append(&db, &sample_row("a")).await.expect("append");
+        append(&db, &sample_row("b")).await.expect("append");
+        append(&db, &sample_row("c")).await.expect("append");
 
         // Rewrite row #2's `action` directly via SQL — exactly the
         // attack the chain is supposed to detect.
@@ -282,20 +284,21 @@ mod tests {
             )?;
             Ok(())
         })
+        .await
         .expect("tamper");
 
-        let r = verify_chain_tail(&db, 100).expect("verify");
+        let r = verify_chain_tail(&db, 100).await.expect("verify");
         // Walking newest-first, seq=3 still hashes correctly because
         // its prev_hash was committed before the tamper. seq=2 is
         // the row whose recomputed hash now disagrees with stored.
         assert_eq!(r.broken_at_seq, Some(2), "{r:?}");
     }
 
-    #[test]
-    fn legacy_unhashed_rows_are_reported_separately() {
+    #[tokio::test]
+    async fn legacy_unhashed_rows_are_reported_separately() {
         let db = fresh_db();
         let now = Utc::now();
-        db.with_conn(|c| {
+        db.with_conn(move |c| {
             c.execute(
                 "INSERT INTO audit_log(at, actor, action, target, result, note, prev_hash, hash) \
                  VALUES(?1, NULL, 'legacy', NULL, 'ok', NULL, '', '')",
@@ -303,17 +306,18 @@ mod tests {
             )?;
             Ok(())
         })
+        .await
         .unwrap();
-        append(&db, &sample_row("post-upgrade")).expect("append");
+        append(&db, &sample_row("post-upgrade")).await.expect("append");
 
-        let r = verify_chain_tail(&db, 100).expect("verify");
+        let r = verify_chain_tail(&db, 100).await.expect("verify");
         assert_eq!(r.checked, 1);
         assert_eq!(r.legacy_unhashed, 1);
         assert_eq!(r.broken_at_seq, None);
     }
 
-    #[test]
-    fn canonical_bytes_distinguishes_field_boundaries() {
+    #[tokio::test]
+    async fn canonical_bytes_distinguishes_field_boundaries() {
         // Length-prefix protects against a row {"a", "bc"} hashing
         // the same as a row {"ab", "c"}.
         let at = Utc::now();
@@ -346,13 +350,13 @@ mod tests {
 /// (lockout, MFA reset, theft detection, …). `actor` matches the
 /// `actor` UUID column. The OR of the two captures both
 /// "things this user did" and "things done to this user".
-pub fn recent_for_user(
+pub async fn recent_for_user(
     db: &Database,
     user_id: sui_id_shared::ids::UserId,
     limit: i64,
 ) -> StoreResult<Vec<AuditLogRow>> {
     let uid = user_id.to_string();
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(
             "SELECT at, actor, action, target, result, note FROM audit_log \
              WHERE actor = ?1 OR target = ?1 \
@@ -362,7 +366,7 @@ pub fn recent_for_user(
             .query_map(rusqlite::params![uid, limit], map)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
-    })
+    }).await
 }
 
 /// One bucket of a counted audit-action time series.
@@ -405,7 +409,7 @@ pub struct ActionCountBucket {
 /// GROUP BY on the bucket expression. For a busy IdP with millions
 /// of audit rows the query is bounded by the *width of the window*,
 /// not the size of the table.
-pub fn count_by_action_in_window(
+pub async fn count_by_action_in_window(
     db: &Database,
     actions: &[&str],
     since: chrono::DateTime<chrono::Utc>,
@@ -433,15 +437,16 @@ pub fn count_by_action_in_window(
          GROUP BY bucket_unix, action
          ORDER BY bucket_unix ASC, action ASC"
     );
-    db.with_conn(|conn| {
+    let actions: Vec<String> = actions.iter().map(|s| s.to_string()).collect();
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(&sql)?;
         // rusqlite's params! macro doesn't take a slice directly;
         // we build a Vec<&dyn ToSql> by hand.
         let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(2 + actions.len());
         params.push(&since);
         params.push(&until);
-        for a in actions {
-            params.push(a);
+        for a in &actions {
+            params.push(a as &dyn rusqlite::ToSql);
         }
         let rows = stmt
             .query_map(params.as_slice(), |row| {
@@ -470,5 +475,5 @@ pub fn count_by_action_in_window(
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
-    })
+    }).await
 }

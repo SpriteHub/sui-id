@@ -83,7 +83,7 @@ async fn serve(args: &[String]) -> Result<()> {
     let cfg = Config::load(&config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
 
-    let startup = startup::prepare(cfg)?;
+    let startup = startup::prepare(cfg).await?;
     let router = build_router(startup.state.clone());
 
     sui_id::gc::spawn(startup.state.clone());
@@ -93,7 +93,7 @@ async fn serve(args: &[String]) -> Result<()> {
     {
         let db = startup.state.db.clone();
         tokio::spawn(async move {
-            match sui_id_store::repos::refresh_tokens::backfill_token_hashes(&db) {
+            match sui_id_store::repos::refresh_tokens::backfill_token_hashes(&db).await {
                 Ok(0) => {}
                 Ok(n) => tracing::info!(rows = n, "backfill: populated refresh_token.token_hash"),
                 Err(e) => tracing::warn!(error = %e, "backfill: refresh_token.token_hash failed"),
@@ -227,7 +227,7 @@ async fn serve_dev(args: &[String]) -> Result<()> {
     dev_mode::print_dev_warnings(&dev_bind, &seed_source);
     let outcome = {
         let clock = sui_id_core::time::system_clock();
-        dev_mode::apply_seed(&db, &clock, &setup_token, &seed)?
+        dev_mode::apply_seed(&db, &clock, &setup_token, &seed).await?
     };
     dev_mode::print_seed_summary(&seed, &outcome, &dev_bind);
     let _ = outcome.admin_user_id; // captured for symmetry; not needed below.
@@ -253,7 +253,7 @@ async fn serve_dev(args: &[String]) -> Result<()> {
     {
         let db = state.db.clone();
         tokio::spawn(async move {
-            match sui_id_store::repos::refresh_tokens::backfill_token_hashes(&db) {
+            match sui_id_store::repos::refresh_tokens::backfill_token_hashes(&db).await {
                 Ok(0) => {}
                 Ok(n) => tracing::info!(rows = n, "backfill: populated refresh_token.token_hash"),
                 Err(e) => tracing::warn!(error = %e, "backfill: refresh_token.token_hash failed"),
@@ -371,8 +371,8 @@ fn run_verify_backup_subcommand(args: &[String]) -> Result<()> {
 fn run_admin_subcommand(args: &[String]) -> Result<()> {
     let action = args.get(2).map(String::as_str);
     match action {
-        Some("unlock-user") => run_admin_unlock_user(args),
-        Some("rotate-key") => run_admin_rotate_key(args),
+        Some("unlock-user") => tokio::runtime::Runtime::new().unwrap().block_on(run_admin_unlock_user(args)),
+        Some("rotate-key") => tokio::runtime::Runtime::new().unwrap().block_on(run_admin_rotate_key(args)),
         Some(other) => bail!(
             "unknown admin subaction `{other}`. Known subactions: unlock-user, rotate-key"
         ),
@@ -390,7 +390,7 @@ fn run_admin_subcommand(args: &[String]) -> Result<()> {
 /// material, is what authorises this. Used to recover a real user
 /// who's been locked out by a typo storm or by a brute-force
 /// attempt that exceeded the auto-unlock window.
-fn run_admin_unlock_user(args: &[String]) -> Result<()> {
+async fn run_admin_unlock_user(args: &[String]) -> Result<()> {
     let username = args
         .iter()
         .position(|a| a == "--username")
@@ -408,9 +408,9 @@ fn run_admin_unlock_user(args: &[String]) -> Result<()> {
     let db = sui_id_store::Database::open(&cfg.storage.db_path, resolved.key)
         .context("opening database")?;
 
-    let user = sui_id_store::repos::users::find_by_username(&db, username)
+    let user = sui_id_store::repos::users::find_by_username(&db, username).await
         .with_context(|| format!("looking up user {username:?}"))?;
-    sui_id_store::repos::users::admin_unlock(&db, user.id)
+    sui_id_store::repos::users::admin_unlock(&db, user.id).await
         .context("clearing lockout")?;
     // Mirror the operator-facing audit-log entry the live admin UI
     // would write for this action.
@@ -424,7 +424,7 @@ fn run_admin_unlock_user(args: &[String]) -> Result<()> {
             result: "ok".into(),
             note: Some(format!("unlocked via command line for username={username}")),
         },
-    );
+    ).await;
     eprintln!("unlocked {username} (id={})", user.id);
     Ok(())
 }
@@ -466,7 +466,7 @@ fn run_admin_unlock_user(args: &[String]) -> Result<()> {
 ///   5. Write new key file.
 ///   6. Print a report of how many rows were re-sealed in each
 ///      table.
-fn run_admin_rotate_key(args: &[String]) -> Result<()> {
+async fn run_admin_rotate_key(args: &[String]) -> Result<()> {
     let config_path = parse_config_path(args).unwrap_or_else(|| PathBuf::from("./sui-id.toml"));
     let cfg = Config::load(&config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
@@ -547,7 +547,7 @@ fn run_admin_rotate_key(args: &[String]) -> Result<()> {
     };
 
     // Re-seal everything atomically.
-    let report = sui_id_core::key_rotation::rotate_master_key(&db, &new_key)
+    let report = sui_id_core::key_rotation::rotate_master_key(&db, &new_key).await
         .context("rotating sealed columns under the new key")?;
 
     // Rename the old key file. Done AFTER the transaction
@@ -601,7 +601,7 @@ fn run_admin_rotate_key(args: &[String]) -> Result<()> {
                 bak_path.display()
             )),
         },
-    );
+    ).await;
 
     eprintln!();
     eprintln!("Rotation complete.");

@@ -17,7 +17,7 @@ fn argon2() -> Argon2<'static> {
 }
 
 /// Hash a password and return its PHC-encoded string.
-pub fn hash_password(password: &str) -> CoreResult<String> {
+pub async fn hash_password(password: &str) -> CoreResult<String> {
     let salt = SaltString::generate(&mut OsRng);
     let phc = argon2()
         .hash_password(password.as_bytes(), &salt)
@@ -28,7 +28,7 @@ pub fn hash_password(password: &str) -> CoreResult<String> {
 /// Verify `password` against a previously stored PHC hash. Returns `Ok(())`
 /// on match, [`CoreError::InvalidCredentials`] on mismatch, and only returns
 /// [`CoreError::Password`] for malformed stored hashes.
-pub fn verify_password(password: &str, stored_phc: &str) -> CoreResult<()> {
+pub async fn verify_password(password: &str, stored_phc: &str) -> CoreResult<()> {
     let parsed = PasswordHash::new(stored_phc).map_err(|_| CoreError::Password)?;
     argon2()
         .verify_password(password.as_bytes(), &parsed)
@@ -37,7 +37,7 @@ pub fn verify_password(password: &str, stored_phc: &str) -> CoreResult<()> {
 
 /// Reasonable minimum-length policy. Intentionally lenient on character
 /// classes: NIST SP 800-63B advises *against* composition rules.
-pub fn check_password_policy(password: &str) -> CoreResult<()> {
+pub async fn check_password_policy(password: &str) -> CoreResult<()> {
     if password.chars().count() < 12 {
         return Err(CoreError::BadRequest(
             "password must be at least 12 characters long".into(),

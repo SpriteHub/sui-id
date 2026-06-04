@@ -34,6 +34,7 @@ pub async fn healthz(state_ext: AppStateExt) -> Result<axum::response::Response,
             let _: i64 = conn.query_row("SELECT 1", [], |r| r.get(0))?;
             Ok(())
         })
+        .await
         .map_err(|e| HttpError::api(CoreError::from(e)))?;
     Ok(Json(HealthResponse {
         status: "ok",

@@ -43,14 +43,15 @@ const SELECT: &str = "SELECT id, name, confidential, secret_hash, redirect_uris,
                       is_disabled, is_deleted, allowed_scopes, \
                       post_logout_redirect_uris, created_at, updated_at FROM clients";
 
-pub fn create(db: &Database, c: &ClientRow) -> StoreResult<()> {
+pub async fn create(db: &Database, c: &ClientRow) -> StoreResult<()> {
     let uris = serde_json::to_string(&c.redirect_uris)?;
     let post_logout = serde_json::to_string(&c.post_logout_redirect_uris)?;
     // Pre-condition: validate that the serialised JSON round-trips correctly
     // before writing, so a future read cannot encounter corrupt JSON.
     require_valid_json::<Vec<String>>(&uris, "clients.redirect_uris")?;
     require_valid_json::<Vec<String>>(&post_logout, "clients.post_logout_redirect_uris")?;
-    db.with_conn(|conn| {
+    let c = c.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO clients(id, name, confidential, secret_hash, redirect_uris, \
                                  is_disabled, is_deleted, allowed_scopes, \
@@ -71,11 +72,11 @@ pub fn create(db: &Database, c: &ClientRow) -> StoreResult<()> {
             ],
         )?;
         Ok(())
-    })
+    }).await
 }
 
-pub fn get(db: &Database, id: ClientId) -> StoreResult<ClientRow> {
-    db.with_conn(|conn| {
+pub async fn get(db: &Database, id: ClientId) -> StoreResult<ClientRow> {
+    db.with_conn(move |conn| {
         conn.query_row(
             &format!("{SELECT} WHERE id = ?1"),
             [id.to_string()],
@@ -85,26 +86,28 @@ pub fn get(db: &Database, id: ClientId) -> StoreResult<ClientRow> {
             rusqlite::Error::QueryReturnedNoRows => StoreError::NotFound,
             other => StoreError::from(other),
         })
-    })
+    }).await
 }
 
-pub fn list(db: &Database) -> StoreResult<Vec<ClientRow>> {
-    db.with_conn(|conn| {
+pub async fn list(db: &Database) -> StoreResult<Vec<ClientRow>> {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(&format!("{SELECT} ORDER BY created_at ASC"))?;
         let rows = stmt
             .query_map([], map)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
-    })
+    }).await
 }
 
-pub fn update_basic(
+pub async fn update_basic(
     db: &Database,
     id: ClientId,
     name: Option<&str>,
     redirect_uris: Option<&[String]>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    let name = name.map(str::to_owned);
+    let redirect_uris = redirect_uris.map(<[_]>::to_vec);
+    db.with_conn(move |conn| {
         // Read current row to merge new values.
         let current: ClientRow = conn.query_row(
             &format!("{SELECT} WHERE id = ?1"),
@@ -114,8 +117,8 @@ pub fn update_basic(
             rusqlite::Error::QueryReturnedNoRows => StoreError::NotFound,
             other => StoreError::from(other),
         })?;
-        let new_name = name.unwrap_or(&current.name);
-        let new_uris = redirect_uris.map(<[String]>::to_vec).unwrap_or(current.redirect_uris.clone());
+        let new_name = name.as_deref().unwrap_or(&current.name);
+        let new_uris = redirect_uris.unwrap_or(current.redirect_uris.clone());
         let uris_json = serde_json::to_string(&new_uris)?;
         require_valid_json::<Vec<String>>(&uris_json, "clients.redirect_uris")?;
         conn.execute(
@@ -123,12 +126,13 @@ pub fn update_basic(
             params![new_name, uris_json, Utc::now(), id.to_string()],
         )?;
         Ok(())
-    })
+    }).await
 }
 
 /// Replace the `allowed_scopes` policy for a client.
-pub fn set_allowed_scopes(db: &Database, id: ClientId, scopes: &str) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn set_allowed_scopes(db: &Database, id: ClientId, scopes: &str) -> StoreResult<()> {
+    let scopes = scopes.to_owned();
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE clients SET allowed_scopes = ?1, updated_at = ?2 WHERE id = ?3",
             params![scopes, Utc::now(), id.to_string()],
@@ -137,18 +141,18 @@ pub fn set_allowed_scopes(db: &Database, id: ClientId, scopes: &str) -> StoreRes
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Replace the `post_logout_redirect_uris` list for a client.
-pub fn set_post_logout_redirect_uris(
+pub async fn set_post_logout_redirect_uris(
     db: &Database,
     id: ClientId,
     uris: &[String],
 ) -> StoreResult<()> {
     let json = serde_json::to_string(uris)?;
     require_valid_json::<Vec<String>>(&json, "clients.post_logout_redirect_uris")?;
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE clients SET post_logout_redirect_uris = ?1, updated_at = ?2 WHERE id = ?3",
             params![json, Utc::now(), id.to_string()],
@@ -157,11 +161,11 @@ pub fn set_post_logout_redirect_uris(
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
-pub fn set_disabled(db: &Database, id: ClientId, disabled: bool) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn set_disabled(db: &Database, id: ClientId, disabled: bool) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE clients SET is_disabled = ?1, updated_at = ?2 WHERE id = ?3",
             params![disabled as i64, Utc::now(), id.to_string()],
@@ -170,11 +174,11 @@ pub fn set_disabled(db: &Database, id: ClientId, disabled: bool) -> StoreResult<
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
-pub fn soft_delete(db: &Database, id: ClientId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn soft_delete(db: &Database, id: ClientId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE clients SET is_deleted = 1, is_disabled = 1, updated_at = ?1 WHERE id = ?2",
             params![Utc::now(), id.to_string()],
@@ -183,19 +187,20 @@ pub fn soft_delete(db: &Database, id: ClientId) -> StoreResult<()> {
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Patch a client's `secret_hash` to a caller-supplied value.
 /// Used **only** by dev mode to give a confidential client a
 /// predictable secret instead of the auto-generated one. Not
 /// exposed in the production HTTP path.
-pub fn set_dev_secret_hash(
+pub async fn set_dev_secret_hash(
     db: &Database,
     id: ClientId,
     new_hash: Option<&str>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    let new_hash = new_hash.map(str::to_owned);
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE clients SET secret_hash = ?1 WHERE id = ?2",
             params![new_hash, id.to_string()],
@@ -204,5 +209,5 @@ pub fn set_dev_secret_hash(
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }

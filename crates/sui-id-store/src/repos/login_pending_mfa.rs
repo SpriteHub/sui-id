@@ -32,8 +32,9 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<LoginPendingMfaRow> {
     })
 }
 
-pub fn insert(db: &Database, row: &LoginPendingMfaRow) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn insert(db: &Database, row: &LoginPendingMfaRow) -> StoreResult<()> {
+    let row = row.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO login_pending_mfa(id, user_id, expires_at, created_at) \
              VALUES(?1, ?2, ?3, ?4)",
@@ -45,19 +46,19 @@ pub fn insert(db: &Database, row: &LoginPendingMfaRow) -> StoreResult<()> {
             ],
         )?;
         Ok(())
-    })
+    }).await
 }
 
-pub fn get(db: &Database, id: PendingMfaId) -> StoreResult<Option<LoginPendingMfaRow>> {
-    db.with_conn(|conn| {
+pub async fn get(db: &Database, id: PendingMfaId) -> StoreResult<Option<LoginPendingMfaRow>> {
+    db.with_conn(move |conn| {
         Ok(conn
             .query_row(&format!("{SELECT} WHERE id = ?1"), [id.to_string()], map)
             .optional()?)
-    })
+    }).await
 }
 
-pub fn delete(db: &Database, id: PendingMfaId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn delete(db: &Database, id: PendingMfaId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "DELETE FROM login_pending_mfa WHERE id = ?1",
             [id.to_string()],
@@ -66,16 +67,16 @@ pub fn delete(db: &Database, id: PendingMfaId) -> StoreResult<()> {
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Hygiene: drop expired rows. Called from the GC task.
-pub fn purge_expired(db: &Database) -> StoreResult<usize> {
-    db.with_conn(|conn| {
+pub async fn purge_expired(db: &Database) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "DELETE FROM login_pending_mfa WHERE expires_at < ?1",
             [Utc::now()],
         )?;
         Ok(n)
-    })
+    }).await
 }

@@ -61,7 +61,7 @@ impl IntrospectionResponse {
 /// client should only see back its own tokens — otherwise it could
 /// fish for valid tokens issued to other parties. We enforce this by
 /// requiring `aud == authenticating_client`.
-pub fn introspect(
+pub async fn introspect(
     db: &Database,
     clock: &SharedClock,
     authenticating_client: ClientId,
@@ -77,8 +77,8 @@ pub fn introspect(
     };
     for kind in order {
         let resp = match *kind {
-            "access_token" => try_introspect_access(db, clock, authenticating_client, token),
-            "refresh_token" => try_introspect_refresh(db, authenticating_client, token),
+            "access_token" => try_introspect_access(db, clock, authenticating_client, token).await,
+            "refresh_token" => try_introspect_refresh(db, authenticating_client, token).await,
             _ => Ok(IntrospectionResponse::inactive()),
         }?;
         if resp.active {
@@ -88,7 +88,7 @@ pub fn introspect(
     Ok(IntrospectionResponse::inactive())
 }
 
-fn try_introspect_access(
+async fn try_introspect_access(
     db: &Database,
     clock: &SharedClock,
     authenticating_client: ClientId,
@@ -96,7 +96,7 @@ fn try_introspect_access(
 ) -> CoreResult<IntrospectionResponse> {
     // Verify the JWT (signature + exp). A bad signature or an expired
     // token simply means inactive; we deliberately do not surface why.
-    let claims = match verify_access_token(db, clock, token) {
+    let claims = match verify_access_token(db, clock, token).await {
         Ok(c) => c,
         Err(_) => return Ok(IntrospectionResponse::inactive()),
     };
@@ -113,23 +113,25 @@ fn try_introspect_access(
         return Ok(IntrospectionResponse::inactive());
     }
     // Check the deny-list.
-    if deny_list::is_revoked(db, &claims.jti)? {
+    if deny_list::is_revoked(db, &claims.jti).await? {
         return Ok(IntrospectionResponse::inactive());
     }
-    Ok(active_from_access(&claims, db))
+    Ok(active_from_access(&claims, db).await)
 }
 
-fn active_from_access(claims: &AccessTokenClaims, db: &Database) -> IntrospectionResponse {
+async fn active_from_access(claims: &AccessTokenClaims, db: &Database) -> IntrospectionResponse {
     // username is best-effort: if the user no longer exists (deleted)
     // we still report the token active until exp, but skip the
     // username field. RFC 7662 doesn't require username; it's a
     // courtesy.
-    let username = claims
-        .sub
-        .parse::<sui_id_shared::ids::UserId>()
-        .ok()
-        .and_then(|uid| users::get(db, uid).ok())
-        .map(|u| u.username);
+    let username = {
+        let uid_opt = claims.sub.parse::<sui_id_shared::ids::UserId>().ok();
+        if let Some(uid) = uid_opt {
+            users::get(db, uid).await.ok().map(|u| u.username)
+        } else {
+            None
+        }
+    };
     IntrospectionResponse {
         active: true,
         scope: Some(claims.scope.clone()),
@@ -145,19 +147,19 @@ fn active_from_access(claims: &AccessTokenClaims, db: &Database) -> Introspectio
     }
 }
 
-fn try_introspect_refresh(
+async fn try_introspect_refresh(
     db: &Database,
     authenticating_client: ClientId,
     token: &str,
 ) -> CoreResult<IntrospectionResponse> {
-    let row = match refresh_tokens::find_active(db, token) {
+    let row = match refresh_tokens::find_active(db, token).await {
         Ok(r) => r,
         Err(_) => return Ok(IntrospectionResponse::inactive()),
     };
     if row.client_id != authenticating_client {
         return Ok(IntrospectionResponse::inactive());
     }
-    let username = users::get(db, row.user_id).ok().map(|u| u.username);
+    let username = users::get(db, row.user_id).await.ok().map(|u| u.username);
     Ok(IntrospectionResponse {
         active: true,
         scope: Some(row.scope),
@@ -176,7 +178,7 @@ fn try_introspect_refresh(
 /// Per RFC 7009 §2.2, token revocation must be idempotent: revoking
 /// an already-revoked or never-existed token returns 200. Only an
 /// "unsupported token type" or auth failure produces an error.
-pub fn revoke(
+pub async fn revoke(
     db: &Database,
     clock: &SharedClock,
     authenticating_client: ClientId,
@@ -189,8 +191,8 @@ pub fn revoke(
     };
     for kind in order {
         let revoked = match *kind {
-            "access_token" => try_revoke_access(db, clock, authenticating_client, token)?,
-            "refresh_token" => try_revoke_refresh(db, authenticating_client, token)?,
+            "access_token" => try_revoke_access(db, clock, authenticating_client, token).await?,
+            "refresh_token" => try_revoke_refresh(db, authenticating_client, token).await?,
             _ => false,
         };
         if revoked {
@@ -203,13 +205,13 @@ pub fn revoke(
     Ok(())
 }
 
-fn try_revoke_access(
+async fn try_revoke_access(
     db: &Database,
     clock: &SharedClock,
     authenticating_client: ClientId,
     token: &str,
 ) -> CoreResult<bool> {
-    let claims = match verify_access_token(db, clock, token) {
+    let claims = match verify_access_token(db, clock, token).await {
         Ok(c) => c,
         Err(_) => return Ok(false),
     };
@@ -235,23 +237,23 @@ fn try_revoke_access(
             revoked_by_user: user_id,
             revoked_by_client: Some(authenticating_client),
         },
-    )?;
+    ).await?;
     Ok(true)
 }
 
-fn try_revoke_refresh(
+async fn try_revoke_refresh(
     db: &Database,
     authenticating_client: ClientId,
     token: &str,
 ) -> CoreResult<bool> {
-    let row = match refresh_tokens::find_active(db, token) {
+    let row = match refresh_tokens::find_active(db, token).await {
         Ok(r) => r,
         Err(_) => return Ok(false),
     };
     if row.client_id != authenticating_client {
         return Ok(false);
     }
-    refresh_tokens::revoke(db, &row.id)?;
+    refresh_tokens::revoke(db, &row.id).await?;
     Ok(true)
 }
 
@@ -261,7 +263,7 @@ fn try_revoke_refresh(
 /// We accept the credentials in either the form-body (`client_id` +
 /// `client_secret`) or HTTP Basic — both are spec-permitted and the
 /// HTTP layer normalises them before calling us.
-pub fn authenticate_client(
+pub async fn authenticate_client(
     db: &Database,
     client_id: &str,
     client_secret: &str,
@@ -269,7 +271,7 @@ pub fn authenticate_client(
     let id = client_id
         .parse::<ClientId>()
         .map_err(|_| CoreError::Unauthenticated)?;
-    let row = clients::get(db, id).map_err(|e| match e {
+    let row = clients::get(db, id).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Unauthenticated,
         other => CoreError::from(other),
     })?;
@@ -285,7 +287,7 @@ pub fn authenticate_client(
         .secret_hash
         .as_deref()
         .ok_or(CoreError::Unauthenticated)?;
-    crate::password::verify_password(client_secret, hash)
+    crate::password::verify_password(client_secret, hash).await
         .map_err(|_| CoreError::Unauthenticated)?;
     Ok(id)
 }

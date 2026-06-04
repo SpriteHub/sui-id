@@ -65,12 +65,13 @@ const SELECT_USER: &str = "SELECT id, username, display_name, is_admin, is_disab
                            email_normalized, email_verified_at \
                            FROM users";
 
-pub fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
+pub async fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
     let email_normalized = user
         .email
         .as_deref()
         .map(sui_id_shared::normalize_email);
-    db.with_conn(|conn| {
+    let user = user.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO users(id, username, display_name, is_admin, is_disabled, is_deleted, \
                                 created_at, updated_at, user_uuid, \
@@ -103,20 +104,21 @@ pub fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
             other => StoreError::from(other),
         })?;
         Ok(())
-    })
+    }).await
 }
 
 /// Update a user's preferred UI language. `lang` is a BCP-47 tag
 /// or `None` to clear ("no preference"). Application-layer
 /// validation should ensure the tag is one of `Locale::ALL` before
 /// calling.
-pub fn set_preferred_lang(
+pub async fn set_preferred_lang(
     db: &Database,
     id: UserId,
     lang: Option<&str>,
     now: DateTime<Utc>,
 ) -> StoreResult<()> {
-    db.with_conn(|conn| {
+    let lang = lang.map(str::to_owned);
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE users SET preferred_lang = ?1, updated_at = ?2 WHERE id = ?3",
             params![lang, now, id.to_string()],
@@ -126,11 +128,11 @@ pub fn set_preferred_lang(
         } else {
             Ok(())
         }
-    })
+    }).await
 }
 
-pub fn get(db: &Database, id: UserId) -> StoreResult<UserRow> {
-    db.with_conn(|conn| {
+pub async fn get(db: &Database, id: UserId) -> StoreResult<UserRow> {
+    db.with_conn(move |conn| {
         conn.query_row(
             &format!("{SELECT_USER} WHERE id = ?1"),
             [id.to_string()],
@@ -140,11 +142,12 @@ pub fn get(db: &Database, id: UserId) -> StoreResult<UserRow> {
             rusqlite::Error::QueryReturnedNoRows => StoreError::NotFound,
             other => StoreError::from(other),
         })
-    })
+    }).await
 }
 
-pub fn find_by_username(db: &Database, username: &str) -> StoreResult<UserRow> {
-    db.with_conn(|conn| {
+pub async fn find_by_username(db: &Database, username: &str) -> StoreResult<UserRow> {
+    let username = username.to_owned();
+    db.with_conn(move |conn| {
         conn.query_row(
             &format!("{SELECT_USER} WHERE username = ?1"),
             [username],
@@ -154,7 +157,7 @@ pub fn find_by_username(db: &Database, username: &str) -> StoreResult<UserRow> {
             rusqlite::Error::QueryReturnedNoRows => StoreError::NotFound,
             other => StoreError::from(other),
         })
-    })
+    }).await
 }
 
 /// Find a user by normalised email address. The caller should pass a
@@ -163,8 +166,9 @@ pub fn find_by_username(db: &Database, username: &str) -> StoreResult<UserRow> {
 /// so the lookup is O(log n) and case-insensitive.
 ///
 /// Returns `Ok(None)` when no user matches.
-pub fn find_by_email_normalized(db: &Database, normalized: &str) -> StoreResult<Option<UserRow>> {
-    db.with_conn(|conn| {
+pub async fn find_by_email_normalized(db: &Database, normalized: &str) -> StoreResult<Option<UserRow>> {
+    let normalized = normalized.to_owned();
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(&format!("{SELECT_USER} WHERE email_normalized = ?1"))?;
         let res = stmt.query_row([normalized], map_row);
         match res {
@@ -172,22 +176,22 @@ pub fn find_by_email_normalized(db: &Database, normalized: &str) -> StoreResult<
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
-    })
+    }).await
 }
 
 /// Find a user by email address, normalising the input automatically.
 /// Thin wrapper over `find_by_email_normalized` for callers that hold
 /// the original-case address.
-pub fn find_by_email(db: &Database, email: &str) -> StoreResult<Option<UserRow>> {
-    find_by_email_normalized(db, &sui_id_shared::normalize_email(email))
+pub async fn find_by_email(db: &Database, email: &str) -> StoreResult<Option<UserRow>> {
+    find_by_email_normalized(db, &sui_id_shared::normalize_email(email)).await
 }
 
 /// Like `get` but returns `Ok(None)` instead of `Err(NotFound)`.
 /// Convenience for callers (notably the post-password-reset
 /// notification path) that legitimately want to no-op on a missing
 /// row instead of treating it as an error.
-pub fn find_by_id_opt(db: &Database, id: UserId) -> StoreResult<Option<UserRow>> {
-    db.with_conn(|conn| {
+pub async fn find_by_id_opt(db: &Database, id: UserId) -> StoreResult<Option<UserRow>> {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(&format!("{SELECT_USER} WHERE id = ?1"))?;
         let res = stmt.query_row([id.to_string()], map_row);
         match res {
@@ -195,22 +199,22 @@ pub fn find_by_id_opt(db: &Database, id: UserId) -> StoreResult<Option<UserRow>>
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
-    })
+    }).await
 }
 
-pub fn list(db: &Database) -> StoreResult<Vec<UserRow>> {
-    db.with_conn(|conn| {
+pub async fn list(db: &Database) -> StoreResult<Vec<UserRow>> {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(&format!("{SELECT_USER} ORDER BY created_at ASC"))?;
         let rows = stmt
             .query_map([], map_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
-    })
+    }).await
 }
 
 /// Toggle the `is_disabled` flag (suspend / un-suspend).
-pub fn set_disabled(db: &Database, id: UserId, disabled: bool) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn set_disabled(db: &Database, id: UserId, disabled: bool) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE users SET is_disabled = ?1, updated_at = ?2 WHERE id = ?3",
             params![disabled as i64, Utc::now(), id.to_string()],
@@ -219,13 +223,13 @@ pub fn set_disabled(db: &Database, id: UserId, disabled: bool) -> StoreResult<()
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Soft-delete a user. Hard delete is intentionally not exposed at this
 /// layer: it would orphan audit-log references.
-pub fn soft_delete(db: &Database, id: UserId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn soft_delete(db: &Database, id: UserId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE users SET is_deleted = 1, is_disabled = 1, updated_at = ?1 WHERE id = ?2",
             params![Utc::now(), id.to_string()],
@@ -234,7 +238,7 @@ pub fn soft_delete(db: &Database, id: UserId) -> StoreResult<()> {
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Increment the user's consecutive-failure counter and (when the
@@ -246,12 +250,12 @@ pub fn soft_delete(db: &Database, id: UserId) -> StoreResult<()> {
 /// — used at low failure counts where we want to count but not yet
 /// punish. The decision is intentionally outside this function so
 /// that the `sui_id_core` layer can choose the backoff curve.
-pub fn record_login_failure(
+pub async fn record_login_failure(
     db: &Database,
     id: UserId,
     lock_until: Option<DateTime<Utc>>,
 ) -> StoreResult<i64> {
-    db.with_conn(|conn| {
+    db.with_conn(move |conn| {
         let tx = conn.unchecked_transaction()?;
         let count: i64 = tx
             .query_row(
@@ -270,25 +274,25 @@ pub fn record_login_failure(
         )?;
         tx.commit()?;
         Ok(new_count)
-    })
+    }).await
 }
 
 /// Reset the user's failure counter and clear any active lock.
 /// Called on a successful password verification.
-pub fn clear_lockout(db: &Database, id: UserId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn clear_lockout(db: &Database, id: UserId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         conn.execute(
             "UPDATE users SET failed_login_count = 0, locked_until = NULL, updated_at = ?1 WHERE id = ?2",
             params![Utc::now(), id.to_string()],
         )?;
         Ok(())
-    })
+    }).await
 }
 
 /// Admin-initiated unlock: reset both fields without requiring a
 /// successful password check. Used by `sui-id admin unlock-user`.
-pub fn admin_unlock(db: &Database, id: UserId) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn admin_unlock(db: &Database, id: UserId) -> StoreResult<()> {
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE users SET failed_login_count = 0, locked_until = NULL, updated_at = ?1 WHERE id = ?2",
             params![Utc::now(), id.to_string()],
@@ -297,7 +301,7 @@ pub fn admin_unlock(db: &Database, id: UserId) -> StoreResult<()> {
             return Err(StoreError::NotFound);
         }
         Ok(())
-    })
+    }).await
 }
 
 /// Update a user's email address. Writes both `email` (original case)
@@ -305,14 +309,15 @@ pub fn admin_unlock(db: &Database, id: UserId) -> StoreResult<()> {
 /// the same statement so the two columns stay in sync.
 ///
 /// Pass `None` to clear the email from the account.
-pub fn update_email(
+pub async fn update_email(
     db: &Database,
     id: UserId,
     email: Option<&str>,
     now: DateTime<Utc>,
 ) -> StoreResult<()> {
     let normalized = email.map(sui_id_shared::normalize_email);
-    db.with_conn(|conn| {
+    let email = email.map(str::to_owned);
+    db.with_conn(move |conn| {
         let n = conn.execute(
             "UPDATE users SET email = ?1, email_normalized = ?2, updated_at = ?3 WHERE id = ?4",
             params![email, normalized, now, id.to_string()],
@@ -322,5 +327,5 @@ pub fn update_email(
         } else {
             Ok(())
         }
-    })
+    }).await
 }

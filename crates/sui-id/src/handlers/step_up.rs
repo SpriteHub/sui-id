@@ -89,7 +89,7 @@ pub async fn get(
     let State(app) = state_ext;
     let return_to = sanitise_return_to(&q.return_to);
     let token = csrf::ensure_token(&jar);
-    let has_passkey = sui_id_core::webauthn::has_credentials(&app.db, ctx.user_id)
+    let has_passkey = sui_id_core::webauthn::has_credentials(&app.db, ctx.user_id).await
         .map_err(HttpError::html)?;
     let html =
         sui_id_web::render_step_up(&return_to, token.clone(), has_passkey, None, lang);
@@ -124,7 +124,7 @@ pub async fn post(
         ctx.user_id,
         ctx.session_id,
         &form.code,
-    ) {
+    ).await {
         Ok(()) => {
             // The CSRF cookie was valid; rotate the in-process
             // token but don't burn a fresh one — the sensitive
@@ -134,7 +134,7 @@ pub async fn post(
         Err(CoreError::InvalidCredentials) => {
             let token = csrf::ensure_token(&jar);
             let has_passkey =
-                sui_id_core::webauthn::has_credentials(&app.db, ctx.user_id)
+                sui_id_core::webauthn::has_credentials(&app.db, ctx.user_id).await
                     .map_err(HttpError::html)?;
             let flash = Flash {
                 kind: FlashKind::Error,
@@ -195,7 +195,7 @@ pub async fn webauthn_start(
         &app.clock,
         &app.config.server.issuer,
         ctx.user_id,
-    )
+    ).await
     .map_err(HttpError::html)?;
 
     let pending_cookie = {
@@ -257,7 +257,7 @@ pub async fn webauthn_finish(
         ctx.session_id,
         pending_id,
         &form.credential,
-    );
+    ).await;
 
     // Always clear the pending cookie — success and failure alike
     // burn the ceremony.

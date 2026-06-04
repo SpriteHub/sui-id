@@ -98,14 +98,14 @@ pub async fn request_reset(
     }
 
     // Look up by email.
-    let user_row = users::find_by_email_normalized(db, &normalized_email)?;
+    let user_row = users::find_by_email_normalized(db, &normalized_email).await?;
     let Some(user_row) = user_row else {
         events::emit(
             db,
             clock,
             &ctx,
             SecurityEvent::PasswordResetRequested { user_id: None },
-        );
+        ).await;
         return Ok(());
     };
 
@@ -117,13 +117,13 @@ pub async fn request_reset(
             SecurityEvent::PasswordResetRequested {
                 user_id: Some(user_row.id),
             },
-        );
+        ).await;
         return Ok(());
     }
 
     // Outstanding-token throttle.
     let outstanding =
-        password_reset_tokens::count_active_for_user(db, user_row.id, now)?;
+        password_reset_tokens::count_active_for_user(db, user_row.id, now).await?;
     if outstanding >= MAX_OUTSTANDING_TOKENS_PER_USER {
         events::emit(
             db,
@@ -133,7 +133,7 @@ pub async fn request_reset(
                 user_id: user_row.id,
                 outstanding,
             },
-        );
+        ).await;
         return Ok(());
     }
 
@@ -148,11 +148,11 @@ pub async fn request_reset(
         consumed_at: None,
         requester_ip: requester_ip.map(str::to_owned),
     };
-    password_reset_tokens::insert(db, &row)?;
+    password_reset_tokens::insert(db, &row).await?;
 
     // Build the reset link from `smtp_config.base_url` (the
     // user-facing origin, not necessarily the OIDC issuer URL).
-    let base_url = match smtp_config::get(db)? {
+    let base_url = match smtp_config::get(db).await? {
         Some(c) if c.enabled => c.base_url,
         _ => {
             // SMTP disabled / unconfigured. Still return Ok so the
@@ -165,7 +165,7 @@ pub async fn request_reset(
                     user_id: user_row.id,
                     reason: "smtp_unconfigured".into(),
                 },
-            );
+            ).await;
             return Ok(());
         }
     };
@@ -182,16 +182,15 @@ pub async fn request_reset(
     // be the requester). Falling through to server default if the
     // user has expressed no preference matches the resolution
     // chain in `core::i18n::resolve`.
+    let default_locale = sui_id_store::repos::server_settings::get(db).await
+        .ok()
+        .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
+        .unwrap_or_default();
     let recipient_locale = user_row
         .preferred_lang
         .as_deref()
         .and_then(sui_id_i18n::Locale::parse)
-        .unwrap_or_else(|| {
-            sui_id_store::repos::server_settings::get(db)
-                .ok()
-                .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
-                .unwrap_or_default()
-        });
+        .unwrap_or(default_locale);
     let t = recipient_locale.strings();
     let display = user_row
         .display_name
@@ -241,7 +240,7 @@ pub async fn request_reset(
                 SecurityEvent::PasswordResetEmailSent {
                     user_id: user_row.id,
                 },
-            );
+            ).await;
         }
         Err(e) => {
             events::emit(
@@ -252,7 +251,7 @@ pub async fn request_reset(
                     user_id: user_row.id,
                     reason: e.to_string(),
                 },
-            );
+            ).await;
         }
     }
     Ok(())
@@ -261,13 +260,13 @@ pub async fn request_reset(
 /// Verify a token without consuming it. Used by the GET handler
 /// that decides whether to render the new-password form or a
 /// "this link is invalid or expired" page.
-pub fn validate_token(
+pub async fn validate_token(
     db: &Database,
     clock: &SharedClock,
     plaintext_token: &str,
 ) -> CoreResult<UserId> {
     let hash = hash_token(plaintext_token);
-    let row = password_reset_tokens::find_by_hash(db, &hash)?
+    let row = password_reset_tokens::find_by_hash(db, &hash).await?
         .ok_or(CoreError::InvalidCredentials)?;
     if row.consumed_at.is_some() {
         return Err(CoreError::InvalidCredentials);
@@ -299,12 +298,12 @@ pub async fn consume_and_reset_password(
     new_password: &str,
     requester_ip: Option<&str>,
 ) -> CoreResult<()> {
-    password::check_password_policy(new_password)?;
+    password::check_password_policy(new_password).await?;
 
     // RFC 003: HIBP breach check on token-based password reset.
     // Fail-open: network failures let the reset through.
     if matches!(
-        hibp::enforce_hibp(hibp_mode, hibp_client, new_password),
+        hibp::enforce_hibp(hibp_mode, hibp_client, new_password).await,
         HibpEnforcement::Blocked { .. }
     ) {
         return Err(CoreError::BadRequest(
@@ -312,7 +311,7 @@ pub async fn consume_and_reset_password(
         ));
     }
     let hash = hash_token(plaintext_token);
-    let row = password_reset_tokens::find_by_hash(db, &hash)?
+    let row = password_reset_tokens::find_by_hash(db, &hash).await?
         .ok_or(CoreError::InvalidCredentials)?;
     let now = clock.now();
     if row.consumed_at.is_some() || row.expires_at < now {
@@ -321,26 +320,29 @@ pub async fn consume_and_reset_password(
 
     // Hash the new password before entering the transaction so a slow
     // Argon2id derivation doesn't hold the DB mutex longer than necessary.
-    let new_hash = password::hash_password(new_password)?;
+    let new_hash = password::hash_password(new_password).await?;
 
     // Atomically: update credential, consume token, revoke all sessions and
     // refresh tokens. Either everything commits or nothing does — the user
     // is never left in a half-recovered state.
-    db.with_tx(|tx| {
+    let row_user_id = row.user_id;
+    let row_id = row.id;
+    let new_hash_owned = new_hash.clone();
+    db.with_tx(move |tx| {
         credentials::upsert_within_tx(
             tx,
             &CredentialRow {
-                user_id: row.user_id,
-                password_hash: new_hash.clone(),
+                user_id: row_user_id,
+                password_hash: new_hash_owned,
                 must_change: false,
                 updated_at: now,
             },
         )?;
-        password_reset_tokens::mark_consumed_within_tx(tx, row.id, now)?;
-        sessions::revoke_all_for_user_within_tx(tx, row.user_id, now)?;
-        refresh_tokens::revoke_all_for_user_within_tx(tx, row.user_id, now)?;
+        password_reset_tokens::mark_consumed_within_tx(tx, row_id, now)?;
+        sessions::revoke_all_for_user_within_tx(tx, row_user_id, now)?;
+        refresh_tokens::revoke_all_for_user_within_tx(tx, row_user_id, now)?;
         Ok(())
-    })?;
+    }).await?;
 
     let mut ctx = Context::default().with_actor(row.user_id);
     if let Some(ip) = requester_ip {
@@ -353,31 +355,29 @@ pub async fn consume_and_reset_password(
         SecurityEvent::PasswordResetCompleted {
             user_id: row.user_id,
         },
-    );
+    ).await;
 
     // Best-effort post-reset notification mail. Failures here do
     // not affect the password change itself. The recipient's
     // locale comes from their `preferred_lang` if set, falling
     // through to the server default.
-    if let Ok(Some(user_row)) = users::find_by_id_opt(db, row.user_id) {
+    if let Ok(Some(user_row)) = users::find_by_id_opt(db, row.user_id).await {
         if let Some(email) = user_row.email.as_deref() {
-            let recipient_locale = user_row
+            let default_locale_pw = sui_id_store::repos::server_settings::get(db).await
+                .ok()
+                .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
+                .unwrap_or_default();
+        let recipient_locale = user_row
                 .preferred_lang
                 .as_deref()
                 .and_then(sui_id_i18n::Locale::parse)
-                .unwrap_or_else(|| {
-                    sui_id_store::repos::server_settings::get(db)
-                        .ok()
-                        .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
-                        .unwrap_or_default()
-                });
+                .unwrap_or(default_locale_pw);
             let _ = notify_password_changed(
                 mailer,
                 email,
                 &user_row.display_name,
                 recipient_locale,
-            )
-            .await;
+            ).await;
         }
     }
 

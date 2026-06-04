@@ -129,11 +129,10 @@ impl SmtpMailSender {
     /// directly — it's the kind of error an operator wants to see
     /// verbatim ("550 5.7.1 relay denied", "auth failed", etc).
     pub async fn test_connection(&self) -> CoreResult<()> {
-        let cfg = smtp_config::get(&self.db)?
+        let cfg = smtp_config::get(&self.db).await?
             .ok_or_else(|| CoreError::BadRequest("SMTP is not configured".into()))?;
-        let password = smtp_config::decrypt_password(&cfg, self.db.key())?;
-        run_smtp_session(&cfg, password.as_deref(), &self.ehlo_hostname, None)
-            .await
+        let password = smtp_config::decrypt_password(&cfg, self.db.key()).await?;
+        run_smtp_session(&cfg, password.as_deref(), &self.ehlo_hostname, None).await
             .map_err(|e| CoreError::BadRequest(format!("SMTP test failed: {e}")))?;
         Ok(())
     }
@@ -147,17 +146,16 @@ impl MailSender for SmtpMailSender {
         Box<dyn std::future::Future<Output = CoreResult<MailSendOutcome>> + Send + 'a>,
     > {
         Box::pin(async move {
-            let cfg = smtp_config::get(&self.db)?
+            let cfg = smtp_config::get(&self.db).await?
                 .ok_or_else(|| CoreError::BadRequest("SMTP is not configured".into()))?;
             if !cfg.enabled {
                 return Err(CoreError::BadRequest("SMTP is disabled".into()));
             }
-            let password = smtp_config::decrypt_password(&cfg, self.db.key())?;
+            let password = smtp_config::decrypt_password(&cfg, self.db.key()).await?;
             let from = cfg.from_address.clone();
             let subject = mail.subject.clone();
             let to_addr = mail.to.clone();
-            run_smtp_session(&cfg, password.as_deref(), &self.ehlo_hostname, Some(&mail))
-                .await
+            run_smtp_session(&cfg, password.as_deref(), &self.ehlo_hostname, Some(&mail)).await
                 .map_err(|e| {
                     tracing::warn!(error = %e, "SMTP send failed");
                     CoreError::BadRequest(format!("SMTP send failed: {e}"))

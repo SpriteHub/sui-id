@@ -31,8 +31,8 @@ mod schema_invariant_tests {
 
     // ─── § 3: signing_keys single-active unique index ────────────────────
 
-    #[test]
-    fn signing_keys_two_active_rejected_by_unique_index() {
+    #[tokio::test]
+    async     fn signing_keys_two_active_rejected_by_unique_index() {
         let db = fresh_db();
 
         // Insert first active key — must succeed.
@@ -44,7 +44,7 @@ mod schema_invariant_tests {
                 [],
             )?;
             Ok(())
-        })
+        }).await
         .expect("first active key must insert");
 
         // Insert second active key — must fail with UNIQUE violation.
@@ -56,7 +56,7 @@ mod schema_invariant_tests {
                 [],
             )?;
             Ok(())
-        });
+        }).await;
         assert!(
             err.is_err(),
             "inserting a second is_active=1 row must violate the unique index"
@@ -71,14 +71,14 @@ mod schema_invariant_tests {
                 [],
             )?;
             Ok(())
-        })
+        }).await
         .expect("retired key (is_active=0) must not conflict with the partial unique index");
     }
 
     // ─── § 4: consents FK constraints ────────────────────────────────────
 
-    #[test]
-    fn consents_fk_rejects_unknown_user_id() {
+    #[tokio::test]
+    async     fn consents_fk_rejects_unknown_user_id() {
         let db = fresh_db();
         let err = db.with_conn(|conn| {
             conn.execute(
@@ -89,15 +89,15 @@ mod schema_invariant_tests {
                 [],
             )?;
             Ok(())
-        });
+        }).await;
         assert!(
             err.is_err(),
             "consents insert with non-existent user_id must fail FK check"
         );
     }
 
-    #[test]
-    fn consents_empty_granted_scopes_rejected() {
+    #[tokio::test]
+    async     fn consents_empty_granted_scopes_rejected() {
         let db = fresh_db();
 
         // Set up a real user and client first.
@@ -117,7 +117,7 @@ mod schema_invariant_tests {
                 [],
             )?;
             Ok(())
-        });
+        }).await;
         assert!(setup.is_ok(), "setup must succeed: {setup:?}");
 
         let err = db.with_conn(|conn| {
@@ -128,7 +128,7 @@ mod schema_invariant_tests {
                 [],
             )?;
             Ok(())
-        });
+        }).await;
         assert!(
             err.is_err(),
             "consents with empty granted_scopes must be rejected by CHECK constraint"
@@ -137,15 +137,15 @@ mod schema_invariant_tests {
 
     // ─── § 5: JSON write guard ────────────────────────────────────────────
 
-    #[test]
-    fn require_valid_json_accepts_valid_json() {
+    #[tokio::test]
+    async     fn require_valid_json_accepts_valid_json() {
         use crate::repos::json_util::require_valid_json;
         assert!(require_valid_json::<Vec<String>>(r#"["a","b"]"#, "test").is_ok());
         assert!(require_valid_json::<Vec<String>>(r#"[]"#, "test").is_ok());
     }
 
-    #[test]
-    fn require_valid_json_rejects_corrupt_json() {
+    #[tokio::test]
+    async     fn require_valid_json_rejects_corrupt_json() {
         use crate::repos::json_util::require_valid_json;
         let err = require_valid_json::<Vec<String>>("not-json", "clients.redirect_uris");
         assert!(
@@ -161,8 +161,8 @@ mod schema_invariant_tests {
         );
     }
 
-    #[test]
-    fn require_valid_json_rejects_wrong_shape() {
+    #[tokio::test]
+    async     fn require_valid_json_rejects_wrong_shape() {
         use crate::repos::json_util::require_valid_json;
         // Valid JSON but wrong shape (object instead of array).
         let err = require_valid_json::<Vec<String>>(r#"{"key":"value"}"#, "test.col");
@@ -189,8 +189,8 @@ mod schema_invariant_tests {
         .expect("count query")
     }
 
-    #[test]
-    fn migration_0021_preserves_all_child_rows_on_upgrade() {
+    #[tokio::test]
+    async     fn migration_0021_preserves_all_child_rows_on_upgrade() {
         use rusqlite::Connection;
 
         let mut conn = Connection::open_in_memory().expect("in-memory db");
@@ -284,8 +284,8 @@ mod schema_invariant_tests {
         );
     }
 
-    #[test]
-    fn migration_0021_with_invalid_boolean_still_preserves_rows() {
+    #[tokio::test]
+    async     fn migration_0021_with_invalid_boolean_still_preserves_rows() {
         // The silent-coercion risk: migration 0021 (v0.29.8) no longer
         // rebuilds parent tables, so no coercion occurs and no rows are
         // lost — even rows that would have violated the deferred CHECKs.
@@ -478,8 +478,8 @@ fn migration_0022_fails_fast_if_existing_row_violates_check() {
 
     // ─── FK restoration guarantee ─────────────────────────────────────────────
 
-    #[test]
-    fn fk_is_restored_after_fk_disable_migration_failure() {
+    #[tokio::test]
+    async     fn fk_is_restored_after_fk_disable_migration_failure() {
         // Verify that foreign_keys is ON even when a FK_DISABLE_REQUIRED
         // migration fails partway through. Without the closure pattern in
         // apply_migration(), a migration failure would leave FK enforcement
@@ -532,8 +532,8 @@ fn migration_0022_fails_fast_if_existing_row_violates_check() {
         );
     }
 
-    #[test]
-    fn run_up_to_handles_fk_disable_migration_same_as_run() {
+    #[tokio::test]
+    async     fn run_up_to_handles_fk_disable_migration_same_as_run() {
         // Verify that run_up_to() applies migration 0022 correctly using
         // apply_migration() (FK_DISABLE_REQUIRED handling), not the old
         // bare-transaction path.

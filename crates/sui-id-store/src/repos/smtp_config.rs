@@ -50,8 +50,8 @@ const SELECT_COLUMNS: &str = "id, enabled, host, tls_mode, port, username, \
                               created_at, updated_at";
 
 /// Fetch the current SMTP configuration, if any.
-pub fn get(db: &Database) -> StoreResult<Option<SmtpConfigRow>> {
-    db.with_conn(|conn| {
+pub async fn get(db: &Database) -> StoreResult<Option<SmtpConfigRow>> {
+    db.with_conn(move |conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {SELECT_COLUMNS} FROM smtp_config WHERE id = ?1"
         ))?;
@@ -61,15 +61,16 @@ pub fn get(db: &Database) -> StoreResult<Option<SmtpConfigRow>> {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
-    })
+    }).await
 }
 
 /// Insert or update the singleton SMTP configuration row.
 ///
 /// Always writes `id = 'singleton'`; the row's primary key is
 /// fixed by the schema's CHECK constraint.
-pub fn upsert(db: &Database, row: &SmtpConfigRow) -> StoreResult<()> {
-    db.with_conn(|conn| {
+pub async fn upsert(db: &Database, row: &SmtpConfigRow) -> StoreResult<()> {
+    let row = row.clone();
+    db.with_conn(move |conn| {
         conn.execute(
             "INSERT INTO smtp_config(id, enabled, host, port, tls_mode, username, \
                                       password_enc, from_address, from_name, base_url, \
@@ -101,13 +102,13 @@ pub fn upsert(db: &Database, row: &SmtpConfigRow) -> StoreResult<()> {
             ],
         )?;
         Ok(())
-    })
+    }).await
 }
 
 /// Decrypt the SMTP password using the supplied master key.
 /// Returns `None` if the row has no password set (relay does
 /// not require authentication).
-pub fn decrypt_password(
+pub async fn decrypt_password(
     row: &SmtpConfigRow,
     master_key: &MasterKey,
 ) -> StoreResult<Option<String>> {
@@ -121,7 +122,7 @@ pub fn decrypt_password(
 
 /// Seal an SMTP password for storage. Returns the ciphertext bytes
 /// suitable for `SmtpConfigRow.password_enc`.
-pub fn seal_password(plaintext: &str, master_key: &MasterKey) -> StoreResult<Vec<u8>> {
+pub async fn seal_password(plaintext: &str, master_key: &MasterKey) -> StoreResult<Vec<u8>> {
     seal(master_key, plaintext.as_bytes(), SMTP_PASSWORD_AAD)
 }
 

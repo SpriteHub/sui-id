@@ -1,5 +1,11 @@
 # Operator's guide
 
+> **Scope.** sui-id is a single-realm, first-party IdP. One flat
+> namespace of users, one of clients, one global admin role. For
+> multi-tenant requirements see RFC 025. For the project's design
+> philosophy see the Scope section in [README.md](../README.md).
+
+
 This is a *reference* for the operational surface of sui-id —
 configuration fields, the master key, the audit log, GC, and routine
 tasks.

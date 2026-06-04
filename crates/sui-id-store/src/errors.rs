@@ -35,6 +35,12 @@ pub enum StoreError {
         #[source]
         source: serde_json::Error,
     },
+
+    /// A `tokio::task::spawn_blocking` task panicked or was cancelled.
+    /// This is a programming error (the closure panicked) or a runtime
+    /// shutdown condition; treated as an internal error by callers.
+    #[error("blocking DB task failed: {0}")]
+    JoinError(String),
 }
 
 pub type StoreResult<T> = Result<T, StoreError>;

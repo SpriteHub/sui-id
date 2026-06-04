@@ -5,7 +5,48 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.29.11] — Unreleased
+## [0.29.12] — Unreleased
+
+**RFC 013 — Async DB layer complete.**
+
+All synchronous `Database` calls are now dispatched to Tokio's blocking
+thread pool via `spawn_blocking`, freeing runtime workers during DB I/O.
+
+### Architecture change: `Database::with_conn` / `with_tx` are now async
+
+- `Database::with_conn(f)` and `Database::with_tx(f)` are now `async fn`.
+  Closures passed to them are `'static + Send` and run on a blocking thread.
+- `Database::with_conn_sync` / `with_tx_sync` are retained for the migration
+  runner (called before the async runtime starts) and for test helpers that
+  run synchronously.
+- All 16 repo modules (`repos/*.rs`) are converted to `pub async fn`.
+- All `sui-id-core` module functions are converted to `pub async fn`.
+- All `sui-id` handler, startup, GC, and CLI functions updated accordingly.
+
+### Breaking changes
+
+- Every repo and core function is now `async`. Call sites must add `.await`.
+- `system_clock()` and `lockout_backoff()` reverted to sync (pure computation).
+- `keyring::resolve()` remains sync (file I/O, called before the runtime).
+- Migration runner uses `with_conn_sync` / `with_tx_sync` internally.
+- The `FK_DISABLE_REQUIRED` migration path (`rotate_master_key`) uses
+  `with_tx_sync` to avoid the `&MasterKey: 'static` constraint.
+
+### Non-async call sites fixed
+
+Functions that are pure computation but were incorrectly converted to async
+are reverted: `sha256_hex`, `parse_response`, `lockout_backoff`,
+`is_redirect_uri_registered`, `system_clock`, `keyring::resolve`.
+
+### Test updates
+
+- `audit.rs` unit tests converted to `#[tokio::test]` async tests.
+- `tests_rfc021.rs` constraint tests converted to `#[tokio::test]` async tests.
+- All 28 store tests pass.
+
+---
+
+## [0.29.11] — Previous release
 
 Addresses remaining review findings from the v0.29.10 expert review
 (migration runner reliability, rate-limit response format, documentation).

@@ -27,7 +27,7 @@ const DIGITS: u32 = 6;
 /// Compute the 6-digit TOTP for the given secret and time step.
 ///
 /// `step = floor(unix_time / 30)`.
-pub fn code_for_step(secret: &[u8], step: i64) -> u32 {
+pub async fn code_for_step(secret: &[u8], step: i64) -> u32 {
     let counter = (step as u64).to_be_bytes();
     let mut mac = Hmac::<Sha1>::new_from_slice(secret).expect("HMAC accepts any key length");
     mac.update(&counter);
@@ -46,7 +46,7 @@ pub fn code_for_step(secret: &[u8], step: i64) -> u32 {
 ///
 /// On success returns the matching `step` so the caller can persist it
 /// as `last_used_step` (replay defence). On failure returns `None`.
-pub fn verify(secret: &[u8], unix_time: i64, supplied: u32, last_used_step: i64) -> Option<i64> {
+pub async fn verify(secret: &[u8], unix_time: i64, supplied: u32, last_used_step: i64) -> Option<i64> {
     if supplied >= 10u32.pow(DIGITS) {
         return None;
     }
@@ -57,7 +57,7 @@ pub fn verify(secret: &[u8], unix_time: i64, supplied: u32, last_used_step: i64)
             // Replay: this code (or an earlier one) has already been used.
             continue;
         }
-        let expected = code_for_step(secret, step);
+        let expected = code_for_step(secret, step).await;
         // Constant-time compare. `u32` → 4 bytes BE.
         if expected
             .to_be_bytes()
@@ -72,7 +72,7 @@ pub fn verify(secret: &[u8], unix_time: i64, supplied: u32, last_used_step: i64)
 
 /// Encode bytes as RFC 4648 Base32 (upper-case, no padding). The
 /// otpauth:// URI format requires this exact encoding.
-pub fn base32_encode(bytes: &[u8]) -> String {
+pub async fn base32_encode(bytes: &[u8]) -> String {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     let mut out = String::with_capacity(bytes.len() * 8 / 5 + 1);
     let mut buf: u32 = 0;
@@ -99,8 +99,8 @@ pub fn base32_encode(bytes: &[u8]) -> String {
 /// (the HTTP layer) usually has access to a percent-encoder. This helper
 /// keeps no opinions about encoding so that callers can reuse whichever
 /// implementation they already have.
-pub fn otpauth_uri(issuer: &str, account: &str, secret_bytes: &[u8]) -> String {
-    let secret_b32 = base32_encode(secret_bytes);
+pub async fn otpauth_uri(issuer: &str, account: &str, secret_bytes: &[u8]) -> String {
+    let secret_b32 = base32_encode(secret_bytes).await;
     format!(
         "otpauth://totp/{issuer}:{account}?secret={secret_b32}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
     )
@@ -128,7 +128,7 @@ mod tests {
         ];
         for (t, expected) in cases {
             let step = t / 30;
-            let got = code_for_step(RFC_SECRET, step);
+            let got = code_for_step(RFC_SECRET, step).await;
             // The RFC publishes 8-digit values; sui-id uses 6 digits, so
             // truncate the published expected to its last 6 digits.
             let want_6 = expected % 1_000_000;
@@ -140,8 +140,8 @@ mod tests {
     fn verify_accepts_current_step() {
         let now = 1_700_000_000_i64;
         let step = now.div_euclid(STEP_SECS);
-        let code = code_for_step(RFC_SECRET, step);
-        let got = verify(RFC_SECRET, now, code, 0);
+        let code = code_for_step(RFC_SECRET, step).await;
+        let got = verify(RFC_SECRET, now, code, 0).await;
         assert_eq!(got, Some(step));
     }
 
@@ -149,47 +149,47 @@ mod tests {
     fn verify_accepts_minus_one_step() {
         let now = 1_700_000_000_i64;
         let step = now.div_euclid(STEP_SECS) - 1;
-        let code = code_for_step(RFC_SECRET, step);
-        assert_eq!(verify(RFC_SECRET, now, code, 0), Some(step));
+        let code = code_for_step(RFC_SECRET, step).await;
+        assert_eq!(verify(RFC_SECRET, now, code, 0).await, Some(step));
     }
 
     #[test]
     fn verify_rejects_replay_within_window() {
         let now = 1_700_000_000_i64;
         let step = now.div_euclid(STEP_SECS);
-        let code = code_for_step(RFC_SECRET, step);
+        let code = code_for_step(RFC_SECRET, step).await;
         // First time: accepted.
-        assert_eq!(verify(RFC_SECRET, now, code, 0), Some(step));
+        assert_eq!(verify(RFC_SECRET, now, code, 0).await, Some(step));
         // Second time, recording the previous step: rejected.
-        assert!(verify(RFC_SECRET, now, code, step).is_none());
+        assert!(verify(RFC_SECRET, now, code, step).await.is_none());
     }
 
     #[test]
     fn verify_rejects_wrong_code() {
         let now = 1_700_000_000_i64;
-        assert!(verify(RFC_SECRET, now, 000000, 0).is_none());
+        assert!(verify(RFC_SECRET, now, 000000, 0).await.is_none());
     }
 
     #[test]
     fn verify_rejects_overlong_code() {
         // 7-digit submission — must fail without trying the HMAC.
-        assert!(verify(RFC_SECRET, 1_700_000_000, 1_234_567, 0).is_none());
+        assert!(verify(RFC_SECRET, 1_700_000_000, 1_234_567, 0).await.is_none());
     }
 
     #[test]
     fn base32_round_trip_known_vectors() {
-        assert_eq!(base32_encode(b""), "");
-        assert_eq!(base32_encode(b"f"), "MY");
-        assert_eq!(base32_encode(b"fo"), "MZXQ");
-        assert_eq!(base32_encode(b"foo"), "MZXW6");
-        assert_eq!(base32_encode(b"foob"), "MZXW6YQ");
-        assert_eq!(base32_encode(b"fooba"), "MZXW6YTB");
-        assert_eq!(base32_encode(b"foobar"), "MZXW6YTBOI");
+        assert_eq!(base32_encode(b"").await, "");
+        assert_eq!(base32_encode(b"f").await, "MY");
+        assert_eq!(base32_encode(b"fo").await, "MZXQ");
+        assert_eq!(base32_encode(b"foo").await, "MZXW6");
+        assert_eq!(base32_encode(b"foob").await, "MZXW6YQ");
+        assert_eq!(base32_encode(b"fooba").await, "MZXW6YTB");
+        assert_eq!(base32_encode(b"foobar").await, "MZXW6YTBOI");
     }
 
     #[test]
     fn otpauth_uri_has_required_fields() {
-        let uri = otpauth_uri("sui-id", "alice", b"01234567890123456789");
+        let uri = otpauth_uri("sui-id", "alice", b"01234567890123456789").await;
         assert!(uri.starts_with("otpauth://totp/sui-id:alice?"));
         assert!(uri.contains("secret="));
         assert!(uri.contains("issuer=sui-id"));
