@@ -117,6 +117,26 @@ pub const TOKENS_CSS: &str = r#"
   /* Layout constants */
   --content-max-width: 64rem;
   --content-narrow-width: 28rem;
+
+  /* Motion / animation durations.
+     Used with transition properties throughout components. When the
+     prefers-reduced-motion media query fires, components that reference
+     these tokens inherit zero-duration automatically via the override
+     block below — no per-component duplication. */
+  --motion-instant: 0ms;
+  --motion-fast:    100ms;
+  --motion-base:    200ms;
+  --motion-slow:    350ms;
+  --motion-easing:  cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-index scale — explicit names prevent "magic number" layering. */
+  --z-below:    -1;
+  --z-base:      0;
+  --z-raised:   10;
+  --z-overlay:  100;
+  --z-dropdown: 200;
+  --z-modal:    300;
+  --z-toast:    400;
 }
 
 [data-theme="light"] {
@@ -205,5 +225,29 @@ pub const TOKENS_CSS: &str = r#"
     --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
     --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
   }
+}
+
+/* Motion: honour OS-level "Reduce motion" preference.
+   All transitions/animations that reference the token vars above are
+   automatically zeroed; components do not need individual overrides. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Text selection contrast — meets WCAG 2.1 SC 1.4.3 in both modes.
+   Light: #E6E1F5 bg on #1F1B24 text ≈ 13:1 ✓
+   Dark:  #332C4A bg on #F1EEF6 text ≈ 7:1  ✓ */
+::selection {
+  background-color: var(--accent-subtle);
+  color: var(--fg-default);
 }
 "#;

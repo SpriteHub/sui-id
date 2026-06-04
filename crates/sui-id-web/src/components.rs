@@ -38,12 +38,6 @@ body {
   border-radius: var(--radius-sm);
 }
 
-/* Selection */
-::selection {
-  background: var(--accent-subtle);
-  color: var(--fg-default);
-}
-
 /* Links */
 a {
   color: var(--accent-default);
@@ -618,5 +612,98 @@ section + section { margin-top: var(--space-5); }
     border-color: var(--color-text-secondary);
     outline: 2px solid var(--color-focus-ring, currentColor);
     outline-offset: 2px;
+}
+
+/* ── Tabs (RFC 023) ─────────────────────────────────────────────────── */
+/* Horizontal tab bar for Settings and other multi-panel screens.         */
+.tabs {
+  display: flex;
+  flex-direction: column;
+}
+.tabs__bar {
+  display: flex;
+  gap: 0;
+  border-bottom: var(--border-width-default) solid var(--border-default);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.tab-btn {
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-bottom: var(--border-width-emphasis) solid transparent;
+  color: var(--fg-muted);
+  font: var(--font-weight-regular) var(--font-size-body) / 1 var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--motion-fast) var(--motion-easing),
+              border-color var(--motion-fast) var(--motion-easing);
+  margin-bottom: calc(-1 * var(--border-width-default)); /* align with bar border */
+}
+.tab-btn:hover  { color: var(--fg-default); }
+.tab-btn:focus-visible {
+  outline: var(--border-width-emphasis) solid var(--state-focus);
+  outline-offset: -2px;
+}
+.tab-btn[aria-selected="true"] {
+  color: var(--accent-default);
+  border-bottom-color: var(--accent-default);
+  font-weight: var(--font-weight-medium);
+}
+.tabs__panel {
+  padding-top: var(--space-4);
+}
+
+/* ── Dev-mode banner (RFC 017 § 9, RFC 023) ─────────────────────────── */
+/* Displayed on every page when sui-id starts with --dev.                 */
+.dev-banner {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-raised);
+  background: #7A5C00;        /* deep amber, distinct from any semantic colour */
+  color: #FFF8E1;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-caption);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+.dev-banner strong { letter-spacing: 0.08em; }
+/* High-contrast bind warning within the banner */
+.dev-banner__bind-warn {
+  color: #FFCDD2;
+  font-weight: var(--font-weight-medium);
+}
+
+/* ── Transitions on interactive components (RFC 023 motion contract) ── */
+/* Apply motion tokens so prefers-reduced-motion is obeyed automatically.*/
+button,
+.btn,
+a,
+input,
+select,
+textarea {
+  transition-duration: var(--motion-fast);
+  transition-timing-function: var(--motion-easing);
+  transition-property: color, background-color, border-color, box-shadow, opacity;
+}
+
+/* ── Confirmation / step-up screens (RFC 017 § 3) ───────────────────── */
+/* Reversibility badge on dangerous-operation confirm screens.            */
+.reversibility-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+}
+.reversibility-badge--recoverable {
+  background: color-mix(in srgb, var(--success-default) 15%, transparent);
+  color: var(--success-default);
+}
+.reversibility-badge--permanent {
+  background: var(--danger-subtle);
+  color: var(--danger-default);
 }
 "#;
