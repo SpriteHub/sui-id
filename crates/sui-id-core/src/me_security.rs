@@ -80,13 +80,13 @@ pub async fn change_password_self(
     })?;
 
     // 2. Verify the current password.
-    password::verify_password(current_password, &row.password_hash).await?;
+    password::verify_password(current_password, &row.password_hash)?;
 
     // 3. Enforce the policy on the new one. Done after the verify
     //    so that someone fishing for "is X my password?" via this
     //    endpoint doesn't get differentiated errors based on
     //    whether their guess passed policy.
-    password::check_password_policy(new_password).await?;
+    password::check_password_policy(new_password)?;
 
     // 3b. RFC 003: HIBP breach check. Enforced here for consistency with
     //     the setup wizard. Fail-open: network errors let the change
@@ -104,7 +104,7 @@ pub async fn change_password_self(
 
     // 4. Hash and store. `must_change` is reset — the user has
     //    just demonstrated agency.
-    let new_phc = password::hash_password(new_password).await?;
+    let new_phc = password::hash_password(new_password)?;
     credentials::upsert(
         db,
         &CredentialRow {
@@ -190,7 +190,7 @@ mod tests {
             },
         ).await
         .expect("create user");
-        let phc = password::hash_password(password).await.expect("hash");
+        let phc = password::hash_password(password).expect("hash");
         credentials::upsert(
             db,
             &CredentialRow {
@@ -204,10 +204,10 @@ mod tests {
         id
     }
 
-    #[test]
+    #[tokio::test]
     async fn happy_path_replaces_hash_and_returns_zero_sweep_when_box_unchecked() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user_with_password(&db, "the-old-tester-password").await;
         let r = change_password_self(
             &db,
@@ -225,14 +225,14 @@ mod tests {
         assert_eq!(r.refresh_tokens_revoked, 0);
         // Old password no longer verifies; new one does.
         let stored = credentials::get(&db, uid).await.expect("cred").password_hash;
-        assert!(password::verify_password("the-old-tester-password", &stored).await.is_err());
-        assert!(password::verify_password("the-new-tester-password", &stored).await.is_ok());
+        assert!(password::verify_password("the-old-tester-password", &stored).is_err());
+        assert!(password::verify_password("the-new-tester-password", &stored).is_ok());
     }
 
-    #[test]
+    #[tokio::test]
     async fn wrong_current_password_is_rejected_as_invalid_credentials() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user_with_password(&db, "the-old-tester-password").await;
         let r = change_password_self(
             &db,
@@ -248,13 +248,13 @@ mod tests {
         assert!(matches!(r, Err(CoreError::InvalidCredentials)));
         // Stored hash is unchanged.
         let stored = credentials::get(&db, uid).await.expect("cred").password_hash;
-        assert!(password::verify_password("the-old-tester-password", &stored).await.is_ok());
+        assert!(password::verify_password("the-old-tester-password", &stored).is_ok());
     }
 
-    #[test]
+    #[tokio::test]
     async fn weak_new_password_is_rejected_after_current_is_verified() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user_with_password(&db, "the-old-tester-password").await;
         let r = change_password_self(
             &db,
@@ -270,17 +270,17 @@ mod tests {
         assert!(matches!(r, Err(CoreError::BadRequest(_))), "{r:?}");
         // Stored hash unchanged — failure must not partially apply.
         let stored = credentials::get(&db, uid).await.expect("cred").password_hash;
-        assert!(password::verify_password("the-old-tester-password", &stored).await.is_ok());
+        assert!(password::verify_password("the-old-tester-password", &stored).is_ok());
     }
 
-    #[test]
+    #[tokio::test]
     async fn must_change_flag_is_reset_on_self_change() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user_with_password(&db, "the-old-tester-password").await;
         // Set must_change=true via direct upsert, simulating a
         // pending admin reset.
-        let phc = password::hash_password("the-old-tester-password").await.expect("hash");
+        let phc = password::hash_password("the-old-tester-password").expect("hash");
         credentials::upsert(
             &db,
             &CredentialRow {
@@ -307,10 +307,10 @@ mod tests {
         assert!(!row.must_change, "must_change should be cleared");
     }
 
-    #[test]
+    #[tokio::test]
     async fn audit_event_is_appended() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user_with_password(&db, "the-old-tester-password").await;
         change_password_self(
             &db,

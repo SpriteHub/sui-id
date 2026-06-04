@@ -67,7 +67,7 @@ pub async fn create_user(
     if spec.username.trim().is_empty() {
         return Err(CoreError::BadRequest("username must not be empty".into()));
     }
-    check_password_policy(spec.password).await?;
+    check_password_policy(spec.password)?;
 
     let now = clock.now();
     let row = UserRow {
@@ -101,7 +101,7 @@ pub async fn create_user(
         sui_id_store::StoreError::Conflict => CoreError::Conflict("username already in use".into()),
         other => CoreError::from(other),
     })?;
-    let hash = hash_password(spec.password).await?;
+    let hash = hash_password(spec.password)?;
     credentials::upsert(
         db,
         &CredentialRow {
@@ -272,7 +272,7 @@ pub async fn reset_user_password(
     new_password: &str,
 ) -> CoreResult<()> {
     require_admin(db, actor).await?;
-    check_password_policy(new_password).await?;
+    check_password_policy(new_password)?;
 
     // RFC 003: HIBP breach check on admin-driven password reset.
     // Fail-open: network failures let the reset through.
@@ -285,7 +285,7 @@ pub async fn reset_user_password(
         ));
     }
 
-    let hash = hash_password(new_password).await?;
+    let hash = hash_password(new_password)?;
     let now = clock.now();
     credentials::upsert(
         db,
@@ -359,12 +359,12 @@ pub async fn create_client(
     }
 
     let secret_plain = if spec.confidential {
-        Some(tokens::random_token(32).await)
+        Some(tokens::random_token(32))
     } else {
         None
     };
     let secret_hash = match secret_plain.as_deref() {
-        Some(s) => Some(hash_password(s).await?),
+        Some(s) => Some(hash_password(s)?),
         None => None,
     };
 

@@ -79,7 +79,7 @@ pub fn build_router(app: AppState) -> Router {
             get(crate::handlers::forgot_password::reset_password_get)
                 .post(crate::handlers::forgot_password::reset_password_post),
         )
-        .route("/admin/logout", post(admin::logout).get(admin::logout))
+        .route("/admin/logout", post(admin::logout))
         .route("/admin/profile", get(admin::profile_get))
         .route("/admin/profile/lang", post(admin::profile_lang_post))
         .route(

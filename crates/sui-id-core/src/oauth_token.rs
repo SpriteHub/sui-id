@@ -287,7 +287,7 @@ pub async fn authenticate_client(
         .secret_hash
         .as_deref()
         .ok_or(CoreError::Unauthenticated)?;
-    crate::password::verify_password(client_secret, hash).await
+    crate::password::verify_password(client_secret, hash)
         .map_err(|_| CoreError::Unauthenticated)?;
     Ok(id)
 }

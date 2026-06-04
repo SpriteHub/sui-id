@@ -122,9 +122,9 @@ pub async fn issue_token_set(
         iat,
         exp: iat + lifetimes.access_secs,
         scope: scope.to_owned(),
-        jti: random_token(16).await,
+        jti: random_token(16),
     };
-    let access_token = jwt::sign(kid, signing_key, &access_claims).await?;
+    let access_token = jwt::sign(kid, signing_key, &access_claims)?;
 
     let id_token = if include_id_token {
         let (acr, amr) = if auth_methods.is_empty() {
@@ -142,11 +142,11 @@ pub async fn issue_token_set(
             iat,
             exp: iat + lifetimes.id_secs,
             nonce: nonce.map(str::to_owned),
-            jti: random_token(16).await,
+            jti: random_token(16),
             acr,
             amr,
         };
-        Some(jwt::sign(kid, signing_key, &claims).await?)
+        Some(jwt::sign(kid, signing_key, &claims)?)
     } else {
         None
     };
@@ -154,13 +154,13 @@ pub async fn issue_token_set(
     Ok(TokenSet {
         access_token,
         id_token,
-        refresh_token: random_token(32).await,
+        refresh_token: random_token(32),
         access_expires_in: lifetimes.access_secs,
     })
 }
 
 /// Cryptographically random URL-safe token string.
-pub async fn random_token(byte_len: usize) -> String {
+pub fn random_token(byte_len: usize) -> String {
     let mut buf = vec![0u8; byte_len];
     OsRng.fill_bytes(&mut buf);
     let mut out = vec![0u8; byte_len * 2 + 4];
@@ -191,7 +191,7 @@ pub fn sha256_hex(s: &str) -> String {
 /// point — if that check ever regresses, this layer still refuses
 /// to verify. A relying party that needs `plain` (none should in
 /// 2026) must run a different IdP.
-pub async fn verify_pkce(method: &str, verifier: &str, expected_challenge: &str) -> CoreResult<()> {
+pub fn verify_pkce(method: &str, verifier: &str, expected_challenge: &str) -> CoreResult<()> {
     use subtle::ConstantTimeEq;
     let computed = match method {
         "S256" => {
@@ -246,7 +246,7 @@ pub async fn verify_id_token(
         let arr: [u8; 32] = m.public_key.as_slice().try_into().ok()?;
         VerifyingKey::from_bytes(&arr).ok()
     };
-    let decoded: crate::jwt::Decoded<IdTokenClaims> = crate::jwt::verify(token, resolver).await?;
+    let decoded: crate::jwt::Decoded<IdTokenClaims> = crate::jwt::verify(token, resolver)?;
     if !accept_expired && decoded.claims.exp < clock.now().timestamp() {
         return Err(crate::CoreError::Unauthenticated);
     }
@@ -274,7 +274,7 @@ pub async fn verify_access_token(
         VerifyingKey::from_bytes(&arr).ok()
     };
     let decoded: crate::jwt::Decoded<AccessTokenClaims> =
-        crate::jwt::verify(token, resolver).await?;
+        crate::jwt::verify(token, resolver)?;
     if decoded.claims.exp < clock.now().timestamp() {
         return Err(crate::CoreError::Unauthenticated);
     }

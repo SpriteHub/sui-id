@@ -89,7 +89,7 @@ pub async fn begin_authorization(db: &Database, params: AuthorizeParams) -> Core
             description: "redirect_uri does not match a registered URI".into(),
         });
     }
-    enforce_scope_policy(&client.allowed_scopes, &params.scope)?;
+    enforce_scope_policy(&client.allowed_scopes, &params.scope, &client.name)?;
     Ok(AcceptedAuthorize { params })
 }
 
@@ -121,7 +121,11 @@ pub fn is_redirect_uri_registered(registered: &[String], submitted: &str) -> boo
 /// before migration 0002) and skips the check. Otherwise the requested
 /// scope tokens must all appear in the policy. Returns `invalid_scope`
 /// per RFC 6749 §5.2 when a request exceeds the policy.
-fn enforce_scope_policy(allowed: &str, requested: &str) -> CoreResult<()> {
+///
+/// The error description (RFC 027) names the offending scope and the
+/// client's current allowed list so operators can identify and fix the
+/// configuration without consulting the server logs.
+fn enforce_scope_policy(allowed: &str, requested: &str, client_name: &str) -> CoreResult<()> {
     let allowed_trimmed = allowed.trim();
     if allowed_trimmed.is_empty() {
         return Ok(());
@@ -132,7 +136,14 @@ fn enforce_scope_policy(allowed: &str, requested: &str) -> CoreResult<()> {
         if !allowed_set.contains(tok) {
             return Err(CoreError::Protocol {
                 code: ProtocolError::InvalidScope,
-                description: format!("scope {tok:?} is not permitted for this client"),
+                description: format!(
+                    "scope {tok:?} is not permitted for client {:?} \
+                     (allowed: {:?}). \
+                     Go to Admin → Clients → edit this client and add {tok:?} \
+                     to the Allowed scopes field.",
+                    client_name,
+                    allowed_trimmed,
+                ),
             });
         }
     }
@@ -155,7 +166,7 @@ pub async fn complete_authorization(
     accepted: AcceptedAuthorize,
 ) -> CoreResult<AuthorizationResponseRedirect> {
     let now = clock.now();
-    let code_plain = tokens::random_token(32).await;
+    let code_plain = tokens::random_token(32);
     let code_hash = tokens::sha256_hex(&code_plain);
     let row = AuthorizationCodeRow {
         code_hash,
@@ -252,7 +263,7 @@ pub async fn exchange_code(
             description: "redirect_uri does not match the original".into(),
         });
     }
-    tokens::verify_pkce(&row.code_challenge_method, &req.code_verifier, &row.code_challenge).await?;
+    tokens::verify_pkce(&row.code_challenge_method, &req.code_verifier, &row.code_challenge)?;
 
     // Re-check user state at exchange time. A user might have been
     // disabled or deleted in the ~60-second window between the
@@ -419,7 +430,7 @@ async fn authenticate_client(
         code: ProtocolError::InvalidClient,
         description: "client_secret is required".into(),
     })?;
-    crate::password::verify_password(provided, stored).await.map_err(|_| CoreError::Protocol {
+    crate::password::verify_password(provided, stored).map_err(|_| CoreError::Protocol {
         code: ProtocolError::InvalidClient,
         description: "client authentication failed".into(),
     })
@@ -492,7 +503,7 @@ async fn issue_for_with_family(
     ).await?;
 
     let now = clock.now();
-    let new_id = tokens::random_token(16).await;
+    let new_id = tokens::random_token(16);
     // First issuance roots a new family at this new row's id; a
     // rotation copies the parent's family forward unchanged.
     let family = family_id.unwrap_or_else(|| new_id.clone());
@@ -547,7 +558,7 @@ mod redirect_uri_tests {
             uri in "[A-Za-z0-9:/._~?&=#@%-]{1,256}",
         ) {
             let registered = vec![uri.clone()];
-            prop_assert!(is_redirect_uri_registered(&registered, &uri).await);
+            prop_assert!(is_redirect_uri_registered(&registered, &uri));
         }
 
         /// A URI that differs by even one byte is rejected.
@@ -570,7 +581,7 @@ mod redirect_uri_tests {
             let submitted = String::from_utf8(submitted).unwrap();
             prop_assume!(submitted != base);
             let registered = vec![base];
-            prop_assert!(!is_redirect_uri_registered(&registered, &submitted).await);
+            prop_assert!(!is_redirect_uri_registered(&registered, &submitted));
         }
 
         /// Case differences are not folded — `/cb` and `/CB` are
@@ -583,8 +594,8 @@ mod redirect_uri_tests {
             let upper = format!("https://example.com/{}", stem.to_uppercase());
             prop_assume!(lower != upper);
             let registered = vec![lower.clone()];
-            prop_assert!(is_redirect_uri_registered(&registered, &lower).await);
-            prop_assert!(!is_redirect_uri_registered(&registered, &upper).await);
+            prop_assert!(is_redirect_uri_registered(&registered, &lower));
+            prop_assert!(!is_redirect_uri_registered(&registered, &upper));
         }
 
         /// A registered URI followed by extra junk is rejected — no
@@ -599,7 +610,7 @@ mod redirect_uri_tests {
             let registered = vec![base.clone()];
             let submitted = format!("{base}{suffix}");
             prop_assume!(submitted != base);
-            prop_assert!(!is_redirect_uri_registered(&registered, &submitted).await);
+            prop_assert!(!is_redirect_uri_registered(&registered, &submitted));
         }
 
         /// Multiple registered URIs: any one matching is enough; any
@@ -613,9 +624,9 @@ mod redirect_uri_tests {
         ) {
             prop_assume!(!uris.iter().any(|u| u == &outsider));
             for u in &uris {
-                prop_assert!(is_redirect_uri_registered(&uris, u).await);
+                prop_assert!(is_redirect_uri_registered(&uris, u));
             }
-            prop_assert!(!is_redirect_uri_registered(&uris, &outsider).await);
+            prop_assert!(!is_redirect_uri_registered(&uris, &outsider));
         }
     }
 }

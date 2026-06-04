@@ -141,7 +141,7 @@ mod tests {
         headers.insert(
             axum::http::header::COOKIE,
             HeaderValue::from_str(&format!("{CSRF_COOKIE}={value}")).expect("static"),
-        ).await;
+        );
         CookieJar::from_headers(&headers)
     }
 

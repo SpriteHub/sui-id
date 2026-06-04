@@ -5,7 +5,111 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.29.12] — Unreleased
+## [0.30.0] — Unreleased
+
+**Minor version bump.** RFC 013 (async DB layer) is the architectural
+change that earned this bump. From this release forward, every database
+call in sui-id runs on Tokio's blocking-thread pool, freeing runtime
+workers during I/O. This is a breaking change for any code that calls
+the repo or core APIs directly (all functions are now `async fn`).
+
+### RFC 013 — Async DB layer (completed, with test fixes)
+
+Building on the 0.29.12 async conversion, this release fixes all test
+compilation errors introduced by the async migration:
+
+**Incorrectly-async functions reverted to sync** (pure computation, no I/O):
+- `jwt::sign`, `jwt::verify` — pure EdDSA/JSON operations
+- `tokens::random_token`, `tokens::verify_pkce` — CSPRNG / string ops
+- `password::hash_password`, `password::verify_password`,
+  `password::check_password_policy` — Argon2 and string validation
+
+**Wrong `.await` removed from sync function calls in test helpers:**
+- `Utc::now().await`, `ChronoDuration::hours(N).await` — Chrono is sync
+- `system_clock().await` — our clock helper is sync
+- `lockout_backoff().await`, `is_redirect_uri_registered().await` — pure fns
+- `parse_response().await`, `Discovery::build().await` — sync helpers
+- `WebauthnBuilder::build().await` — external crate, sync
+- `HeaderMap::insert().await` — axum/http sync method
+
+**Test functions converted to `#[tokio::test] async fn`:**
+- `totp.rs`, `hibp.rs`, `i18n.rs`, `step_up.rs`, `authorize.rs`,
+  `webauthn.rs`, `dashboard.rs`, `discovery.rs`, `mfa.rs`,
+  `key_rotation.rs`, `session.rs`, `me_security.rs`, `csrf.rs`
+
+**Test helper `insert_session` made `async fn`** with all call sites
+updated to `.await`.
+
+**Scan coverage.** A static scan (no-run test compilation) confirmed that
+no non-async function in the library code contains `.await` outside of
+`tokio::spawn(async move { ... })` blocks.
+
+### Test results
+
+- `sui-id-store`: 28 tests pass
+- `sui-id-core`: 111 tests pass
+- Workspace `cargo check`: clean
+
+---
+
+## [0.29.13] — Previous release
+
+Implements RFC 026 (admin logout) and RFC 027 (OAuth client scope UX),
+plus the duplicate-username bug fix noted in ROADMAP.
+
+### RFC 026 — Admin panel logout (security fix)
+
+The admin nav "Sign out" was a plain `<a href="/admin/logout">` GET link,
+which is a CSRF attack surface (any page can embed a `<img src="/admin/logout">`,
+silently logging the operator out). Fixed:
+
+- Sign-out is now a `<form method="post">` with a hidden `_csrf` field.
+- The `POST /admin/logout` route validates the CSRF token before revoking.
+- On success, renders the login page with a "Signed out." / "サインアウトしました。"
+  flash message (no redirect, no extra round-trip).
+- The `GET /admin/logout` route is removed; only POST is accepted.
+- A small inline JS snippet reads the `sui_id_csrf` cookie (which is
+  intentionally not HttpOnly) and populates the hidden field client-side
+  so the form works on all existing admin pages without threading the
+  CSRF token through every server-side render function.
+- `signed_out_flash` added to both `en` and `ja` locale files.
+
+### RFC 027 — OAuth client scope configuration UX
+
+Blocked OIDC integrations were the most common first-run failure: new
+clients had `allowed_scopes = ""` (no scopes permitted), so every
+authorization attempt failed with an opaque "scope not permitted" error.
+
+Changes:
+
+- **New-client default.** `allowed_scopes` now defaults to
+  `"openid profile email"` when the field is left blank. Existing
+  clients with empty `allowed_scopes` keep the "permit any" legacy
+  behaviour — review and restrict them explicitly.
+- **Improved error message.** The scope-rejection error now names the
+  client and its current allowed list:
+  `scope "email" is not permitted for client "my-app" (allowed: "openid profile").
+  Go to Admin → Clients → edit this client and add "email" to the Allowed scopes field.`
+- **Scope picker in forms.** The client create and edit forms display the
+  four known scopes (`openid`, `profile`, `email`, `offline_access`) with
+  descriptions as help text, and the default value `openid profile email`
+  is pre-filled in the create form.
+- **Single-realm note.** Both the client creation form and
+  `docs/operators.md` now explain that all users can authenticate with any
+  client — there is no per-client user allowlist by design.
+
+### Bug fix — duplicate username error redirected to root
+
+When `POST /admin/users/create` failed with a `Conflict` error (username
+already taken), the handler returned `map_err(HttpError::html)?`, which
+rendered a generic error page and let the browser follow the form's
+redirect to `/`. Fixed: the handler now matches on `CoreError::Conflict`
+explicitly and re-renders the users list with an inline error flash,
+leaving the operator on the same page.
+
+---
+
+## [0.29.12] — Previous release
 
 **RFC 013 — Async DB layer complete.**
 

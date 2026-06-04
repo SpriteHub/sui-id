@@ -18,6 +18,41 @@ server to a working production install.
 If you are looking for how to point an application at sui-id, see
 [integrators.md](integrators.md).
 
+## User–client relationship and the single-realm model
+
+sui-id is a **single-realm IdP**: all users live in one namespace and all
+clients share that namespace. There is no per-client user allowlist. When a
+user authenticates with any client, they authenticate as themselves in the
+one shared realm.
+
+### What `allowed_scopes` controls
+
+`allowed_scopes` is a space-separated list of OAuth scopes a client is
+permitted to *request*. It does **not** restrict which users can authenticate
+with a given client (all users can authenticate with any client by design).
+
+| Scope | Claims returned | Typical use |
+|---|---|---|
+| `openid` | `sub`, `iss`, `aud`, `exp`, `iat` | Required for OIDC |
+| `profile` | `name`, `preferred_username`, `locale` | User display name |
+| `email` | `email`, `email_verified` | Email address |
+| `offline_access` | (enables refresh tokens) | Long-lived access |
+
+**New clients** default to `openid profile email`. Clients upgraded from
+before v0.29.12 with an empty `allowed_scopes` retain "permit any" legacy
+behaviour — review and restrict those clients.
+
+### Common error: "scope X is not permitted for this client"
+
+Go to **Admin → Clients**, select the client, and add the missing scope to
+the *Allowed scopes* field. The error description includes the client name
+and its current allowed list to make this easy to find.
+
+For multi-tenant isolation (separate user namespaces per customer) see
+RFC 025, which is the planned expansion path.
+
+---
+
 ## Installing
 
 sui-id is one binary. Build it from source:

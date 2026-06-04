@@ -116,7 +116,7 @@ pub async fn confirm_enrollment(
         .collect();
     let mut hashed: Vec<String> = Vec::with_capacity(plain_codes.len());
     for c in &plain_codes {
-        hashed.push(hash_password(c).await?);
+        hashed.push(hash_password(c)?);
     }
     let blob = serde_json::to_vec(&hashed)
         .map_err(|_| CoreError::Internal)?;
@@ -148,7 +148,7 @@ pub async fn regenerate_recovery_codes(db: &Database, user_id: UserId) -> CoreRe
         .collect();
     let mut hashed: Vec<String> = Vec::with_capacity(plain.len());
     for c in &plain {
-        hashed.push(hash_password(c).await?);
+        hashed.push(hash_password(c)?);
     }
     let blob = serde_json::to_vec(&hashed).map_err(|_| CoreError::Internal)?;
     user_totp::set_recovery_codes(db, user_id, &blob).await?;
@@ -311,7 +311,7 @@ pub(crate) async fn consume_recovery_code(
         serde_json::from_slice(&blob).map_err(|_| CoreError::Internal)?;
     let mut hit_idx: Option<usize> = None;
     for (i, h) in hashes.iter().enumerate() {
-        if verify_password(candidate, h).await.is_ok() {
+        if verify_password(candidate, h).is_ok() {
             hit_idx = Some(i);
             break;
         }
@@ -355,8 +355,8 @@ fn generate_recovery_code() -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn recovery_code_format() {
+    #[tokio::test]
+    async     fn recovery_code_format() {
         let c = generate_recovery_code();
         assert_eq!(c.len(), 17);
         assert_eq!(c.as_bytes()[5], b'-');
@@ -401,10 +401,10 @@ mod integration_tests {
         (db, uid)
     }
 
-    #[test]
-    fn enroll_then_confirm_completes_and_returns_8_recovery_codes() {
+    #[tokio::test]
+    async     fn enroll_then_confirm_completes_and_returns_8_recovery_codes() {
         let (db, uid) = fresh_db_with_user().await;
-        let clock = system_clock().await;
+        let clock = system_clock();
         let ticket = start_enrollment(&db, "sui-id", uid, "alice").await.expect("start");
         assert_eq!(ticket.secret.len(), 20);
         let now = clock.now().timestamp();
@@ -416,19 +416,19 @@ mod integration_tests {
         assert!(is_mfa_enabled(&db, uid).await.unwrap());
     }
 
-    #[test]
-    fn confirm_with_wrong_code_returns_bad_request() {
+    #[tokio::test]
+    async     fn confirm_with_wrong_code_returns_bad_request() {
         let (db, uid) = fresh_db_with_user().await;
-        let clock = system_clock().await;
+        let clock = system_clock();
         let _ = start_enrollment(&db, "sui-id", uid, "alice").await.expect("start");
         let r = confirm_enrollment(&db, &clock, uid, 000000).await;
         assert!(matches!(r, Err(crate::CoreError::BadRequest(_))));
     }
 
-    #[test]
-    fn disable_then_re_enroll_works() {
+    #[tokio::test]
+    async     fn disable_then_re_enroll_works() {
         let (db, uid) = fresh_db_with_user().await;
-        let clock = system_clock().await;
+        let clock = system_clock();
         let ticket = start_enrollment(&db, "sui-id", uid, "alice").await.expect("start");
         let step = clock.now().timestamp() / 30;
         let code = crate::totp::code_for_step(&ticket.secret, step).await;

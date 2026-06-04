@@ -1264,10 +1264,23 @@ pub fn render_clients(
                                 <span class="field__hint">"1 行に 1 つ。https またはループバックの http のみ。"</span>
                             </div>
                             <div class="field">
-                                <label for="c-scopes" class="field__label">"許可スコープ"</label>
-                                <input id="c-scopes" name="allowed_scopes" type="text" value="openid profile" />
-                                <span class="field__hint">"スペース区切り。デフォルトは openid profile。"</span>
+                                <label for="c-scopes" class="field__label">"許可スコープ (Allowed scopes)"</label>
+                                <input id="c-scopes" name="allowed_scopes" type="text" value="openid profile email" />
+                                <span class="field__hint">
+                                    "スペース区切り。既知のスコープ: "
+                                    <code>"openid"</code>" (必須) · "
+                                    <code>"profile"</code>" (名前・言語) · "
+                                    <code>"email"</code>" (メール) · "
+                                    <code>"offline_access"</code>" (リフレッシュトークン)。"
+                                    "空欄の場合は openid profile email がデフォルトになります。"
+                                </span>
                             </div>
+                            // Single-realm note (RFC 027)
+                            <p class="field__hint" style="margin: 0;">
+                                "ℹ  sui-id は単一レルム IdP です。すべてのユーザーがすべてのクライアントを利用できます。"
+                                "クライアントごとにユーザーを限定する機能はありません。"
+                                "スコープはユーザーを制限するのではなく、クライアントが要求できる情報の範囲を制限します。"
+                            </p>
                             <div class="field">
                                 <label for="c-logout" class="field__label">"Post-logout redirect URIs(任意)"</label>
                                 <textarea id="c-logout" name="post_logout_redirect_uris" rows="2"></textarea>
@@ -1391,9 +1404,15 @@ pub fn render_client_edit(
                             <span class="field__hint">"1 行に 1 つ。https またはループバックの http のみ。"</span>
                         </div>
                         <div class="field">
-                            <label for="e-scopes" class="field__label">"許可スコープ"</label>
+                            <label for="e-scopes" class="field__label">"許可スコープ (Allowed scopes)"</label>
                             <input id="e-scopes" name="allowed_scopes" type="text" value=allowed_scopes />
-                            <span class="field__hint">"スペース区切り。空欄=制限なし。"</span>
+                            <span class="field__hint">
+                                "スペース区切り。既知のスコープ: "
+                                <code>"openid"</code>" · "
+                                <code>"profile"</code>" · "
+                                <code>"email"</code>" · "
+                                <code>"offline_access"</code>"。"
+                            </span>
                         </div>
                         <div class="field">
                             <label for="e-logout" class="field__label">"Post-logout redirect URIs"</label>

@@ -44,7 +44,7 @@ fn b64u_decode(s: &str) -> Result<Vec<u8>, CoreError> {
 }
 
 /// Sign `claims` with `signing_key` and produce a compact JWS.
-pub async fn sign<C: Serialize>(kid: &str, signing_key: &SigningKey, claims: &C) -> CoreResult<String> {
+pub fn sign<C: Serialize>(kid: &str, signing_key: &SigningKey, claims: &C) -> CoreResult<String> {
     let header = Header {
         alg: "EdDSA",
         typ: "JWT",
@@ -74,7 +74,7 @@ pub struct Decoded<C> {
 /// Verify a JWS produced by [`sign`] using the supplied resolver to find the
 /// public key for the token's `kid`. The resolver lets the caller key off the
 /// JWKS in storage without coupling this module to it.
-pub async fn verify<C: DeserializeOwned, F>(token: &str, mut resolver: F) -> CoreResult<Decoded<C>>
+pub fn verify<C: DeserializeOwned, F>(token: &str, mut resolver: F) -> CoreResult<Decoded<C>>
 where
     F: FnMut(&str) -> Option<VerifyingKey>,
 {

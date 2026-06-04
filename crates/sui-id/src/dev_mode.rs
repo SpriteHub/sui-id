@@ -482,7 +482,7 @@ pub async fn apply_seed(
         let effective_secret = if confidential {
             match c.client_secret.as_deref() {
                 Some(custom) if !custom.is_empty() => {
-                    let hash = sui_id_core::password::hash_password(custom).await
+                    let hash = sui_id_core::password::hash_password(custom)
                         .context("hashing dev-mode client_secret")?;
                     sui_id_store::repos::clients::set_dev_secret_hash(
                         db,

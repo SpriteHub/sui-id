@@ -35,6 +35,7 @@ pub static STRINGS_JA: Strings = Strings {
     nav_logout: "サインアウト",
 
     // Login
+    signed_out_flash: "サインアウトしました。",
     login_title: "サインイン",
     login_username_label: "ユーザー名",
     login_password_label: "パスワード",

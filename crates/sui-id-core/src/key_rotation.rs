@@ -142,8 +142,8 @@ mod tests {
     use super::*;
     use sui_id_store::crypto::MasterKey;
 
-    #[test]
-    fn reseal_one_round_trip() {
+    #[tokio::test]
+    async     fn reseal_one_round_trip() {
         let old = MasterKey::generate();
         let new = MasterKey::generate();
         let aad = b"test-aad";
@@ -157,8 +157,8 @@ mod tests {
         assert!(open(&old, &resealed, aad).is_err());
     }
 
-    #[test]
-    fn reseal_one_fails_with_wrong_old_key() {
+    #[tokio::test]
+    async     fn reseal_one_fails_with_wrong_old_key() {
         let real_old = MasterKey::generate();
         let wrong_old = MasterKey::generate();
         let new = MasterKey::generate();
@@ -168,16 +168,16 @@ mod tests {
         assert!(reseal_one(&wrong_old, &new, &sealed, aad).await.is_err());
     }
 
-    #[test]
-    fn reseal_one_with_wrong_aad_fails() {
+    #[tokio::test]
+    async     fn reseal_one_with_wrong_aad_fails() {
         let old = MasterKey::generate();
         let new = MasterKey::generate();
         let sealed = seal(&old, b"data", b"correct-aad").expect("seal");
         assert!(reseal_one(&old, &new, &sealed, b"wrong-aad").await.is_err());
     }
 
-    #[test]
-    fn rotation_report_total_sums_columns() {
+    #[tokio::test]
+    async     fn rotation_report_total_sums_columns() {
         let r = RotationReport {
             signing_keys: 1,
             refresh_tokens: 5,

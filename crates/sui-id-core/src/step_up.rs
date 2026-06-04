@@ -390,7 +390,7 @@ mod tests {
             },
         ).await
         .expect("create user");
-        let phc = password::hash_password("the-tester-password").await.expect("hash");
+        let phc = password::hash_password("the-tester-password").expect("hash");
         credentials::upsert(
             db,
             &CredentialRow {
@@ -412,10 +412,10 @@ mod tests {
         user_totp::confirm_with_recovery(db, user_id, b"[]").await.expect("confirm");
     }
 
-    #[test]
-    fn user_with_no_mfa_is_always_allowed() {
+    #[tokio::test]
+    async     fn user_with_no_mfa_is_always_allowed() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user(&db).await;
         let r = policy_for_session(&db, &clock, uid, None, STEP_UP_FRESHNESS_SECS).await.unwrap();
         assert_eq!(r, StepUpDecision::Allow);
@@ -430,20 +430,20 @@ mod tests {
         assert_eq!(r, StepUpDecision::Allow);
     }
 
-    #[test]
-    fn mfa_user_with_no_step_up_must_challenge() {
+    #[tokio::test]
+    async     fn mfa_user_with_no_step_up_must_challenge() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user(&db).await;
         enrol_totp(&db, uid).await;
         let r = policy_for_session(&db, &clock, uid, None, STEP_UP_FRESHNESS_SECS).await.unwrap();
         assert_eq!(r, StepUpDecision::Challenge);
     }
 
-    #[test]
-    fn mfa_user_with_fresh_step_up_is_allowed() {
+    #[tokio::test]
+    async     fn mfa_user_with_fresh_step_up_is_allowed() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user(&db).await;
         enrol_totp(&db, uid).await;
         let now = clock.now();
@@ -451,10 +451,10 @@ mod tests {
         assert_eq!(r, StepUpDecision::Allow);
     }
 
-    #[test]
-    fn mfa_user_with_stale_step_up_must_challenge_again() {
+    #[tokio::test]
+    async     fn mfa_user_with_stale_step_up_must_challenge_again() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user(&db).await;
         enrol_totp(&db, uid).await;
         let stale = clock.now() - Duration::seconds(STEP_UP_FRESHNESS_SECS + 60);
@@ -462,11 +462,11 @@ mod tests {
         assert_eq!(r, StepUpDecision::Challenge);
     }
 
-    #[test]
+    #[tokio::test]
     async fn touch_step_up_updates_session_row() {
         use sui_id_store::models::SessionRow;
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user(&db).await;
         let session_id = SessionId::new();
         let now = clock.now();
@@ -511,11 +511,11 @@ mod tests {
         session_id
     }
 
-    #[test]
+    #[tokio::test]
     async fn verify_totp_code_with_correct_code_marks_session_fresh() {
         use crate::totp;
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user(&db).await;
         // Enrol TOTP with a known secret so we can compute the
         // expected code locally.
@@ -535,10 +535,10 @@ mod tests {
         assert!(row.last_step_up_at.is_some(), "session should be fresh");
     }
 
-    #[test]
+    #[tokio::test]
     async fn verify_totp_code_with_wrong_code_does_not_touch_session() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user(&db).await;
         let secret = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09";
         user_totp::upsert_pending(&db, uid, secret).await.expect("pending");
@@ -559,10 +559,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn verify_totp_code_for_user_without_totp_returns_invalid_credentials() {
+    #[tokio::test]
+    async     fn verify_totp_code_for_user_without_totp_returns_invalid_credentials() {
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user(&db).await;
         let session_id = fresh_session(&db, &clock, uid).await;
 
@@ -572,7 +572,7 @@ mod tests {
         assert!(matches!(result, Err(crate::errors::CoreError::InvalidCredentials)));
     }
 
-    #[test]
+    #[tokio::test]
     async fn finish_webauthn_refuses_pending_with_wrong_kind() {
         // A pending row tagged `Authenticate` (i.e. a login-MFA
         // ceremony) must NOT satisfy a step-up gate, even if the
@@ -584,7 +584,7 @@ mod tests {
         use sui_id_shared::ids::WebauthnPendingId;
 
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let uid = create_user(&db).await;
         let session_id = fresh_session(&db, &clock, uid).await;
         let pending_id = WebauthnPendingId::new();
@@ -624,7 +624,7 @@ mod tests {
         assert_eq!(still_there.kind, WebauthnPendingKind::Authenticate);
     }
 
-    #[test]
+    #[tokio::test]
     async fn finish_webauthn_refuses_pending_for_other_user() {
         // Even a kind = StepUp pending must be refused if it
         // belongs to a different user. Prevents pending-id
@@ -634,7 +634,7 @@ mod tests {
         use sui_id_shared::ids::WebauthnPendingId;
 
         let db = fresh_db();
-        let clock = crate::time::system_clock().await;
+        let clock = crate::time::system_clock();
         let real_owner = create_user(&db).await;
         // Create a *different* user we'll pretend is the one
         // signed in.

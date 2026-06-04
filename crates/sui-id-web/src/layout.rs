@@ -97,7 +97,7 @@ pub fn Shell(
             <body>
                 <header class="app-header">
                     <h1 class="app-header__brand">"sui-id"</h1>
-                    {show_nav.then(|| view! { <Nav current=current.clone() /> })}
+                    {show_nav.then(|| view! { <Nav current=current.clone() csrf_token="".to_string() /> })}
                 </header>
                 <main class="app-main">{children()}</main>
                 <Footer />
@@ -142,7 +142,7 @@ pub fn AuthShell(
 }
 
 #[component]
-fn Nav(current: Option<String>) -> impl IntoView {
+fn Nav(current: Option<String>, csrf_token: String) -> impl IntoView {
     let items = [
         ("dashboard", "Dashboard", "/admin"),
         ("users", "Users", "/admin/users"),
@@ -152,6 +152,10 @@ fn Nav(current: Option<String>) -> impl IntoView {
         ("settings", "Settings", "/admin/settings"),
         ("profile", "Profile", "/admin/profile"),
     ];
+    // The CSRF token for the logout form. If none was passed in by the
+    // handler (the page was rendered without the cookie), fall back to
+    // reading the cookie via JS on the client side.
+    let token_value = if csrf_token.is_empty() { "".into() } else { csrf_token };
     view! {
         <nav class="app-nav" aria-label="Main">
             {items.into_iter().map(|(key, label, href)| {
@@ -160,7 +164,26 @@ fn Nav(current: Option<String>) -> impl IntoView {
                     <a class="app-nav__link" href=href aria-current=aria>{label}</a>
                 }
             }).collect::<Vec<_>>()}
-            <a class="app-nav__link app-nav__signout" href="/admin/logout">"Sign out"</a>
+            // Sign out uses POST + CSRF to prevent logout-CSRF attacks.
+            // The CSRF token is read from the sui_id_csrf cookie (not HttpOnly)
+            // and populated by the inline script below if not server-rendered.
+            <form method="post" action="/admin/logout" class="app-nav__signout-form"
+                  id="logout-form">
+                <input type="hidden" name="_csrf" id="logout-csrf" value=token_value />
+                <button type="submit" class="app-nav__link app-nav__signout"
+                        aria-label="Sign out">
+                    "Sign out"
+                </button>
+            </form>
+            <script>
+                r#"(function(){
+                    var f=document.getElementById('logout-csrf');
+                    if(f&&!f.value){
+                        var m=document.cookie.match(/(?:^|; )sui_id_csrf=([^;]*)/);
+                        if(m) f.value=decodeURIComponent(m[1]);
+                    }
+                }())"#
+            </script>
         </nav>
     }
 }

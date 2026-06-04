@@ -114,8 +114,8 @@ mod tests {
     /// "12345678901234567890" — 20 bytes — in dec).
     const RFC_SECRET: &[u8] = b"12345678901234567890";
 
-    #[test]
-    fn rfc6238_appendix_b_vectors() {
+    #[tokio::test]
+    async     fn rfc6238_appendix_b_vectors() {
         // From the RFC: time, expected code (HMAC-SHA1).
         // step = time / 30
         let cases = [
@@ -136,8 +136,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn verify_accepts_current_step() {
+    #[tokio::test]
+    async     fn verify_accepts_current_step() {
         let now = 1_700_000_000_i64;
         let step = now.div_euclid(STEP_SECS);
         let code = code_for_step(RFC_SECRET, step).await;
@@ -145,16 +145,16 @@ mod tests {
         assert_eq!(got, Some(step));
     }
 
-    #[test]
-    fn verify_accepts_minus_one_step() {
+    #[tokio::test]
+    async     fn verify_accepts_minus_one_step() {
         let now = 1_700_000_000_i64;
         let step = now.div_euclid(STEP_SECS) - 1;
         let code = code_for_step(RFC_SECRET, step).await;
         assert_eq!(verify(RFC_SECRET, now, code, 0).await, Some(step));
     }
 
-    #[test]
-    fn verify_rejects_replay_within_window() {
+    #[tokio::test]
+    async     fn verify_rejects_replay_within_window() {
         let now = 1_700_000_000_i64;
         let step = now.div_euclid(STEP_SECS);
         let code = code_for_step(RFC_SECRET, step).await;
@@ -164,20 +164,20 @@ mod tests {
         assert!(verify(RFC_SECRET, now, code, step).await.is_none());
     }
 
-    #[test]
-    fn verify_rejects_wrong_code() {
+    #[tokio::test]
+    async     fn verify_rejects_wrong_code() {
         let now = 1_700_000_000_i64;
         assert!(verify(RFC_SECRET, now, 000000, 0).await.is_none());
     }
 
-    #[test]
-    fn verify_rejects_overlong_code() {
+    #[tokio::test]
+    async     fn verify_rejects_overlong_code() {
         // 7-digit submission — must fail without trying the HMAC.
         assert!(verify(RFC_SECRET, 1_700_000_000, 1_234_567, 0).await.is_none());
     }
 
-    #[test]
-    fn base32_round_trip_known_vectors() {
+    #[tokio::test]
+    async     fn base32_round_trip_known_vectors() {
         assert_eq!(base32_encode(b"").await, "");
         assert_eq!(base32_encode(b"f").await, "MY");
         assert_eq!(base32_encode(b"fo").await, "MZXQ");
@@ -187,8 +187,8 @@ mod tests {
         assert_eq!(base32_encode(b"foobar").await, "MZXW6YTBOI");
     }
 
-    #[test]
-    fn otpauth_uri_has_required_fields() {
+    #[tokio::test]
+    async     fn otpauth_uri_has_required_fields() {
         let uri = otpauth_uri("sui-id", "alice", b"01234567890123456789").await;
         assert!(uri.starts_with("otpauth://totp/sui-id:alice?"));
         assert!(uri.contains("secret="));

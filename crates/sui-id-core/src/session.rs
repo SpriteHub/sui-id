@@ -126,7 +126,7 @@ pub async fn login_with_mfa(
         Ok(u) => u,
         Err(sui_id_store::StoreError::NotFound) => {
             // Constant-time-ish dummy verify regardless of branch.
-            let _ = verify_password(password, DUMMY_PHC).await;
+            let _ = verify_password(password, DUMMY_PHC);
             record_login_failure(db, clock, username, "unknown user").await;
             return Err(CoreError::InvalidCredentials);
         }
@@ -134,7 +134,7 @@ pub async fn login_with_mfa(
     };
 
     if user.is_disabled || user.is_deleted {
-        let _ = verify_password(password, DUMMY_PHC).await;
+        let _ = verify_password(password, DUMMY_PHC);
         record_login_failure(db, clock, username, "user disabled or deleted").await;
         return Err(CoreError::InvalidCredentials);
     }
@@ -146,7 +146,7 @@ pub async fn login_with_mfa(
     // path, we still run a dummy Argon2 verify before returning.
     if let Some(locked_until) = user.locked_until {
         if locked_until > clock.now() {
-            let _ = verify_password(password, DUMMY_PHC).await;
+            let _ = verify_password(password, DUMMY_PHC);
             // Audit-logged with a different reason so operators can
             // distinguish a brute-force attempt from honest typos.
             // The HTTP response is the same generic 401 either way.
@@ -165,7 +165,7 @@ pub async fn login_with_mfa(
         other => other.into(),
     })?;
 
-    if let Err(e) = verify_password(password, &cred.password_hash).await {
+    if let Err(e) = verify_password(password, &cred.password_hash) {
         // Wrong password: bump the counter, possibly stamp a lock,
         // and audit. The lock window is computed from the new count
         // — so the third failure stamps the first 30-second lock,
@@ -396,28 +396,28 @@ mod lockout_tests {
     use super::lockout_backoff;
     use proptest::prelude::*;
 
-    #[test]
-    fn first_two_failures_yield_no_lock() {
+    #[tokio::test]
+    async fn first_two_failures_yield_no_lock() {
         // Operators routinely fat-finger a password; the first two
         // attempts must have no observable consequence beyond
         // bumping the failure counter.
-        assert_eq!(lockout_backoff(1, 24 * 60 * 60).await, None);
-        assert_eq!(lockout_backoff(2, 24 * 60 * 60).await, None);
+        assert_eq!(lockout_backoff(1, 24 * 60 * 60), None);
+        assert_eq!(lockout_backoff(2, 24 * 60 * 60), None);
     }
 
-    #[test]
-    fn third_failure_yields_a_short_lock() {
-        let d = lockout_backoff(3, 24 * 60 * 60).await.expect("lock at 3rd failure");
+    #[tokio::test]
+    async fn third_failure_yields_a_short_lock() {
+        let d = lockout_backoff(3, 24 * 60 * 60).expect("lock at 3rd failure");
         assert_eq!(d.num_seconds(), 30);
     }
 
-    #[test]
-    fn lock_window_is_capped_at_max_secs() {
+    #[tokio::test]
+    async fn lock_window_is_capped_at_max_secs() {
         // Ninth+ failure on the curve hits 12h+; with a 1-hour cap
         // we should see exactly 1 hour, never higher.
         let cap = 60 * 60;
         for n in 9..20 {
-            let d = lockout_backoff(n, cap).await.expect("locked");
+            let d = lockout_backoff(n, cap).expect("locked");
             assert!(
                 d.num_seconds() <= cap,
                 "failure {n} produced {} s, exceeds cap {} s",
@@ -445,8 +445,8 @@ mod lockout_tests {
             b in 1i64..15,
         ) {
             prop_assume!(a <= b);
-            let da = lockout_backoff(a, cap).await.map(|d| d.num_seconds()).unwrap_or(0);
-            let db = lockout_backoff(b, cap).await.map(|d| d.num_seconds()).unwrap_or(0);
+            let da = lockout_backoff(a, cap).map(|d| d.num_seconds()).unwrap_or(0);
+            let db = lockout_backoff(b, cap).map(|d| d.num_seconds()).unwrap_or(0);
             prop_assert!(db >= da, "{a} -> {da}s, {b} -> {db}s");
         }
 
@@ -508,7 +508,7 @@ mod session_limit_tests {
         id
     }
 
-    fn insert_session(
+    async fn insert_session(
         db: &Database,
         user_id: UserId,
         created_at: chrono::DateTime<Utc>,
@@ -532,20 +532,20 @@ mod session_limit_tests {
         id
     }
 
-    #[test]
-    fn resolve_passes_when_idle_timeout_disabled() {
+    #[tokio::test]
+    async fn resolve_passes_when_idle_timeout_disabled() {
         let db = fresh_db();
-        let clock = system_clock().await;
+        let clock = system_clock();
         let uid = make_user(&db).await;
         // last_used_at is far in the past; default settings have
         // idle_session_timeout_secs = 0 = disabled, so resolve
         // must succeed.
         let stale = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
-        let sid = insert_session(&db, uid, Utc::now(), Some(stale));
+        let sid = insert_session(&db, uid, Utc::now(), Some(stale)).await;
         assert_eq!(resolve(&db, &clock, sid).await.expect("resolve"), uid);
     }
 
-    #[test]
+    #[tokio::test]
     async fn resolve_revokes_after_idle_window() {
         let db = fresh_db();
         let uid = make_user(&db).await;
@@ -560,7 +560,7 @@ mod session_limit_tests {
         // mock clock at "now", so elapsed = 120s > 60s.
         let now = Utc::now();
         let stale = now - ChronoDuration::seconds(120);
-        let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(stale));
+        let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(stale)).await;
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
         // First call: idle window exceeded → revoke + Unauth.
         assert!(matches!(
@@ -572,7 +572,7 @@ mod session_limit_tests {
         assert!(row.revoked_at.is_some());
     }
 
-    #[test]
+    #[tokio::test]
     async fn resolve_passes_within_idle_window() {
         let db = fresh_db();
         let uid = make_user(&db).await;
@@ -584,12 +584,12 @@ mod session_limit_tests {
         .expect("set timeout");
         let now = Utc::now();
         let recent = now - ChronoDuration::seconds(10);
-        let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(recent));
+        let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(recent)).await;
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
         assert_eq!(resolve(&db, &clock, sid).await.expect("resolve"), uid);
     }
 
-    #[test]
+    #[tokio::test]
     async fn resolve_treats_null_last_used_at_as_created_at() {
         let db = fresh_db();
         let uid = make_user(&db).await;
@@ -602,7 +602,7 @@ mod session_limit_tests {
         // last_used_at = None: created 2 minutes ago, so falling
         // back to created_at means 120 > 60 = revoked.
         let now = Utc::now();
-        let sid = insert_session(&db, uid, now - ChronoDuration::seconds(120), None);
+        let sid = insert_session(&db, uid, now - ChronoDuration::seconds(120), None).await;
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
         assert!(matches!(
             resolve(&db, &clock, sid).await,
@@ -610,13 +610,13 @@ mod session_limit_tests {
         ));
     }
 
-    #[test]
+    #[tokio::test]
     async fn touch_last_used_throttles_within_window() {
         let db = fresh_db();
         let uid = make_user(&db).await;
         let now = Utc::now();
         let original = now - ChronoDuration::seconds(10);
-        let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(original));
+        let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(original)).await;
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
         // Throttle window is 60s; 10s old should not write.
         touch_last_used(&db, &clock, sid).await.expect("touch");
@@ -624,13 +624,13 @@ mod session_limit_tests {
         assert_eq!(row.last_used_at, Some(original));
     }
 
-    #[test]
+    #[tokio::test]
     async fn touch_last_used_writes_when_stale() {
         let db = fresh_db();
         let uid = make_user(&db).await;
         let now = Utc::now();
         let stale = now - ChronoDuration::seconds(120);
-        let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(stale));
+        let sid = insert_session(&db, uid, now - ChronoDuration::hours(1), Some(stale)).await;
         let clock: SharedClock = std::sync::Arc::new(MockClock::at(now));
         touch_last_used(&db, &clock, sid).await.expect("touch");
         let row = sessions::get(&db, sid).await.expect("get");
@@ -639,10 +639,10 @@ mod session_limit_tests {
         assert!(updated > stale);
     }
 
-    #[test]
+    #[tokio::test]
     async fn enforce_cap_does_nothing_when_cap_zero() {
         let db = fresh_db();
-        let clock = system_clock().await;
+        let clock = system_clock();
         let uid = make_user(&db).await;
         // Insert 5 active sessions; cap = 0 = disabled.
         for i in 0..5 {
@@ -651,7 +651,7 @@ mod session_limit_tests {
                 uid,
                 Utc::now() - ChronoDuration::seconds(i),
                 None,
-            );
+            ).await;
         }
         enforce_concurrent_session_cap(&db, &clock, uid).await;
         let active =
@@ -659,10 +659,10 @@ mod session_limit_tests {
         assert_eq!(active, 5);
     }
 
-    #[test]
+    #[tokio::test]
     async fn enforce_cap_evicts_oldest_in_fifo_order() {
         let db = fresh_db();
-        let clock = system_clock().await;
+        let clock = system_clock();
         let uid = make_user(&db).await;
         // Cap = 2; insert 4 sessions with distinct created_at.
         sui_id_store::repos::server_settings::update_max_concurrent_sessions(
@@ -672,19 +672,17 @@ mod session_limit_tests {
         ).await
         .expect("set cap");
         let base = Utc::now() - ChronoDuration::hours(1);
-        let s1 = insert_session(&db, uid, base, None);
-        let s2 = insert_session(&db, uid, base + ChronoDuration::seconds(1), None);
-        let s3 = insert_session(&db, uid, base + ChronoDuration::seconds(2), None);
-        let s4 = insert_session(&db, uid, base + ChronoDuration::seconds(3), None);
+        let s1 = insert_session(&db, uid, base, None).await;
+        let s2 = insert_session(&db, uid, base + ChronoDuration::seconds(1), None).await;
+        let s3 = insert_session(&db, uid, base + ChronoDuration::seconds(2), None).await;
+        let s4 = insert_session(&db, uid, base + ChronoDuration::seconds(3), None).await;
         // Run eviction: 4 active, cap 2 → 2 oldest (s1, s2)
         // are revoked.
         enforce_concurrent_session_cap(&db, &clock, uid).await;
-        let still_active = |sid: SessionId| {
-            sessions::get(&db, sid).await.expect("get").revoked_at.is_none()
-        };
-        assert!(!still_active(s1), "s1 should be revoked");
-        assert!(!still_active(s2), "s2 should be revoked");
-        assert!(still_active(s3), "s3 should remain");
-        assert!(still_active(s4), "s4 should remain");
+        // Can't use closure with .await; inline checks instead:
+        assert!(sessions::get(&db, s1).await.expect("get").revoked_at.is_some(), "s1 should be revoked");
+        assert!(sessions::get(&db, s2).await.expect("get").revoked_at.is_some(), "s2 should be revoked");
+        assert!(sessions::get(&db, s3).await.expect("get").revoked_at.is_none(), "s3 should remain");
+        assert!(sessions::get(&db, s4).await.expect("get").revoked_at.is_none(), "s4 should remain");
     }
 }

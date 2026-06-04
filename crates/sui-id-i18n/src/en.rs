@@ -35,6 +35,7 @@ pub static STRINGS_EN: Strings = Strings {
     nav_logout: "Sign out",
 
     // Login
+    signed_out_flash: "Signed out.",
     login_title: "Sign in",
     login_username_label: "Username",
     login_password_label: "Password",

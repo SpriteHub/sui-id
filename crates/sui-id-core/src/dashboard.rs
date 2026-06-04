@@ -228,10 +228,10 @@ mod tests {
         .expect("append");
     }
 
-    #[test]
-    fn empty_db_returns_zero_filled_dense_array_for_each_range() {
+    #[tokio::test]
+    async     fn empty_db_returns_zero_filled_dense_array_for_each_range() {
         let db = fresh_db();
-        let clock = system_clock().await;
+        let clock = system_clock();
         for &r in SparklineRange::all() {
             let a = login_activity(&db, &clock, r).await.expect("activity");
             assert_eq!(a.buckets.len(), r.bucket_count(), "range {:?}", r);
@@ -241,10 +241,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn bucket_starts_are_strictly_increasing_and_aligned() {
+    #[tokio::test]
+    async     fn bucket_starts_are_strictly_increasing_and_aligned() {
         let db = fresh_db();
-        let clock = system_clock().await;
+        let clock = system_clock();
         let a = login_activity(&db, &clock, SparklineRange::Last7Days).await
             .expect("activity");
         let secs = a.range.bucket_minutes() * 60;
@@ -259,10 +259,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn rows_in_window_are_counted_into_the_right_bucket() {
+    #[tokio::test]
+    async     fn rows_in_window_are_counted_into_the_right_bucket() {
         let db = fresh_db();
-        let clock = system_clock().await;
+        let clock = system_clock();
         let now = clock.now();
         // Insert events distributed across the last 24 hours.
         for h in 0..24 {
@@ -292,10 +292,10 @@ mod tests {
         assert_eq!(a.total_failure, expected_failure);
     }
 
-    #[test]
-    fn rows_outside_window_are_ignored() {
+    #[tokio::test]
+    async     fn rows_outside_window_are_ignored() {
         let db = fresh_db();
-        let clock = system_clock().await;
+        let clock = system_clock();
         let now = clock.now();
         // 8 days ago for Last7Days view -> outside window.
         append(&db, "auth.login.success", now - Duration::days(8)).await;
@@ -306,10 +306,10 @@ mod tests {
         assert_eq!(a.total_success, 1, "only the in-window row should count");
     }
 
-    #[test]
-    fn unrelated_actions_are_never_counted() {
+    #[tokio::test]
+    async     fn unrelated_actions_are_never_counted() {
         let db = fresh_db();
-        let clock = system_clock().await;
+        let clock = system_clock();
         let now = clock.now();
         for _ in 0..100 {
             append(&db, "auth.password.changed_self", now).await;
@@ -322,8 +322,8 @@ mod tests {
         assert_eq!(a.total_failure, 0);
     }
 
-    #[test]
-    fn range_query_strings_round_trip() {
+    #[tokio::test]
+    async     fn range_query_strings_round_trip() {
         for &r in SparklineRange::all() {
             assert_eq!(SparklineRange::from_query(r.as_query()), Some(r));
         }

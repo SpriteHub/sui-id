@@ -298,7 +298,7 @@ pub async fn consume_and_reset_password(
     new_password: &str,
     requester_ip: Option<&str>,
 ) -> CoreResult<()> {
-    password::check_password_policy(new_password).await?;
+    password::check_password_policy(new_password)?;
 
     // RFC 003: HIBP breach check on token-based password reset.
     // Fail-open: network failures let the reset through.
@@ -320,7 +320,7 @@ pub async fn consume_and_reset_password(
 
     // Hash the new password before entering the transaction so a slow
     // Argon2id derivation doesn't hold the DB mutex longer than necessary.
-    let new_hash = password::hash_password(new_password).await?;
+    let new_hash = password::hash_password(new_password)?;
 
     // Atomically: update credential, consume token, revoke all sessions and
     // refresh tokens. Either everything commits or nothing does — the user

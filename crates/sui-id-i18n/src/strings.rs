@@ -46,6 +46,7 @@ pub struct Strings {
     pub nav_logout: &'static str,
 
     // ---- Login ----
+    pub signed_out_flash: &'static str,
     pub login_title: &'static str,
     pub login_username_label: &'static str,
     pub login_password_label: &'static str,

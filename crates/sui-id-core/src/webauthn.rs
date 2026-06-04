@@ -313,26 +313,26 @@ pub async fn has_credentials(db: &Database, user_id: UserId) -> CoreResult<bool>
 mod tests {
     use super::*;
 
-    #[test]
-    fn build_accepts_https_url() {
+    #[tokio::test]
+    async     fn build_accepts_https_url() {
         let w = build("https://idp.example/").await.expect("build");
         let _ = w; // we just want it to construct without panicking.
     }
 
-    #[test]
-    fn build_accepts_https_with_port() {
+    #[tokio::test]
+    async     fn build_accepts_https_with_port() {
         let w = build("https://idp.example:8443/").await.expect("build");
         let _ = w;
     }
 
-    #[test]
-    fn build_accepts_localhost_http() {
+    #[tokio::test]
+    async     fn build_accepts_localhost_http() {
         let w = build("http://localhost:8080/").await.expect("localhost http");
         let _ = w;
     }
 
-    #[test]
-    fn build_accepts_127_0_0_1_http() {
+    #[tokio::test]
+    async     fn build_accepts_127_0_0_1_http() {
         // webauthn-rs requires a hostname for rp_id, not a raw IP address.
         // 127.0.0.1 passes our transport check (it's a loopback address)
         // but is rejected at the WebauthnBuilder level with an Err — which
@@ -351,8 +351,8 @@ mod tests {
     }
 
     // RFC 011: http on a non-localhost host must be rejected at startup.
-    #[test]
-    fn build_rejects_http_on_public_host() {
+    #[tokio::test]
+    async     fn build_rejects_http_on_public_host() {
         let r = build("http://idp.example/").await;
         assert!(
             r.is_err(),
@@ -365,8 +365,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn build_rejects_url_without_host() {
+    #[tokio::test]
+    async     fn build_rejects_url_without_host() {
         // file:// has no host — webauthn-rs (and our wrapper) reject this.
         let r = build("file:///etc/passwd").await;
         assert!(r.is_err());
@@ -410,10 +410,10 @@ mod integration_tests {
         (db, uid)
     }
 
-    #[test]
+    #[tokio::test]
     async fn start_registration_persists_pending_row_and_returns_challenge_json() {
         let (db, uid) = fresh_db_with_user().await;
-        let clock = system_clock().await;
+        let clock = system_clock();
         let started =
             start_registration(&db, &clock, "https://idp.example", uid).await.expect("start");
         // Pending row must exist and be of kind Register.
@@ -431,21 +431,21 @@ mod integration_tests {
         assert!(v.get("publicKey").is_some(), "got: {v}");
     }
 
-    #[test]
-    fn start_authentication_rejects_users_with_no_credentials() {
+    #[tokio::test]
+    async     fn start_authentication_rejects_users_with_no_credentials() {
         let (db, uid) = fresh_db_with_user().await;
-        let clock = system_clock().await;
+        let clock = system_clock();
         let r = start_authentication(&db, &clock, "https://idp.example", uid).await;
         assert!(matches!(r, Err(crate::errors::CoreError::BadRequest(_))));
     }
 
-    #[test]
+    #[tokio::test]
     async fn finish_registration_rejects_expired_pending_row() {
         // Manufacture a pending row that has already expired and verify
         // finish_registration refuses it (returns Unauthenticated).
         use sui_id_store::models::{WebauthnPendingKind, WebauthnPendingRow};
         let (db, uid) = fresh_db_with_user().await;
-        let clock = system_clock().await;
+        let clock = system_clock();
         let now = clock.now();
         let pending_id = sui_id_shared::ids::WebauthnPendingId::new();
         webauthn_pending::insert(

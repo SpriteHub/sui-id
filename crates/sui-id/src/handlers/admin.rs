@@ -277,15 +277,33 @@ pub async fn mfa_challenge_post(
 pub async fn logout(
     jar: CookieJar,
     state_ext: AppStateExt,
+    crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
+    axum::Form(form): axum::Form<CsrfOnlyForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
+    // Validate CSRF to prevent logout-CSRF attacks.
+    // On failure, redirect to login rather than returning 403 —
+    // a stale CSRF token (e.g. after a previous logout) should not
+    // leave the operator staring at an error page.
+    if crate::handlers::enforce_csrf(&jar, Some(&form.csrf)).is_err() {
+        return Ok(Redirect::to("/admin/login").into_response());
+    }
     if let Some(c) = jar.get(SESSION_COOKIE) {
         if let Ok(sid) = SessionId::from_str(c.value()) {
             let _ = session::logout(&app.db, sid).await;
         }
     }
     let jar = jar.add(clear_session_cookie(app.config.server.cookie_secure));
-    Ok((jar, Redirect::to("/admin/login")).into_response())
+    // Render the login page with a "Signed out" confirmation.
+    let flash = Flash {
+        kind: FlashKind::Info,
+        text: lang.strings().signed_out_flash.into(),
+    };
+    Ok((
+        jar,
+        Html(render_login(Some(flash), None, lang)),
+    )
+        .into_response())
 }
 
 // ---------- dashboard ----------
@@ -431,7 +449,7 @@ pub async fn users_create(
         .as_deref()
         .map(|v| matches!(v, "true" | "on" | "1"))
         .unwrap_or(false);
-    admin_uc::create_user(
+    let create_result = admin_uc::create_user(
         &app.db,
         &app.clock,
         admin_id,
@@ -442,10 +460,31 @@ pub async fn users_create(
             email,
             is_admin,
         },
-    ).await
-    .map_err(HttpError::html)?;
-    let _ = &app; // hush
-    Ok(Redirect::to("/admin/users").into_response())
+    ).await;
+
+    match create_result {
+        Ok(_) => Ok(Redirect::to("/admin/users").into_response()),
+        Err(CoreError::Conflict(msg)) => {
+            // Duplicate username: stay on the users page and show the
+            // conflict message in-line rather than rendering a bare error page.
+            let rows = admin_uc::list_users(&app.db, admin_id).await.map_err(HttpError::html)?;
+            let admin = users::get(&app.db, admin_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+            let token = crate::csrf::ensure_token(&jar);
+            let mut summaries = Vec::with_capacity(rows.len());
+            for r in rows {
+                let mfa_enabled = sui_id_core::mfa::is_mfa_enabled(&app.db, r.id).await.unwrap_or(false);
+                summaries.push(UserSummary {
+                    id: r.id, username: r.username, display_name: r.display_name,
+                    is_admin: r.is_admin, is_disabled: r.is_disabled, is_deleted: r.is_deleted,
+                    mfa_enabled, created_at: r.created_at,
+                });
+            }
+            let flash = Flash { kind: FlashKind::Error, text: msg };
+            let resp = Html(render_users(summaries, Some(flash), admin.username, token.clone())).into_response();
+            Ok((axum::http::StatusCode::CONFLICT, with_csrf_cookie(resp, &app, &token)).into_response())
+        }
+        Err(e) => Err(HttpError::html(e)),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -589,13 +628,18 @@ pub async fn clients_create(
         .as_deref()
         .map(|v| matches!(v, "true" | "on" | "1"))
         .unwrap_or(true);
-    // Default policy: openid + profile if the operator left the field
-    // blank. Empty-after-trim is also accepted as "permit any" but only
-    // when the operator explicitly types whitespace; the form's default
-    // value is a sensible policy.
+    // Default policy: openid + profile + email if the operator left
+    // the field blank. This covers the three scopes needed for most
+    // basic OIDC integrations. Operators can restrict or extend the
+    // list by editing the client after creation.
+    //
+    // Background: RFC 027. The original default was "" (no scopes),
+    // which caused every first-time OIDC integration attempt to fail
+    // with "scope not permitted" before the operator knew the field
+    // existed.
     let raw_scopes = form.allowed_scopes.trim();
     let allowed_scopes = if raw_scopes.is_empty() {
-        "openid profile"
+        "openid profile email"
     } else {
         raw_scopes
     };

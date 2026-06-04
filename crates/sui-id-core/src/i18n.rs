@@ -125,7 +125,7 @@ mod tests {
             },
         ).await
         .expect("user");
-        let _ = hash_password("alice-the-tester-password").await;
+        let _ = hash_password("alice-the-tester-password");
         let _ = CredentialRow {
             user_id: id,
             password_hash: String::new(),
@@ -135,8 +135,8 @@ mod tests {
         id
     }
 
-    #[test]
-    fn user_preference_wins() {
+    #[tokio::test]
+    async     fn user_preference_wins() {
         let db = fresh_db();
         let uid = make_user(&db, Some("en")).await;
         let loc = resolve(
@@ -151,8 +151,8 @@ mod tests {
         assert_eq!(loc, Locale::En);
     }
 
-    #[test]
-    fn cookie_wins_over_accept_language() {
+    #[tokio::test]
+    async     fn cookie_wins_over_accept_language() {
         let db = fresh_db();
         let loc = resolve(
             &db,
@@ -166,8 +166,8 @@ mod tests {
         assert_eq!(loc, Locale::En);
     }
 
-    #[test]
-    fn accept_language_used_when_no_user_or_cookie() {
+    #[tokio::test]
+    async     fn accept_language_used_when_no_user_or_cookie() {
         let db = fresh_db();
         let loc = resolve(
             &db,
@@ -181,8 +181,8 @@ mod tests {
         assert_eq!(loc, Locale::En);
     }
 
-    #[test]
-    fn falls_back_to_server_default_when_nothing_matches() {
+    #[tokio::test]
+    async     fn falls_back_to_server_default_when_nothing_matches() {
         let db = fresh_db();
         // Migration default is "ja"; nothing else matches.
         let loc = resolve(
@@ -197,8 +197,8 @@ mod tests {
         assert_eq!(loc, Locale::Ja);
     }
 
-    #[test]
-    fn user_preference_with_unknown_tag_falls_through() {
+    #[tokio::test]
+    async     fn user_preference_with_unknown_tag_falls_through() {
         // After a hypothetical downgrade, a row could hold a tag
         // we don't recognise. Resolution should not error; it
         // should fall through to subsequent tiers.

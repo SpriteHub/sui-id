@@ -46,7 +46,7 @@ pub async fn create_initial_admin(
     if username.trim().is_empty() {
         return Err(CoreError::BadRequest("username must not be empty".into()));
     }
-    check_password_policy(password).await?;
+    check_password_policy(password)?;
 
     let now = clock.now();
 
@@ -83,7 +83,7 @@ pub async fn create_initial_admin(
     })?;
 
     // 2. Persist password hash.
-    let hash = hash_password(password).await?;
+    let hash = hash_password(password)?;
     let cred = CredentialRow {
         user_id: user.id,
         password_hash: hash,
