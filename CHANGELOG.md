@@ -5,7 +5,159 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.34.0] — Unreleased
+## [0.36.0] — Unreleased
+
+**Minor version bump.** Completes the first UI/UX realignment wave (RFC 029–034)
+and closes out the design-document gap list from the v0.29.x review. New routes,
+new render-function signatures, and a new CSV export endpoint justify the minor bump.
+
+### RFC 030 — Dangerous operations: step-up + confirmation screens
+
+All six previously `confirm()`-dialog-gated operations now route through a
+dedicated server-rendered confirmation screen with step-up authentication:
+
+| Operation | Route |
+|---|---|
+| Disable/enable user | `GET /admin/users/{id}/disable-confirm` |
+| Delete user | `GET /admin/users/{id}/delete-confirm` |
+| Reset user MFA | `GET /admin/users/{id}/mfa-reset-confirm` |
+| Delete client | `GET /admin/clients/{id}/delete-confirm` |
+| Delete signing key | `GET /admin/signing-keys/{id}/delete-confirm` |
+
+Each screen shows the target's name, an impact statement, a reversibility badge
+(green "Recoverable" / red "Not recoverable"), and a labelled action button.
+Step-up freshness is checked before rendering the confirmation screen for
+irreversible operations. A hidden `_confirmed=1` field is required on the
+mutation POST; direct-POST attempts without it are rejected 400.
+
+JavaScript `confirm()` dialogs removed from all six locations.
+
+New: `ConfirmedForm`, `require_confirmed()`, `reversibility_badge()` component.
+New i18n: `confirm_*` and `badge_recoverable/badge_not_recoverable` (×3 locales).
+
+### RFC 031 — Dashboard operator prompts + active session count
+
+`DashboardData` gains three boolean warn flags and `active_session_count`:
+
+- **Active sessions** stat card alongside users and clients.
+- **Operator prompt section** (shown only when at least one condition is true):
+  - SMTP not configured → link to Settings → Email
+  - HIBP mode is Off → link to Settings → Authentication
+  - `cookie_secure = false` → link to Settings → Security
+
+New: `sessions::count_active_total()` in `sui-id-store`.
+
+### RFC 033 — Audit log enhancements
+
+Three new audit log capabilities:
+
+1. **Hash-chain status banner** — `GET /admin/audit` now runs
+   `verify_chain_tail` on each load and shows a green "✓ verified" or red
+   "✗ check failed" banner at the top of the page.
+
+2. **Event filter** — a `?q=` query parameter filters by event-name prefix
+   (`auth.login`, `user.`, etc.). The filter persists in a visible search
+   input.
+
+3. **CSV export** — `GET /admin/audit.csv?q=` returns the same filtered
+   rows as `text/csv` with columns `when,actor,action,target,result,note`.
+
+New: `audit::recent_filtered()` in `sui-id-store`.
+
+### RFC 034 — Login passkey primary button + empty states + Advanced tab
+
+Three UI polish items:
+
+- **Passkey on login screen**: a "Sign in with passkey" button above the
+  password form (passed as `show_passkey_option: bool`).
+- **Empty states**: user list, client list, and signing-key list now render
+  a descriptive message when empty instead of an empty table body.
+- **Settings tab rename**: "Other" / "その他" → "Advanced" / "詳細" / "高级".
+  `settings_tab_advanced` i18n key (added in RFC 002) is now wired to the tab.
+  `settings_tabs()` helper accepts `lang: Locale` and uses `t.` references
+  for all tab labels.
+
+### Ongoing: RFC 029 — Admin panel i18n (second pass)
+
+Handler call sites still pass `Locale::Ja` as a static fallback. A follow-on
+patch will resolve the locale dynamically from `server_settings.default_lang`
+(tracked by the open RFC 029 in `rfcs/proposed/`).
+
+### Test results
+
+- `sui-id-i18n`: **12 tests pass**
+- `sui-id-store`: **33 tests pass**
+- `sui-id-core`: **114 tests pass**
+- `cargo check --workspace`: clean
+
+---
+
+## [0.35.0] — Previous release
+
+**Minor version bump.** This release begins the UI/UX realignment series
+(RFC 029–035), addressing gaps identified against the v0.29.x design
+documents. The minor bump reflects that RFC 032 changes `AppState` and
+RFC 029 changes all admin render function signatures.
+
+### RFC 032 — Dev mode browser banner
+
+Every page rendered while sui-id runs in `--dev` mode now shows a yellow
+sticky ribbon at the top of the browser window:
+
+> **DEV MODE** — not for production. cookie_secure=false, HIBP off, lockout disabled.
+
+Implementation:
+- `AppState::is_dev_mode: bool` — false by default; set to `true` in the
+  `--dev` code path in `main.rs`.
+- `Shell` gains an optional `dev_mode: bool` prop. When `true`, a
+  `<div class="dev-banner">` is rendered as the first element in `<body>`.
+  The `.dev-banner` CSS class was already defined in RFC 023 (components.rs).
+- All admin render functions accept and forward `dev_mode` to `Shell`.
+
+### RFC 029 — Admin panel i18n: first pass
+
+All five major admin render functions now accept a `lang: Locale` parameter
+and route through the translation system:
+
+- `render_dashboard` — title, stat labels, activity section, OIDC section
+- `render_users` — title, section headings, table headers, form labels
+- `render_clients` — title, secret-once banner, table headers
+- `render_audit` — title, lede, column headers
+- `render_signing_keys` — title, lede, table headers, action buttons
+
+**New `Strings` fields (3 × 55 translations across Ja / En / Zh):**
+
+`dashboard_title/lede/stat_*`, `users_title/lede/table_*`,
+`clients_title/lede/table_*`, `audit_lede`,
+`signing_keys_title/lede/table_*`.
+
+**Note:** handler call sites currently pass `Locale::Ja` as a static
+fallback. A follow-on change (RFC 031) will resolve the locale from the
+`server_settings.default_lang` row dynamically.
+
+### RFC plan (new RFCs filed this release)
+
+7 new RFCs filed to track the remaining design-document gaps:
+
+| RFC | Title | Priority |
+|---|---|---|
+| RFC 029 | Admin panel i18n completion (this release: first pass) | Medium-High |
+| RFC 030 | Dangerous operations: step-up + confirmation screens | High |
+| RFC 031 | Dashboard operator prompts + active session count | Medium-High |
+| RFC 032 | Dev mode browser banner (this release: done) | High |
+| RFC 033 | Audit log: hash-chain status, filter, export | Medium |
+| RFC 034 | Login passkey primary + empty states | Medium |
+| RFC 035 | Admin user detail page | Medium |
+
+### Test results
+
+- `sui-id-i18n`: **12 tests pass**
+- `sui-id-store`: **33 tests pass**
+- `cargo check --workspace`: clean
+
+---
+
+## [0.34.0] — Previous release
 
 **Minor version bump.** RFC 002 adds a new locale (zh), a new public API
 (`Formatters`), a new migration (0024), and a new field on `OutgoingMail` —

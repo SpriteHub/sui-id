@@ -235,3 +235,16 @@ pub async fn oldest_active_for_user(
         Ok(rows)
     }).await
 }
+
+/// Count all non-revoked, non-expired sessions across all users.
+/// Used by the admin dashboard to display the active-session stat card.
+pub async fn count_active_total(db: &Database) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sessions              WHERE revoked = 0 AND expires_at > unixepoch('now')",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }).await
+}

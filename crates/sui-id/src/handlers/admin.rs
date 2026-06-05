@@ -26,8 +26,15 @@ use sui_id_shared::api::{
 use sui_id_shared::ids::{ClientId, SessionId, UserId};
 use sui_id_store::repos::{audit, clients, state, users};
 use sui_id_web::{
-    pages::DashboardData, render_audit, render_clients, render_dashboard, render_login,
-    render_signing_keys, render_users, Flash, FlashKind,
+    pages::{
+        ConfirmDeleteClientData, ConfirmDeleteSigningKeyData, ConfirmDeleteUserData,
+        ConfirmDisableData, ConfirmResetMfaData, DashboardData,
+    },
+    render_audit, render_clients, render_confirm_delete_client,
+    render_confirm_delete_signing_key, render_confirm_delete_user,
+    render_confirm_disable_user, render_confirm_reset_mfa,
+    render_dashboard, render_login, render_signing_keys, render_users,
+    Flash, FlashKind,
 };
 
 /// Attach a `Set-Cookie` header for the CSRF token to a response.
@@ -63,7 +70,7 @@ pub async fn login_get(
             }
         }
     }
-    Ok(Html(render_login(None, None, lang)).into_response())
+    Ok(Html(render_login(None, None, lang, false)).into_response())
 }
 
 pub async fn login_post(
@@ -131,7 +138,7 @@ pub async fn login_post(
                 Some(form.next)
             };
             Ok(
-                (StatusCode::UNAUTHORIZED, Html(render_login(Some(flash), next, lang)))
+                (StatusCode::UNAUTHORIZED, Html(render_login(Some(flash), next, lang, false)))
                     .into_response(),
             )
         }
@@ -301,7 +308,7 @@ pub async fn logout(
     };
     Ok((
         jar,
-        Html(render_login(Some(flash), None, lang)),
+        Html(render_login(Some(flash), None, lang, false)),
     )
         .into_response())
 }
@@ -362,15 +369,27 @@ pub async fn dashboard(
         buckets,
     };
 
+    let session_count = sui_id_store::repos::sessions::count_active_total(&app.db)
+        .await.unwrap_or(0);
+    // HibpMode: Off = show warning; anything else = configured
+    let hibp_is_off = sui_id_store::repos::server_settings::get(&app.db).await
+        .map(|s| matches!(s.hibp_mode, sui_id_store::models::HibpMode::Off))
+        .unwrap_or(true);  // assume Off if settings missing
+    let smtp_configured = sui_id_store::repos::smtp_config::get(&app.db)
+        .await.map(|o| o.is_some()).unwrap_or(false);
     let data = DashboardData {
         admin_username: admin.username,
         user_count: users_n,
         client_count: clients_n,
+        active_session_count: session_count,
         issuer: app.issuer().to_owned(),
         sparkline,
+        warn_smtp_not_configured: !smtp_configured,
+        warn_hibp_off: hibp_is_off,
+        warn_cookie_insecure: !app.config.server.cookie_secure,
     };
     let token = crate::csrf::ensure_token(&jar);
-    let resp = Html(render_dashboard(data, None)).into_response();
+    let resp = Html(render_dashboard(data, None, app.is_dev_mode, sui_id_i18n::Locale::Ja)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -408,7 +427,7 @@ pub async fn users_get(
     }
     // summaries already collected in for loop above
     let token = crate::csrf::ensure_token(&jar);
-    let resp = Html(render_users(summaries, None, admin.username, token.clone())).into_response();
+    let resp = Html(render_users(summaries, None, admin.username, token.clone(), app.is_dev_mode, sui_id_i18n::Locale::Ja)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -480,7 +499,7 @@ pub async fn users_create(
                 });
             }
             let flash = Flash { kind: FlashKind::Error, text: msg };
-            let resp = Html(render_users(summaries, Some(flash), admin.username, token.clone())).into_response();
+            let resp = Html(render_users(summaries, Some(flash), admin.username, token.clone(), app.is_dev_mode, sui_id_i18n::Locale::Ja)).into_response();
             Ok((axum::http::StatusCode::CONFLICT, with_csrf_cookie(resp, &app, &token)).into_response())
         }
         Err(e) => Err(HttpError::html(e)),
@@ -517,16 +536,28 @@ pub struct CsrfOnlyForm {
     pub csrf: String,
 }
 
+/// Body for dangerous-operation POSTs that require both a CSRF token and an
+/// explicit `_confirmed=1` field (RFC 030). The confirmation screen supplies
+/// this field; direct-POST attacks without it are rejected.
+#[derive(Debug, Deserialize, Default)]
+pub struct ConfirmedForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    #[serde(rename = "_confirmed", default)]
+    pub confirmed: String,
+}
+
 pub async fn users_delete(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
-    Form(form): Form<CsrfOnlyForm>,
+    Form(form): Form<ConfirmedForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    crate::handlers::require_confirmed(&form.confirmed)?;
     if let Err(redirect) =
         crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/users").await
     {
@@ -546,10 +577,11 @@ pub async fn users_mfa_reset(
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
-    Form(form): Form<CsrfOnlyForm>,
+    Form(form): Form<ConfirmedForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    crate::handlers::require_confirmed(&form.confirmed)?;
     if let Err(redirect) =
         crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/users").await
     {
@@ -559,6 +591,144 @@ pub async fn users_mfa_reset(
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
     admin_uc::admin_reset_mfa(&app.db, admin_id, target).await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/users").into_response())
+}
+
+
+// ---------- dangerous-op confirmation GET handlers (RFC 030) ----------
+
+pub async fn users_disable_confirm_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(_admin_id): CurrentAdmin,
+    jar: CookieJar,
+    Path(id): Path<String>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let target = UserId::from_str(&id)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
+    let user = users::get(&app.db, target).await
+        .map_err(|e| HttpError::html(sui_id_core::errors::CoreError::from(e)))?;
+    let token = crate::csrf::ensure_token(&jar);
+    let data = ConfirmDisableData {
+        user_id: id,
+        username: user.username,
+        is_disabled: user.is_disabled,
+        csrf_token: token.clone(),
+    };
+    let resp = Html(render_confirm_disable_user(data, app.is_dev_mode, sui_id_i18n::Locale::Ja))
+        .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+pub async fn users_delete_confirm_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(_admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
+    jar: CookieJar,
+    Path(id): Path<String>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let return_to = format!("/admin/users/{id}/delete-confirm");
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, &return_to).await
+    {
+        return Ok(redirect);
+    }
+    let target = UserId::from_str(&id)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
+    let user = users::get(&app.db, target).await
+        .map_err(|e| HttpError::html(sui_id_core::errors::CoreError::from(e)))?;
+    let token = crate::csrf::ensure_token(&jar);
+    let data = ConfirmDeleteUserData {
+        user_id: id,
+        username: user.username,
+        csrf_token: token.clone(),
+    };
+    let resp = Html(render_confirm_delete_user(data, app.is_dev_mode, sui_id_i18n::Locale::Ja))
+        .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+pub async fn users_mfa_reset_confirm_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(_admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
+    jar: CookieJar,
+    Path(id): Path<String>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let return_to = format!("/admin/users/{id}/mfa-reset-confirm");
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, &return_to).await
+    {
+        return Ok(redirect);
+    }
+    let target = UserId::from_str(&id)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
+    let user = users::get(&app.db, target).await
+        .map_err(|e| HttpError::html(sui_id_core::errors::CoreError::from(e)))?;
+    let token = crate::csrf::ensure_token(&jar);
+    let data = ConfirmResetMfaData {
+        user_id: id,
+        username: user.username,
+        csrf_token: token.clone(),
+    };
+    let resp = Html(render_confirm_reset_mfa(data, app.is_dev_mode, sui_id_i18n::Locale::Ja))
+        .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+pub async fn clients_delete_confirm_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(_admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
+    jar: CookieJar,
+    Path(id): Path<String>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let return_to = format!("/admin/clients/{id}/delete-confirm");
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, &return_to).await
+    {
+        return Ok(redirect);
+    }
+    let cid = ClientId::from_str(&id)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
+    let client = clients::get(&app.db, cid).await
+        .map_err(|e| HttpError::html(sui_id_core::errors::CoreError::from(e)))?;
+    let token = crate::csrf::ensure_token(&jar);
+    let data = ConfirmDeleteClientData {
+        client_id: id,
+        client_name: client.name,
+        csrf_token: token.clone(),
+    };
+    let resp = Html(render_confirm_delete_client(data, app.is_dev_mode, sui_id_i18n::Locale::Ja))
+        .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+pub async fn signing_keys_delete_confirm_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(_admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
+    jar: CookieJar,
+    Path(id): Path<String>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let return_to = format!("/admin/signing-keys/{id}/delete-confirm");
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, &return_to).await
+    {
+        return Ok(redirect);
+    }
+    let token = crate::csrf::ensure_token(&jar);
+    let data = ConfirmDeleteSigningKeyData {
+        key_id: id,
+        algorithm: "Ed25519".to_string(),
+        csrf_token: token.clone(),
+    };
+    let resp = Html(render_confirm_delete_signing_key(data, app.is_dev_mode, sui_id_i18n::Locale::Ja))
+        .into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
 }
 
 // ---------- clients ----------
@@ -585,7 +755,7 @@ pub async fn clients_get(
         })
         .collect();
     let token = crate::csrf::ensure_token(&jar);
-    let resp = Html(render_clients(summaries, None, None, token.clone())).into_response();
+    let resp = Html(render_clients(summaries, None, None, token.clone(), app.is_dev_mode, sui_id_i18n::Locale::Ja)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -678,7 +848,7 @@ pub async fn clients_create(
     let secret_payload =
         created.generated_secret.map(|s| (created.row.id.to_string(), s));
     let token = crate::csrf::ensure_token(&jar);
-    let resp = Html(render_clients(summaries, None, secret_payload, token.clone())).into_response();
+    let resp = Html(render_clients(summaries, None, secret_payload, token.clone(), app.is_dev_mode, sui_id_i18n::Locale::Ja)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -807,28 +977,79 @@ pub async fn clients_edit_post(
 
 // ---------- audit ----------
 
+#[derive(Debug, serde::Deserialize, Default)]
+pub struct AuditQuery {
+    #[serde(default)]
+    pub q: String,
+}
+
 pub async fn audit_get(
     state_ext: AppStateExt,
     CurrentAdmin(_): CurrentAdmin,
     jar: CookieJar,
+    axum::extract::Query(query): axum::extract::Query<AuditQuery>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let entries = audit::recent(&app.db, 200).await
+    let filter = if query.q.is_empty() { None } else { Some(query.q.clone()) };
+    let entries = audit::recent_filtered(&app.db, 200, filter.clone()).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let chain = audit::verify_chain_tail(&app.db, 500).await
+        .unwrap_or(sui_id_store::repos::audit::ChainVerifyReport {
+            checked: 0, broken_at_seq: None, legacy_unhashed: 0
+        });
+    let chain_ok = chain.broken_at_seq.is_none();
     let dtos: Vec<AuditLogEntryDto> = entries
         .into_iter()
         .map(|r| AuditLogEntryDto {
-            at: r.at,
-            actor: r.actor,
-            action: r.action,
-            target: r.target,
-            result: r.result,
-            note: r.note,
+            at: r.at, actor: r.actor, action: r.action,
+            target: r.target, result: r.result, note: r.note,
         })
         .collect();
     let token = crate::csrf::ensure_token(&jar);
-    let resp = Html(render_audit(dtos, None)).into_response();
+    let resp = Html(render_audit(
+        dtos, chain_ok, filter, None, app.is_dev_mode, sui_id_i18n::Locale::Ja,
+    )).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+pub async fn audit_csv_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(_): CurrentAdmin,
+    axum::extract::Query(query): axum::extract::Query<AuditQuery>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let filter = if query.q.is_empty() { None } else { Some(query.q.clone()) };
+    let entries = audit::recent_filtered(&app.db, 2000, filter).await
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+
+    let mut csv = String::from("when,actor,action,target,result,note\n");
+    for r in entries {
+        fn esc(s: &str) -> String {
+            format!("\"{}\"", s.replace('"', "\"\"\""))
+        }
+        let actor_str = r.actor.map(|id| id.to_string()).unwrap_or_default();
+        let target_str = r.target.unwrap_or_default();
+        let note_str = r.note.unwrap_or_default();
+        csv.push_str(&format!(
+            "{},{},{},{},{},{}\n",
+            r.at.to_rfc3339(),
+            esc(&actor_str),
+            esc(&r.action),
+            esc(&target_str),
+            esc(&r.result),
+            esc(&note_str),
+        ));
+    }
+    let mut resp = axum::response::Response::new(axum::body::Body::from(csv));
+    resp.headers_mut().insert(
+        header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    resp.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        axum::http::HeaderValue::from_static("attachment; filename=audit.csv"),
+    );
+    Ok(resp)
 }
 
 // ---------- signing keys ----------
@@ -851,7 +1072,7 @@ pub async fn signing_keys_get(
         })
         .collect();
     let token = crate::csrf::ensure_token(&jar);
-    let resp = Html(render_signing_keys(summaries, None, token.clone())).into_response();
+    let resp = Html(render_signing_keys(summaries, None, token.clone(), app.is_dev_mode, sui_id_i18n::Locale::Ja)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 

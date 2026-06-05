@@ -39,6 +39,9 @@ pub struct AppState {
     /// Hot-path caches (RFC 014): redirect-origins and JWKS signing keys.
     /// Rebuilt on startup and after mutations to clients/signing_keys.
     pub caches: Arc<Caches>,
+    /// True when the process was started with `--dev`. Used to render the
+    /// browser-side dev-mode banner on every page (RFC 032).
+    pub is_dev_mode: bool,
 }
 
 impl AppState {
@@ -66,6 +69,7 @@ impl AppState {
             mailer,
             hibp_client,
             caches,
+            is_dev_mode: false,
         }
     }
 

@@ -104,6 +104,8 @@ pub fn Shell(
     show_nav: bool,
     current: Option<String>,
     #[prop(optional)] lang: Option<sui_id_i18n::Locale>,
+    /// When true, renders the DEV MODE banner (RFC 032).
+    #[prop(optional)] dev_mode: Option<bool>,
     children: Children,
 ) -> impl IntoView {
     let stylesheet = format!("{}\n{}", TOKENS_CSS, COMPONENTS_CSS);
@@ -122,6 +124,12 @@ pub fn Shell(
                 <script>{COPY_JS}</script>
             </head>
             <body>
+                {dev_mode.unwrap_or(false).then(|| view! {
+                    <div class="dev-banner" role="alert">
+                        <strong>"DEV MODE"</strong>
+                        " — not for production. cookie_secure=false, HIBP off, lockout disabled."
+                    </div>
+                })}
                 <header class="app-header">
                     <h1 class="app-header__brand">"sui-id"</h1>
                     {show_nav.then(|| view! { <Nav current=current.clone() csrf_token="".to_string() /> })}

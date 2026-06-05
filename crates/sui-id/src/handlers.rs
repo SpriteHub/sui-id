@@ -577,3 +577,18 @@ pub async fn require_fresh_step_up(
         }
     }
 }
+
+/// Require that the request body contained `_confirmed=1` (RFC 030).
+///
+/// Prevents direct-POST bypass of the confirmation screen. The confirmation
+/// page supplies `_confirmed=1`; raw form submissions without it are rejected
+/// with a 400 Bad Request.
+pub fn require_confirmed(confirmed: &str) -> Result<(), HttpError> {
+    if confirmed == "1" {
+        Ok(())
+    } else {
+        Err(HttpError::html(CoreError::BadRequest(
+            "missing confirmation; use the confirmation screen".into(),
+        )))
+    }
+}

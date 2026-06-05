@@ -135,6 +135,38 @@ pub async fn recent(db: &Database, limit: i64) -> StoreResult<Vec<AuditLogRow>> 
     }).await
 }
 
+
+/// Fetch recent audit rows, optionally filtered by event-name prefix.
+///
+/// `filter` is matched as `action LIKE '<filter>%'`. An empty or None
+/// filter is equivalent to calling [`recent`].
+pub async fn recent_filtered(
+    db: &Database,
+    limit: i64,
+    filter: Option<String>,
+) -> StoreResult<Vec<AuditLogRow>> {
+    db.with_conn(move |conn| {
+        match filter.as_deref().filter(|s| !s.is_empty()) {
+            None => {
+                let mut stmt = conn.prepare(
+                    "SELECT at, actor, action, target, result, note                      FROM audit_log ORDER BY seq DESC LIMIT ?1",
+                )?;
+                let rows = stmt.query_map([limit], map)?.collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            }
+            Some(prefix) => {
+                let pattern = format!("{prefix}%");
+                let mut stmt = conn.prepare(
+                    "SELECT at, actor, action, target, result, note                      FROM audit_log WHERE action LIKE ?2 ORDER BY seq DESC LIMIT ?1",
+                )?;
+                let rows = stmt
+                    .query_map(rusqlite::params![limit, pattern], map)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            }
+        }
+    }).await
+}
 /// Result of a tail-verification pass.
 #[derive(Debug, Clone)]
 pub struct ChainVerifyReport {

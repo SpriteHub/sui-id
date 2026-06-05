@@ -345,6 +345,8 @@ pub fn render_login(
     flash: Option<Flash>,
     next: Option<String>,
     lang: sui_id_i18n::Locale,
+    // When true, renders a passkey sign-in button above the password form (RFC 034).
+    show_passkey_option: bool,
 ) -> String {
     render(move || {
         let next_value = next.clone().unwrap_or_default();
@@ -353,6 +355,15 @@ pub fn render_login(
             <crate::layout::AuthShell title=t.login_title.to_string() lang=lang>
                 <h1>{t.login_title}</h1>
                 {flash_banner(flash)}
+                {show_passkey_option.then(|| view! {
+                    <form id="passkey-login-form" method="post"
+                          action="/admin/login/webauthn/start" class="stack">
+                        <button type="submit">{t.login_passkey_primary}</button>
+                    </form>
+                    <div class="divider-with-label" aria-hidden="true">
+                        <span>"or"</span>
+                    </div>
+                })}
                 <form method="post" action="/admin/login" class="stack">
                     <input type="hidden" name="next" value=next_value />
                     <div class="field">
@@ -371,6 +382,9 @@ pub fn render_login(
                 <p class="muted" style="margin-top:var(--space-3);text-align:center;font-size:var(--font-size-caption)">
                     <a href="/forgot-password">{t.login_forgot_password_link}</a>
                 </p>
+                {show_passkey_option.then(|| view! {
+                    <script src="/static/webauthn.js"></script>
+                })}
             </crate::layout::AuthShell>
         }
     })
@@ -763,8 +777,13 @@ pub struct DashboardData {
     pub admin_username: String,
     pub user_count: usize,
     pub client_count: usize,
+    pub active_session_count: usize,
     pub issuer: String,
     pub sparkline: DashboardSparkline,
+    // Operator action prompts — shown when condition is true (RFC 031)
+    pub warn_smtp_not_configured: bool,
+    pub warn_hibp_off: bool,
+    pub warn_cookie_insecure: bool,
 }
 
 /// Render the inline SVG sparkline.
@@ -871,14 +890,19 @@ fn render_sparkline(buckets: Vec<DashboardSparkBucket>) -> impl IntoView {
     }
 }
 
-pub fn render_dashboard(data: DashboardData, flash: Option<Flash>) -> String {
+pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: bool, lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         let DashboardData {
             admin_username,
             user_count,
             client_count,
+            active_session_count,
             issuer,
             sparkline,
+            warn_smtp_not_configured,
+            warn_hibp_off,
+            warn_cookie_insecure,
         } = data;
 
         let active_range = sparkline.active_range_query.clone();
@@ -899,18 +923,31 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>) -> String {
         let svg = render_sparkline(sparkline.buckets);
 
         view! {
-            <Shell title="Dashboard".to_string() show_nav=true current=Some("dashboard".to_string())>
+            <Shell title=t.dashboard_title.to_string() show_nav=true current=Some("dashboard".to_string()) dev_mode=dev_mode lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"ダッシュボード"</h1>
+                        <h1 class="page-header__title">t.dashboard_title</h1>
                         <p class="page-header__lede">
-                            {format!("Hello, {admin_username}. システムの概要と統計情報。")}
+                            {format!("Hello, {}. {}", admin_username, t.dashboard_lede)}
                         </p>
                     </div>
                 </header>
                 {flash_banner(flash)}
 
-                <section class="grid-cards" aria-label="統計サマリ">
+                {(warn_smtp_not_configured || warn_hibp_off || warn_cookie_insecure).then(|| view! {
+                    <section class="card" style="border-left:4px solid var(--colour-warn);margin-bottom:var(--space-4)" aria-label="Operator action required">
+                        <h2 style="font-size:var(--font-size-body);margin:0 0 var(--space-2)">
+                            "⚠ Action required"
+                        </h2>
+                        <ul style="margin:0;padding-left:var(--space-4)">
+                            {warn_smtp_not_configured.then(|| view! { <li>{t.dashboard_warn_smtp}</li> })}
+                            {warn_hibp_off.then(|| view! { <li>{t.dashboard_warn_hibp}</li> })}
+                            {warn_cookie_insecure.then(|| view! { <li>{t.dashboard_warn_cookie_insecure}</li> })}
+                        </ul>
+                    </section>
+                })}
+
+                <section class="grid-cards" aria-label="Statistics">
                     <div class="card">
                         <div class="stat">
                             <span class="stat__value">{user_count.to_string()}</span>
@@ -925,18 +962,24 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>) -> String {
                     </div>
                     <div class="card">
                         <div class="stat">
+                            <span class="stat__value">{active_session_count.to_string()}</span>
+                            <span class="stat__label">t.dashboard_stat_sessions</span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="stat">
                             <span class="stat__value">
-                                <span class="badge badge--ok">"稼働中"</span>
+                                <span class="badge badge--ok">t.dashboard_stat_service_ok</span>
                             </span>
-                            <span class="stat__label">"サービス状態"</span>
+                            <span class="stat__label">t.dashboard_stat_service_status</span>
                         </div>
                     </div>
                 </section>
 
                 <section>
                     <div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:var(--space-3)">
-                        <h2 style="margin:0">"サインイン活動"</h2>
-                        <nav class="app-nav" aria-label="期間" style="flex:0 0 auto">
+                        <h2 style="margin:0">t.dashboard_activity_title</h2>
+                        <nav class="app-nav" aria-label=t.dashboard_activity_period style="flex:0 0 auto">
                             {range_tabs}
                         </nav>
                     </div>
@@ -946,13 +989,13 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>) -> String {
                                 <span class="stat__value" style="color:var(--accent-default)">
                                     {total_success.to_string()}
                                 </span>
-                                <span class="stat__label">"成功"</span>
+                                <span class="stat__label">"Success"</span>
                             </div>
                             <div class="stat">
                                 <span class="stat__value" style="color:var(--danger-default)">
                                     {total_failure.to_string()}
                                 </span>
-                                <span class="stat__label">"失敗"</span>
+                                <span class="stat__label">"Failure"</span>
                             </div>
                         </div>
                         {svg}
@@ -963,7 +1006,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>) -> String {
                 </section>
 
                 <section>
-                    <h2>"OIDC エンドポイント"</h2>
+                    <h2>t.dashboard_oidc_endpoints_section</h2>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -1031,13 +1074,12 @@ fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl Int
     } else if is_deleted {
         view! { <td><span class="muted">"-"</span></td> }.into_any()
     } else {
-        let reset_form = if mfa_enabled {
+        let disable_confirm_url = format!("/admin/users/{id_str}/disable-confirm");
+        let delete_confirm_url = format!("/admin/users/{id_str}/delete-confirm");
+        let reset_mfa_confirm_url = format!("/admin/users/{id_str}/mfa-reset-confirm");
+        let reset_link = if mfa_enabled {
             view! {
-                <form method="post" action=reset_mfa_url style="display:inline"
-                      onsubmit="return confirm('Forcibly remove every MFA factor for this user (TOTP and all passkeys)? Use only when the user has lost access to their second factor.');">
-                    <input type="hidden" name="_csrf" value=csrf_reset />
-                    <button type="submit" class="secondary">"Reset MFA"</button>
-                </form>
+                <a href=reset_mfa_confirm_url class="button secondary">"Reset MFA"</a>
                 " "
             }
             .into_any()
@@ -1047,17 +1089,10 @@ fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl Int
         view! {
             <td>
                 <div class="row" style="gap:var(--space-1)">
-                    {reset_form}
-                    <form method="post" action=disabled_url style="display:inline">
-                        <input type="hidden" name="_csrf" value=csrf_disable />
-                        <input type="hidden" name="disabled" value=action_target />
-                        <button type="submit" class="secondary">{action_label}</button>
-                    </form>
-                    <form method="post" action=delete_url style="display:inline"
-                          onsubmit="return confirm('Permanently delete this user?');">
-                        <input type="hidden" name="_csrf" value=csrf_delete />
-                        <button type="submit" class="danger">"Delete"</button>
-                    </form>
+                    {reset_link}
+                    <a href=disable_confirm_url class="button secondary">{action_label}</a>
+                    " "
+                    <a href=delete_confirm_url class="button danger">"Delete"</a>
                 </div>
             </td>
         }
@@ -1081,8 +1116,11 @@ pub fn render_users(
     flash: Option<Flash>,
     current_user: String,
     csrf_token: String,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
+        let t = lang.strings();
         let csrf_for_rows = csrf_token.clone();
         let csrf_for_form = csrf_token.clone();
         let user_count = users.len();
@@ -1091,12 +1129,12 @@ pub fn render_users(
             .map(|u| user_row_view(u, current_user.clone(), csrf_for_rows.clone()))
             .collect();
         view! {
-            <Shell title="Users".to_string() show_nav=true current=Some("users".to_string())>
+            <Shell title=t.users_title.to_string() show_nav=true current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"ユーザー管理"</h1>
+                        <h1 class="page-header__title">t.users_title</h1>
                         <p class="page-header__lede">
-                            "ユーザーの作成・編集・管理。"
+                            t.users_lede
                             {format!(" 現在 {user_count} 名。")}
                         </p>
                     </div>
@@ -1104,7 +1142,7 @@ pub fn render_users(
                 {flash_banner(flash)}
 
                 <section>
-                    <h2>"新しいユーザーを追加"</h2>
+                    <h2>t.users_create_section</h2>
                     <div class="card">
                         <form method="post" action="/admin/users" class="stack">
                             <input type="hidden" name="_csrf" value=csrf_for_form />
@@ -1128,30 +1166,38 @@ pub fn render_users(
                             </div>
                             <label class="row" style="gap:var(--space-2)">
                                 <input name="is_admin" type="checkbox" value="true" />
-                                <span>"管理者権限を付与する"</span>
+                                <span>t.users_is_admin_label</span>
                             </label>
                             <div>
-                                <button type="submit">"ユーザーを作成"</button>
+                                <button type="submit">t.users_create_button</button>
                             </div>
                         </form>
                     </div>
                 </section>
 
                 <section>
-                    <h2>"ユーザー一覧"</h2>
+                    <h2>t.users_table_section</h2>
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
-                                    <th>"ユーザー名"</th>
-                                    <th>"表示名"</th>
-                                    <th>"状態"</th>
-                                    <th>"MFA"</th>
-                                    <th>"作成日"</th>
+                                    <th>{t.login_username_label}</th>
+                                    <th>{t.users_table_th_display}</th>
+                                    <th>{t.users_table_th_status}</th>
+                                    <th>{t.users_table_th_mfa}</th>
+                                    <th>{t.users_table_th_created}</th>
                                     <th></th>
                                 </tr>
                             </thead>
-                            <tbody>{rows}</tbody>
+                            {if rows.is_empty() {
+                                view! {
+                                    <tbody><tr><td colspan="6" class="muted" style="text-align:center;padding:var(--space-6) 0">
+                                        {t.users_empty}
+                                    </td></tr></tbody>
+                                }.into_any()
+                            } else {
+                                view! { <tbody>{rows}</tbody> }.into_any()
+                            }}
                         </table>
                     </div>
                 </section>
@@ -1206,11 +1252,7 @@ fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
                         <input type="hidden" name="disabled" value=action_target />
                         <button type="submit" class="secondary">{action_label}</button>
                     </form>
-                    <form method="post" action=delete_url style="display:inline"
-                          onsubmit="return confirm('Permanently delete this client and revoke its tokens?');">
-                        <input type="hidden" name="_csrf" value=csrf_delete />
-                        <button type="submit" class="danger">"Delete"</button>
-                    </form>
+                    <a href=format!("/admin/clients/{}/delete-confirm", id_str.clone()) class="button danger">"Delete"</a>
                 </div>
             </td>
         }
@@ -1239,8 +1281,11 @@ pub fn render_clients(
     flash: Option<Flash>,
     new_secret: Option<(String, String)>,
     csrf_token: String,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
+        let t = lang.strings();
         let csrf_for_rows = csrf_token.clone();
         let csrf_for_form = csrf_token.clone();
         let client_count = clients.len();
@@ -1248,7 +1293,7 @@ pub fn render_clients(
             view! {
                 <div class="flash warn" role="status">
                     <div class="stack-tight">
-                        <strong>"クライアント Secret は今だけ表示されます。安全な場所に保存してください。"</strong>
+                        <strong>t.clients_secret_once_banner</strong>
                         <div>"Client ID: "<span class="code">{cid.clone()}</span>{copy_btn(cid, "Client ID")}</div>
                         <div>"Client Secret: "<span class="code">{sec.clone()}</span>{copy_btn(sec, "Client Secret")}</div>
                     </div>
@@ -1260,10 +1305,10 @@ pub fn render_clients(
             .map(|c| client_row_view(c, csrf_for_rows.clone()))
             .collect();
         view! {
-            <Shell title="Clients".to_string() show_nav=true current=Some("clients".to_string())>
+            <Shell title=t.clients_title.to_string() show_nav=true current=Some("clients".to_string()) dev_mode=dev_mode lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"クライアント管理"</h1>
+                        <h1 class="page-header__title">t.clients_title</h1>
                         <p class="page-header__lede">
                             "OIDC クライアントの登録と管理。"
                             {format!(" 現在 {client_count} 件。")}
@@ -1322,21 +1367,29 @@ pub fn render_clients(
                 </section>
 
                 <section>
-                    <h2>"登録済みクライアント"</h2>
+                    <h2>t.clients_table_section</h2>
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
-                                    <th>"名前"</th>
+                                    <th>{t.clients_table_th_name}</th>
                                     <th>"Client ID"</th>
-                                    <th>"種別"</th>
-                                    <th>"スコープ"</th>
+                                    <th>{t.clients_table_th_kind}</th>
+                                    <th>{t.clients_table_th_scopes}</th>
                                     <th>"Logout URIs"</th>
-                                    <th>"状態"</th>
+                                    <th>{t.clients_table_th_status}</th>
                                     <th></th>
                                 </tr>
                             </thead>
-                            <tbody>{rows}</tbody>
+                            {if rows.is_empty() {
+                                view! {
+                                    <tbody><tr><td colspan="7" class="muted" style="text-align:center;padding:var(--space-6) 0">
+                                        {t.clients_empty}
+                                    </td></tr></tbody>
+                                }.into_any()
+                            } else {
+                                view! { <tbody>{rows}</tbody> }.into_any()
+                            }}
                         </table>
                     </div>
                 </section>
@@ -1477,34 +1530,83 @@ fn audit_row_view(e: AuditLogEntryDto) -> impl IntoView {
     }
 }
 
-pub fn render_audit(entries: Vec<AuditLogEntryDto>, flash: Option<Flash>) -> String {
+pub fn render_audit(
+    entries: Vec<AuditLogEntryDto>,
+    chain_ok: bool,
+    filter_query: Option<String>,
+    flash: Option<Flash>,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
     render(move || {
+        let t = lang.strings();
         let entry_count = entries.len();
+        let fq = filter_query.clone().unwrap_or_default();
+        let csv_href = if fq.is_empty() {
+            "/admin/audit.csv".to_string()
+        } else {
+            format!("/admin/audit.csv?q={}", url_encode(&fq))
+        };
+        let fq_display = fq.clone();
         let rows: Vec<_> = entries.into_iter().map(audit_row_view).collect();
+        let chain_banner_view = if chain_ok {
+            view! {
+                <p class="badge badge--ok" style="margin-bottom:var(--space-3)">
+                    "✓ " {t.audit_chain_ok}
+                </p>
+            }.into_any()
+        } else {
+            view! {
+                <p class="badge badge--danger" style="margin-bottom:var(--space-3)">
+                    "✗ " {t.audit_chain_broken}
+                </p>
+            }.into_any()
+        };
         view! {
-            <Shell title="Audit".to_string() show_nav=true current=Some("audit".to_string())>
+            <Shell title=t.audit_title.to_string() show_nav=true current=Some("audit".to_string()) dev_mode=dev_mode lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"監査ログ"</h1>
+                        <h1 class="page-header__title">t.audit_title</h1>
                         <p class="page-header__lede">
-                            "管理操作の履歴(新しい順)。"
-                            {format!(" 直近 {entry_count} 件。")}
+                            t.audit_lede
+                            {format!(" ({entry_count})")}
                         </p>
                     </div>
                 </header>
                 {flash_banner(flash)}
+                {chain_banner_view}
+                <div class="row" style="gap:var(--space-3);margin-bottom:var(--space-3);align-items:flex-end;flex-wrap:wrap">
+                    <form method="get" action="/admin/audit" class="row" style="gap:var(--space-2);align-items:center">
+                        <label for="audit-q" style="font-weight:500">{t.audit_filter_label}</label>
+                        <input id="audit-q" name="q" type="search"
+                               placeholder=t.audit_filter_placeholder
+                               value=fq_display
+                               style="min-width:16rem" />
+                        <button type="submit" class="secondary">"Filter"</button>
+                    </form>
+                    <a href=csv_href class="button secondary">{t.audit_export_csv}</a>
+                </div>
                 <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
-                                <th>"日時"</th>
-                                <th>"実行者"</th>
-                                <th>"操作"</th>
-                                <th>"対象"</th>
-                                <th>"結果"</th>
+                                <th>t.audit_col_when</th>
+                                <th>t.audit_col_actor</th>
+                                <th>t.audit_col_action</th>
+                                <th>t.audit_col_target</th>
+                                <th>t.audit_col_outcome</th>
                             </tr>
                         </thead>
-                        <tbody>{rows}</tbody>
+                        {if rows.is_empty() {
+                            view! {
+                                <tbody><tr><td colspan="5" class="muted"
+                                    style="text-align:center;padding:var(--space-6) 0">
+                                    "(no matching entries)"
+                                </td></tr></tbody>
+                            }.into_any()
+                        } else {
+                            view! { <tbody>{rows}</tbody> }.into_any()
+                        }}
                     </table>
                 </div>
             </Shell>
@@ -1512,15 +1614,21 @@ pub fn render_audit(entries: Vec<AuditLogEntryDto>, flash: Option<Flash>) -> Str
     })
 }
 
+fn url_encode(s: &str) -> String {
+    url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+}
+
 // ---------- signing keys ----------
 
 fn signing_key_row_view(
     k: sui_id_shared::api::SigningKeySummary,
     csrf: String,
+    t: &'static sui_id_i18n::Strings,
 ) -> impl IntoView {
     let id_str = k.id.to_string();
     let id_for_url = id_str.clone();
     let id_for_display = id_str.clone();
+    let id_for_confirm = id_str.clone();
     let status_badge = if k.is_active {
         view! { <span class="badge badge--ok">"active"</span> }.into_any()
     } else {
@@ -1532,15 +1640,11 @@ fn signing_key_row_view(
         .unwrap_or_else(|| "-".to_string());
     let delete_url = format!("/admin/signing-keys/{id_for_url}/delete");
     let actions = if k.is_active {
-        view! { <td><span class="muted">"(使用中)"</span></td> }.into_any()
+        view! { <td><span class="muted">t.signing_keys_in_use_badge</span></td> }.into_any()
     } else {
         view! {
             <td>
-                <form method="post" action=delete_url style="display:inline"
-                      onsubmit="return confirm('この退役キーを完全削除しますか? まだ有効期限内の発行済みトークンは検証に失敗します。');">
-                    <input type="hidden" name="_csrf" value=csrf />
-                    <button type="submit" class="danger">"削除"</button>
-                </form>
+                <a href=format!("/admin/signing-keys/{}/delete-confirm", id_for_confirm) class="button danger">{t.button_delete}</a>
             </td>
         }
         .into_any()
@@ -1561,14 +1665,17 @@ pub fn render_signing_keys(
     keys: Vec<sui_id_shared::api::SigningKeySummary>,
     flash: Option<Flash>,
     csrf_token: String,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
+        let t = lang.strings();
         let csrf_for_rows = csrf_token.clone();
         let csrf_for_form = csrf_token.clone();
         let key_count = keys.len();
         let rows: Vec<_> = keys
             .into_iter()
-            .map(|k| signing_key_row_view(k, csrf_for_rows.clone()))
+            .map(|k| signing_key_row_view(k, csrf_for_rows.clone(), t))
             .collect();
         view! {
             <Shell
@@ -1580,7 +1687,7 @@ pub fn render_signing_keys(
                     <div>
                         <h1 class="page-header__title">"署名キー"</h1>
                         <p class="page-header__lede">
-                            "JWT 署名用 Ed25519 キーの管理。"
+                            t.signing_keys_lede
                             {format!(" {key_count} 件登録。")}
                         </p>
                     </div>
@@ -1588,7 +1695,7 @@ pub fn render_signing_keys(
                 {flash_banner(flash)}
 
                 <div class="card">
-                    <h3 class="card__title">"キーローテーション"</h3>
+                    <h3 class="card__title">t.signing_keys_rotate_section</h3>
                     <p class="muted">
                         "ローテーションを実行すると、新しい署名キーが発行され、現行キーは「退役」状態に遷移します。"
                         "退役キーは JWKS に残るため、有効期限内の既発行トークンは検証可能です。"
@@ -1597,29 +1704,265 @@ pub fn render_signing_keys(
                     <div class="card__footer">
                         <form method="post" action="/admin/signing-keys/rotate">
                             <input type="hidden" name="_csrf" value=csrf_for_form />
-                            <button type="submit">"署名キーをローテーション"</button>
+                            <button type="submit">t.signing_keys_rotate_button</button>
                         </form>
                     </div>
                 </div>
 
                 <section>
-                    <h2>"全キー"</h2>
+                    <h2>t.signing_keys_table_section</h2>
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
                                     <th>"Key ID"</th>
-                                    <th>"アルゴリズム"</th>
-                                    <th>"状態"</th>
-                                    <th>"作成日"</th>
-                                    <th>"退役日"</th>
+                                    <th>t.signing_keys_th_algorithm</th>
+                                    <th>{t.signing_keys_th_status}</th>
+                                    <th>{t.signing_keys_th_created}</th>
+                                    <th>t.signing_keys_th_retired</th>
                                     <th></th>
                                 </tr>
                             </thead>
-                            <tbody>{rows}</tbody>
+                            {if rows.is_empty() {
+                                view! {
+                                    <tbody><tr><td colspan="6" class="muted" style="text-align:center;padding:var(--space-6) 0">
+                                        {t.signing_keys_empty}
+                                    </td></tr></tbody>
+                                }.into_any()
+                            } else {
+                                view! { <tbody>{rows}</tbody> }.into_any()
+                            }}
                         </table>
                     </div>
                 </section>
+            </Shell>
+        }
+    })
+}
+
+
+// ---------- dangerous-operation confirmation screens (RFC 030) ----------
+
+/// Render a reversibility badge: green "Recoverable" or red "Not recoverable".
+/// Colour is NEVER the only signal (RFC 017 § 3).
+fn reversibility_badge(recoverable: bool, t: &'static sui_id_i18n::Strings) -> impl IntoView {
+    if recoverable {
+        view! {
+            <span class="reversibility-badge reversibility-badge--recoverable">
+                "✓ " {t.badge_recoverable}
+            </span>
+        }.into_any()
+    } else {
+        view! {
+            <span class="reversibility-badge reversibility-badge--permanent">
+                "✗ " {t.badge_not_recoverable}
+            </span>
+        }.into_any()
+    }
+}
+
+pub struct ConfirmDisableData {
+    pub user_id: String,
+    pub username: String,
+    pub is_disabled: bool,
+    pub csrf_token: String,
+}
+
+pub fn render_confirm_disable_user(
+    data: ConfirmDisableData,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let action = format!("/admin/users/{}/disabled", data.user_id);
+        let new_state = if data.is_disabled { "false" } else { "true" };
+        let (title, impact, rev, btn) = if data.is_disabled {
+            (t.confirm_enable_title, "", "", t.confirm_enable_button)
+        } else {
+            (t.confirm_disable_title, t.confirm_disable_impact,
+             t.confirm_disable_reversibility, t.confirm_disable_button)
+        };
+        let badge = reversibility_badge(true, t);
+        let username = data.username.clone();
+        view! {
+            <Shell title=title.to_string() show_nav=true
+                   current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
+                <div class="auth-card" style="max-width:36rem">
+                    <h1>{title}</h1>
+                    <p><strong>{username.clone()}</strong></p>
+                    {(!data.is_disabled).then(|| view! {
+                        <p class="muted">{impact}</p>
+                        <p>{badge}</p>
+                        <p class="muted" style="font-size:var(--font-size-caption)">{rev}</p>
+                    })}
+                    <form method="post" action=action class="row" style="gap:var(--space-2);margin-top:var(--space-4)">
+                        <input type="hidden" name="_csrf" value=data.csrf_token />
+                        <input type="hidden" name="disabled" value=new_state />
+                        <input type="hidden" name="_confirmed" value="1" />
+                        <button type="submit" class={if data.is_disabled {"btn"} else {"danger"}}>
+                            {btn}
+                        </button>
+                        <a href="/admin/users" class="button secondary">{t.confirm_cancel}</a>
+                    </form>
+                </div>
+            </Shell>
+        }
+    })
+}
+
+pub struct ConfirmDeleteUserData {
+    pub user_id: String,
+    pub username: String,
+    pub csrf_token: String,
+}
+
+pub fn render_confirm_delete_user(
+    data: ConfirmDeleteUserData,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let action = format!("/admin/users/{}/delete", data.user_id);
+        let badge = reversibility_badge(false, t);
+        let username = data.username.clone();
+        view! {
+            <Shell title=t.confirm_delete_user_title.to_string() show_nav=true
+                   current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
+                <div class="auth-card" style="max-width:36rem">
+                    <h1>{t.confirm_delete_user_title}</h1>
+                    <p><strong>{username}</strong></p>
+                    <p class="muted">{t.confirm_delete_user_impact}</p>
+                    <p>{badge}</p>
+                    <p class="muted" style="font-size:var(--font-size-caption)">
+                        {t.confirm_delete_user_reversibility}
+                    </p>
+                    <form method="post" action=action class="row" style="gap:var(--space-2);margin-top:var(--space-4)">
+                        <input type="hidden" name="_csrf" value=data.csrf_token />
+                        <input type="hidden" name="_confirmed" value="1" />
+                        <button type="submit" class="danger">{t.confirm_delete_user_button}</button>
+                        <a href="/admin/users" class="button secondary">{t.confirm_cancel}</a>
+                    </form>
+                </div>
+            </Shell>
+        }
+    })
+}
+
+pub struct ConfirmResetMfaData {
+    pub user_id: String,
+    pub username: String,
+    pub csrf_token: String,
+}
+
+pub fn render_confirm_reset_mfa(
+    data: ConfirmResetMfaData,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let action = format!("/admin/users/{}/mfa-reset", data.user_id);
+        let badge = reversibility_badge(true, t);
+        let username = data.username.clone();
+        view! {
+            <Shell title=t.confirm_reset_mfa_title.to_string() show_nav=true
+                   current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
+                <div class="auth-card" style="max-width:36rem">
+                    <h1>{t.confirm_reset_mfa_title}</h1>
+                    <p><strong>{username}</strong></p>
+                    <p class="muted">{t.confirm_reset_mfa_impact}</p>
+                    <p>{badge}</p>
+                    <p class="muted" style="font-size:var(--font-size-caption)">
+                        {t.confirm_reset_mfa_reversibility}
+                    </p>
+                    <form method="post" action=action class="row" style="gap:var(--space-2);margin-top:var(--space-4)">
+                        <input type="hidden" name="_csrf" value=data.csrf_token />
+                        <input type="hidden" name="_confirmed" value="1" />
+                        <button type="submit" class="danger">{t.confirm_reset_mfa_button}</button>
+                        <a href="/admin/users" class="button secondary">{t.confirm_cancel}</a>
+                    </form>
+                </div>
+            </Shell>
+        }
+    })
+}
+
+pub struct ConfirmDeleteClientData {
+    pub client_id: String,
+    pub client_name: String,
+    pub csrf_token: String,
+}
+
+pub fn render_confirm_delete_client(
+    data: ConfirmDeleteClientData,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let action = format!("/admin/clients/{}/delete", data.client_id);
+        let badge = reversibility_badge(false, t);
+        let name = data.client_name.clone();
+        view! {
+            <Shell title=t.confirm_delete_client_title.to_string() show_nav=true
+                   current=Some("clients".to_string()) dev_mode=dev_mode lang=lang>
+                <div class="auth-card" style="max-width:36rem">
+                    <h1>{t.confirm_delete_client_title}</h1>
+                    <p><strong>{name}</strong></p>
+                    <p class="muted">{t.confirm_delete_client_impact}</p>
+                    <p>{badge}</p>
+                    <p class="muted" style="font-size:var(--font-size-caption)">
+                        {t.confirm_delete_client_reversibility}
+                    </p>
+                    <form method="post" action=action class="row" style="gap:var(--space-2);margin-top:var(--space-4)">
+                        <input type="hidden" name="_csrf" value=data.csrf_token />
+                        <input type="hidden" name="_confirmed" value="1" />
+                        <button type="submit" class="danger">{t.confirm_delete_client_button}</button>
+                        <a href="/admin/clients" class="button secondary">{t.confirm_cancel}</a>
+                    </form>
+                </div>
+            </Shell>
+        }
+    })
+}
+
+pub struct ConfirmDeleteSigningKeyData {
+    pub key_id: String,
+    pub algorithm: String,
+    pub csrf_token: String,
+}
+
+pub fn render_confirm_delete_signing_key(
+    data: ConfirmDeleteSigningKeyData,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let action = format!("/admin/signing-keys/{}/delete", data.key_id);
+        let badge = reversibility_badge(false, t);
+        let algo = data.algorithm.clone();
+        let kid = data.key_id.clone();
+        view! {
+            <Shell title=t.confirm_delete_signing_key_title.to_string() show_nav=true
+                   current=Some("signing_keys".to_string()) dev_mode=dev_mode lang=lang>
+                <div class="auth-card" style="max-width:36rem">
+                    <h1>{t.confirm_delete_signing_key_title}</h1>
+                    <p class="muted"><span class="code">{kid}</span>" ("{algo}")"</p>
+                    <p class="muted">{t.confirm_delete_signing_key_impact}</p>
+                    <p>{badge}</p>
+                    <p class="muted" style="font-size:var(--font-size-caption)">
+                        {t.confirm_delete_signing_key_reversibility}
+                    </p>
+                    <form method="post" action=action class="row" style="gap:var(--space-2);margin-top:var(--space-4)">
+                        <input type="hidden" name="_csrf" value=data.csrf_token />
+                        <input type="hidden" name="_confirmed" value="1" />
+                        <button type="submit" class="danger">{t.confirm_delete_signing_key_button}</button>
+                        <a href="/admin/signing-keys" class="button secondary">{t.confirm_cancel}</a>
+                    </form>
+                </div>
             </Shell>
         }
     })
@@ -2029,31 +2372,28 @@ impl SettingsTab {
     }
 }
 
-fn settings_tabs(active: SettingsTab) -> impl IntoView {
+fn settings_tabs(active: SettingsTab, lang: sui_id_i18n::Locale) -> impl IntoView {
+    let t = lang.strings();
     let items = [
-        (SettingsTab::Basic, "基本", "/admin/settings/basic"),
-        (SettingsTab::Security, "セキュリティ", "/admin/settings/security"),
-        (
-            SettingsTab::Authentication,
-            "認証",
-            "/admin/settings/authentication",
-        ),
-        (SettingsTab::Logs, "ログ", "/admin/settings/logs"),
-        (SettingsTab::Email, "メール", "/admin/settings/email"),
-        (SettingsTab::Other, "その他", "/admin/settings/other"),
+        (SettingsTab::Basic,          t.settings_tab_basic,           "/admin/settings/basic"),
+        (SettingsTab::Security,       t.settings_tab_security,        "/admin/settings/security"),
+        (SettingsTab::Authentication, t.settings_tab_authentication,  "/admin/settings/authentication"),
+        (SettingsTab::Logs,           t.settings_tab_logs,            "/admin/settings/logs"),
+        (SettingsTab::Email,          t.settings_tab_email,           "/admin/settings/email"),
+        (SettingsTab::Other,          t.settings_tab_advanced,        "/admin/settings/other"),
     ];
     let active_key = active.key();
     let links: Vec<_> = items
         .into_iter()
-        .map(|(t, label, href)| {
-            let aria = if t.key() == active_key { Some("page") } else { None };
+        .map(|(tab, label, href)| {
+            let aria = if tab.key() == active_key { Some("page") } else { None };
             view! {
                 <a class="app-nav__link" href=href aria-current=aria>{label}</a>
             }
         })
         .collect();
     view! {
-        <nav class="app-nav" aria-label="設定タブ" style="margin-bottom:var(--space-4);flex-wrap:wrap">
+        <nav class="app-nav" aria-label="Settings tabs" style="margin-bottom:var(--space-4);flex-wrap:wrap">
             {links}
         </nav>
     }
@@ -2109,7 +2449,7 @@ pub struct SettingsBasicData {
     pub csrf_token: String,
 }
 
-pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>) -> String {
+pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let SettingsBasicData {
             issuer,
@@ -2171,7 +2511,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>) -> S
                     </div>
                 </header>
                 {flash_banner(flash)}
-                {settings_tabs(SettingsTab::Basic)}
+                {settings_tabs(SettingsTab::Basic, lang)}
 
                 <div class="card">
                     <h3 class="card__title">"基本"</h3>
@@ -2248,7 +2588,7 @@ pub struct SettingsSecurityData {
     pub csrf_token: String,
 }
 
-pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>) -> String {
+pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let SettingsSecurityData {
             max_lockout_label,
@@ -2325,7 +2665,7 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                     </div>
                 </header>
                 {flash_banner(flash)}
-                {settings_tabs(SettingsTab::Security)}
+                {settings_tabs(SettingsTab::Security, lang)}
 
                 <div class="card">
                     <h3 class="card__title">"アカウントロックアウト"</h3>
@@ -2408,6 +2748,7 @@ fn fmt_lifetime(secs: i64) -> String {
 pub fn render_settings_authentication(
     data: SettingsAuthenticationData,
     flash: Option<Flash>,
+    lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
         let SettingsAuthenticationData {
@@ -2434,7 +2775,7 @@ pub fn render_settings_authentication(
                     </div>
                 </header>
                 {flash_banner(flash)}
-                {settings_tabs(SettingsTab::Authentication)}
+                {settings_tabs(SettingsTab::Authentication, lang)}
 
                 <div class="card">
                     <h3 class="card__title">"パスワード"</h3>
@@ -2504,7 +2845,7 @@ pub struct SettingsChainStatus {
     pub legacy_unhashed: usize,
 }
 
-pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>) -> String {
+pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let SettingsLogsData {
             log_format,
@@ -2540,7 +2881,7 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>) -> Str
                     </div>
                 </header>
                 {flash_banner(flash)}
-                {settings_tabs(SettingsTab::Logs)}
+                {settings_tabs(SettingsTab::Logs, lang)}
 
                 <div class="card">
                     <h3 class="card__title">"ログ出力"</h3>
@@ -2598,7 +2939,7 @@ pub struct SettingsOtherData {
     pub clock_now: chrono::DateTime<chrono::Utc>,
 }
 
-pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>) -> String {
+pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let SettingsOtherData {
             binary_version,
@@ -2621,7 +2962,7 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>) -> S
                     </div>
                 </header>
                 {flash_banner(flash)}
-                {settings_tabs(SettingsTab::Other)}
+                {settings_tabs(SettingsTab::Other, lang)}
 
                 <div class="card">
                     <h3 class="card__title">"ビルド"</h3>
@@ -2872,6 +3213,7 @@ pub fn render_settings_email(
     data: SettingsEmailData,
     csrf_token: String,
     flash: Option<Flash>,
+    lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
         let SettingsEmailData {
@@ -2909,7 +3251,7 @@ pub fn render_settings_email(
                     </div>
                 </header>
                 {flash_banner(flash)}
-                {settings_tabs(SettingsTab::Email)}
+                {settings_tabs(SettingsTab::Email, lang)}
 
                 <div class="card">
                     <h3 class="card__title">"SMTP 接続"</h3>

@@ -118,8 +118,14 @@ pub fn build_router(app: AppState) -> Router {
         .route("/admin", get(admin::dashboard))
         .route("/admin/users", get(admin::users_get).post(admin::users_create))
         .route("/admin/users/{id}/disabled", post(admin::users_set_disabled))
+        .route("/admin/users/{id}/disable-confirm",
+               get(admin::users_disable_confirm_get))
         .route("/admin/users/{id}/delete", post(admin::users_delete))
+        .route("/admin/users/{id}/delete-confirm",
+               get(admin::users_delete_confirm_get))
         .route("/admin/users/{id}/mfa-reset", post(admin::users_mfa_reset))
+        .route("/admin/users/{id}/mfa-reset-confirm",
+               get(admin::users_mfa_reset_confirm_get))
         .route(
             "/admin/clients",
             get(admin::clients_get).post(admin::clients_create),
@@ -129,6 +135,8 @@ pub fn build_router(app: AppState) -> Router {
             post(admin::clients_set_disabled),
         )
         .route("/admin/clients/{id}/delete", post(admin::clients_delete))
+        .route("/admin/clients/{id}/delete-confirm",
+               get(admin::clients_delete_confirm_get))
         .route(
             "/admin/clients/{id}/edit",
             get(admin::clients_edit_get).post(admin::clients_edit_post),
@@ -139,7 +147,12 @@ pub fn build_router(app: AppState) -> Router {
             "/admin/signing-keys/{id}/delete",
             post(admin::signing_keys_delete),
         )
+        .route(
+            "/admin/signing-keys/{id}/delete-confirm",
+            get(admin::signing_keys_delete_confirm_get),
+        )
         .route("/admin/audit", get(admin::audit_get))
+        .route("/admin/audit.csv", get(admin::audit_csv_get))
         // ---------- settings (since v0.20.3) ----------
         .route(
             "/admin/settings",

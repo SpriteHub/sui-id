@@ -52,6 +52,7 @@ pub struct Strings {
     pub login_password_label: &'static str,
     pub login_submit: &'static str,
     pub login_passkey_button: &'static str,
+    pub login_passkey_primary: &'static str,
     pub login_forgot_password_link: &'static str,
     pub login_invalid_credentials: &'static str,
     pub login_account_locked: &'static str,
@@ -360,4 +361,103 @@ pub struct Strings {
     pub audit_event_signing_key_delete: &'static str,
     pub audit_event_admin_master_key_rotated: &'static str,
     pub audit_event_setup_create_initial_admin: &'static str,
+    // ---- Admin: Dashboard (RFC 029) ----
+    pub dashboard_title: &'static str,
+    pub dashboard_lede: &'static str,
+    pub dashboard_stat_users: &'static str,
+    pub dashboard_stat_clients: &'static str,
+    pub dashboard_stat_sessions: &'static str,
+    pub dashboard_stat_service_status: &'static str,
+    pub dashboard_stat_service_ok: &'static str,
+    pub dashboard_activity_title: &'static str,
+    pub dashboard_activity_period: &'static str,
+    pub dashboard_oidc_endpoints_section: &'static str,
+    // ---- Admin: Dashboard operator prompts (RFC 031) ----
+    pub dashboard_warn_smtp: &'static str,
+    pub dashboard_warn_hibp: &'static str,
+    pub dashboard_warn_cookie_insecure: &'static str,
+
+
+    // ---- Admin: Users (RFC 029) ----
+    pub users_title: &'static str,
+    pub users_lede: &'static str,
+    pub users_create_section: &'static str,
+    pub users_create_button: &'static str,
+    pub users_table_section: &'static str,
+    pub users_table_th_display: &'static str,
+    pub users_table_th_status: &'static str,
+    pub users_table_th_mfa: &'static str,
+    pub users_table_th_created: &'static str,
+    pub users_is_admin_label: &'static str,
+    pub users_empty: &'static str,
+
+    // ---- Admin: Clients (RFC 029) ----
+    pub clients_title: &'static str,
+    pub clients_lede: &'static str,
+    pub clients_create_section: &'static str,
+    pub clients_table_section: &'static str,
+    pub clients_secret_once_banner: &'static str,
+    pub clients_table_th_name: &'static str,
+    pub clients_table_th_kind: &'static str,
+    pub clients_table_th_scopes: &'static str,
+    pub clients_table_th_logout: &'static str,
+    pub clients_table_th_status: &'static str,
+    pub clients_empty: &'static str,
+    pub clients_single_realm_note: &'static str,
+
+    // ---- Admin: Audit log (RFC 029) ----
+    pub audit_lede: &'static str,
+    // ---- Audit log enhancements (RFC 033) ----
+    pub audit_chain_ok: &'static str,
+    pub audit_chain_broken: &'static str,
+    pub audit_filter_label: &'static str,
+    pub audit_filter_placeholder: &'static str,
+    pub audit_export_csv: &'static str,
+
+
+    // ---- Admin: Signing keys (RFC 029) ----
+    pub signing_keys_title: &'static str,
+    pub signing_keys_lede: &'static str,
+    pub signing_keys_rotate_section: &'static str,
+    pub signing_keys_rotate_button: &'static str,
+    pub signing_keys_rotate_warning: &'static str,
+    pub signing_keys_table_section: &'static str,
+    pub signing_keys_th_algorithm: &'static str,
+    pub signing_keys_th_status: &'static str,
+    pub signing_keys_th_created: &'static str,
+    pub signing_keys_th_retired: &'static str,
+    pub signing_keys_empty: &'static str,
+    pub signing_keys_in_use_badge: &'static str,
+    // ---- Dangerous operation confirmation screens (RFC 030) ----
+    pub confirm_cancel: &'static str,
+    pub badge_recoverable: &'static str,
+    pub badge_not_recoverable: &'static str,
+    // disable user
+    pub confirm_disable_title: &'static str,
+    pub confirm_disable_impact: &'static str,
+    pub confirm_disable_reversibility: &'static str,
+    pub confirm_disable_button: &'static str,
+    // enable user (undo disable)
+    pub confirm_enable_title: &'static str,
+    pub confirm_enable_button: &'static str,
+    // delete user
+    pub confirm_delete_user_title: &'static str,
+    pub confirm_delete_user_impact: &'static str,
+    pub confirm_delete_user_reversibility: &'static str,
+    pub confirm_delete_user_button: &'static str,
+    // reset MFA
+    pub confirm_reset_mfa_title: &'static str,
+    pub confirm_reset_mfa_impact: &'static str,
+    pub confirm_reset_mfa_reversibility: &'static str,
+    pub confirm_reset_mfa_button: &'static str,
+    // delete client
+    pub confirm_delete_client_title: &'static str,
+    pub confirm_delete_client_impact: &'static str,
+    pub confirm_delete_client_reversibility: &'static str,
+    pub confirm_delete_client_button: &'static str,
+    // delete signing key
+    pub confirm_delete_signing_key_title: &'static str,
+    pub confirm_delete_signing_key_impact: &'static str,
+    pub confirm_delete_signing_key_reversibility: &'static str,
+    pub confirm_delete_signing_key_button: &'static str,
 }

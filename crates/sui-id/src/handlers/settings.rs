@@ -56,7 +56,7 @@ pub async fn basic_get(
         default_lang: server_settings.default_lang,
         csrf_token: token.clone(),
     };
-    let html = sui_id_web::render_settings_basic(data, None);
+    let html = sui_id_web::render_settings_basic(data, None, sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -116,7 +116,7 @@ pub async fn security_get(
         max_concurrent_sessions: server_settings.max_concurrent_sessions,
         csrf_token: token.clone(),
     };
-    let html = sui_id_web::render_settings_security(data, None);
+    let html = sui_id_web::render_settings_security(data, None, sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -205,7 +205,7 @@ pub async fn authentication_get(
         refresh_theft_detection: true,
     };
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_authentication(data, None);
+    let html = sui_id_web::render_settings_authentication(data, None, sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -254,7 +254,7 @@ pub async fn logs_get(
             .map_err(|e| HttpError::html(CoreError::from(e)))?,
     };
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_logs(data, None);
+    let html = sui_id_web::render_settings_logs(data, None, sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -284,7 +284,7 @@ pub async fn other_get(
         clock_now: Utc::now(),
     };
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_other(data, None);
+    let html = sui_id_web::render_settings_other(data, None, sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -323,7 +323,7 @@ pub async fn email_get(
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     let data = build_email_data(cfg_row.as_ref());
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_email(data, token.clone(), None);
+    let html = sui_id_web::render_settings_email(data, token.clone(), None, sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -458,7 +458,7 @@ pub async fn email_test(
             text: format!("SMTP 接続テストに失敗しました: {e}"),
         }),
     };
-    let html = sui_id_web::render_settings_email(data, token.clone(), flash);
+    let html = sui_id_web::render_settings_email(data, token.clone(), flash, sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
