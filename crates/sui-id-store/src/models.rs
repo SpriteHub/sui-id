@@ -462,6 +462,9 @@ pub struct EmailOutboxRow {
     pub attempt_count:   i64,
     pub next_attempt_at: DateTime<Utc>,
     pub last_error:      Option<String>,
+    /// BCP-47 locale tag resolved at enqueue time from the recipient's
+    /// `preferred_lang`. `None` means "fall back to server default".
+    pub locale:          Option<String>,
     pub created_at:      DateTime<Utc>,
     pub updated_at:      DateTime<Utc>,
 }

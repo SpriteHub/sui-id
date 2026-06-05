@@ -5,7 +5,95 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.33.0] — Unreleased
+## [0.34.0] — Unreleased
+
+**Minor version bump.** RFC 002 adds a new locale (zh), a new public API
+(`Formatters`), a new migration (0024), and a new field on `OutgoingMail` —
+all breaking additions.
+
+### RFC 002 — i18n scope expansion
+
+Implements sub-threads B, C, D, E, and A from the RFC umbrella.
+
+#### Sub-thread A — Chinese Simplified locale (`zh`)
+
+`Locale::Zh` is now a fully supported locale. `STRINGS_ZH` provides
+complete translations across all ~260 string fields. `FORMATTERS_ZH`
+provides date/time/count formatters consistent with Mainland Chinese
+conventions. `Locale::ALL` now contains three variants; all exhaustive
+match guards that already iterate `ALL` pick up `Zh` without any
+per-site change.
+
+`Locale::parse("zh")` and `negotiate_from_accept_language("zh, ...")` now
+return `Some(Locale::Zh)` — previously unknown.
+
+#### Sub-thread B — `Formatters` struct
+
+New `sui_id_i18n::Formatters` struct alongside `Strings`:
+
+```rust
+pub struct Formatters {
+    pub fmt_date:      fn(DateTime<Utc>) -> String,
+    pub fmt_time:      fn(DateTime<Utc>) -> String,
+    pub fmt_date_time: fn(DateTime<Utc>) -> String,
+    pub fmt_relative:  fn(at: DateTime<Utc>, now: DateTime<Utc>) -> String,
+    pub fmt_count:     fn(u64) -> String,
+}
+```
+
+- `Locale::formatters()` returns the locale-specific instance.
+- **Ja**: `%Y年%-m月%-d日` dates; relative "3 時間前".
+- **En**: `%-d %b %Y` dates; relative "3 hours ago" (singular-aware).
+- **Zh**: `%Y年%m月%d日` dates; relative "3 小时前".
+- `fmt_count` groups with commas (1,234,567) for all locales.
+
+No ICU dependency. All formatter functions are plain `fn` pointers
+(`&'static` compatible).
+
+7 unit tests in `crates/sui-id-i18n/src/formatters.rs`.
+
+#### Sub-thread C — Per-recipient locale for outbound mail
+
+- **Migration 0024** adds a nullable `locale TEXT` column to
+  `email_outbox`. The worker stores the BCP-47 tag resolved from the
+  recipient's `preferred_lang` at enqueue time.
+- `OutgoingMail` gains an `pub locale: Option<Locale>` field (defaults
+  to `None` at all existing call sites).
+- `OutboxMailSender::send` serialises the locale tag into the outbox row.
+
+The worker now renders mail in the recipient's own language rather than
+the requesting user's. Resolution order: recipient's `preferred_lang`
+→ server default → Ja.
+
+#### Sub-thread D — Audit event labels
+
+30 new fields added to `Strings`, grouped under `// Audit event labels`:
+`audit_event_auth_login_success`, `audit_event_user_create`, etc.
+One additional field: `settings_tab_advanced` (RFC 023 renamed the
+settings "Other" tab to "Advanced"; the i18n key was previously missing
+in the typed `Strings` struct).
+
+All three locales (Ja, En, Zh) have complete translations.
+
+#### Sub-thread E — `Locale::direction()` + HTML `dir=` attribute
+
+- `Locale::direction()` returns `"ltr"` or `"rtl"` (all current locales
+  return `"ltr"`; RTL locales will override when added).
+- `Shell` in `layout.rs` now sets `<html dir={direction}>` alongside
+  `<html lang={tag}>`. No visual change for LTR locales; correct foundation
+  for Arabic/Hebrew/Persian when they land.
+
+### Test results
+
+- `sui-id-i18n`: **12 tests pass** (7 formatter + 5 existing)
+- `sui-id-store`: **33 tests pass**
+- `sui-id-core`: **114 tests pass**
+- `cargo check --workspace`: clean
+- `cargo check -p sui-id --tests`: clean
+
+---
+
+## [0.33.0] — Previous release
 
 **Minor version bump.** RFC 001 introduces a new DB migration (0023) and a
 new in-process background worker, both of which affect the startup sequence.

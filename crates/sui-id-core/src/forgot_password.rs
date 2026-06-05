@@ -215,7 +215,9 @@ pub async fn request_reset(
              \n\
              {disregard}\n\
              ",
+            greeting = greeting,
             intro = t.email_password_reset_intro,
+            link = link,
             disregard = t.email_password_reset_disregard,
         ),
         html_body: Some(format!(
@@ -229,6 +231,7 @@ pub async fn request_reset(
             link_label = t.email_password_reset_link_label,
             disregard = t.email_password_reset_disregard,
         )),
+        locale: None,
     };
 
     match mailer.send(mail).await {
@@ -416,6 +419,7 @@ pub async fn notify_password_changed(
              {intro}\n\
              {warning}\n\
              ",
+            greeting = greeting,
             intro = t.email_password_changed_intro,
             warning = t.email_password_changed_security_warning,
         ),
@@ -428,6 +432,7 @@ pub async fn notify_password_changed(
             warning = t.email_password_changed_security_warning,
             link_label = t.email_password_changed_link_security,
         )),
+        locale: None,
     };
     mailer.send(mail).await.map(|_| ())
 }

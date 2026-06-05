@@ -107,9 +107,11 @@ pub fn Shell(
     children: Children,
 ) -> impl IntoView {
     let stylesheet = format!("{}\n{}", TOKENS_CSS, COMPONENTS_CSS);
-    let lang_tag = lang.unwrap_or_default().tag();
+    let locale = lang.unwrap_or_default();
+    let lang_tag = locale.tag();
+    let dir_attr = locale.direction();
     view! {
-        <html lang=lang_tag>
+        <html lang=lang_tag dir=dir_attr>
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />

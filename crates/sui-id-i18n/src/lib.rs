@@ -45,14 +45,18 @@
 //!   will add per-locale formatters.
 
 mod en;
+mod formatters;
 mod ja;
 mod strings;
+mod zh;
 #[cfg(test)]
 mod tests;
 
 pub use crate::en::STRINGS_EN;
+pub use crate::formatters::{Formatters, FORMATTERS_EN, FORMATTERS_JA, FORMATTERS_ZH};
 pub use crate::ja::STRINGS_JA;
 pub use crate::strings::Strings;
+pub use crate::zh::STRINGS_ZH;
 
 use serde::{Deserialize, Serialize};
 
@@ -66,11 +70,13 @@ use serde::{Deserialize, Serialize};
 pub enum Locale {
     Ja,
     En,
+    /// Chinese (Simplified), zh-Hans.
+    Zh,
 }
 
 impl Locale {
     /// All locales sui-id recognises, in display order.
-    pub const ALL: &'static [Locale] = &[Locale::Ja, Locale::En];
+    pub const ALL: &'static [Locale] = &[Locale::Ja, Locale::En, Locale::Zh];
 
     /// BCP-47 language tag. Used in HTML `lang=` attributes,
     /// cookies, and the user preference column. Stable.
@@ -78,6 +84,7 @@ impl Locale {
         match self {
             Self::Ja => "ja",
             Self::En => "en",
+            Self::Zh => "zh",
         }
     }
 
@@ -89,6 +96,7 @@ impl Locale {
         match self {
             Self::Ja => "日本語",
             Self::En => "English",
+            Self::Zh => "中文",
         }
     }
 
@@ -105,6 +113,7 @@ impl Locale {
         match primary.as_str() {
             "ja" => Some(Locale::Ja),
             "en" => Some(Locale::En),
+            "zh" => Some(Locale::Zh),
             _ => None,
         }
     }
@@ -116,6 +125,25 @@ impl Locale {
         match self {
             Self::Ja => &STRINGS_JA,
             Self::En => &STRINGS_EN,
+            Self::Zh => &STRINGS_ZH,
+        }
+    }
+
+    /// Locale-aware date and number formatters (RFC 002 § B).
+    pub fn formatters(self) -> &'static Formatters {
+        match self {
+            Self::Ja => &FORMATTERS_JA,
+            Self::En => &FORMATTERS_EN,
+            Self::Zh => &FORMATTERS_ZH,
+        }
+    }
+
+    /// Text direction for this locale. Used in the HTML `dir=`
+    /// attribute. All current locales are LTR; RTL locales will
+    /// override this when added (RFC 002 § E).
+    pub fn direction(self) -> &'static str {
+        match self {
+            Self::Ja | Self::En | Self::Zh => "ltr",
         }
     }
 }

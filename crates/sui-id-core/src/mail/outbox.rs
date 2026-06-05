@@ -85,6 +85,9 @@ impl MailSender for OutboxMailSender {
                 attempt_count:   0,
                 next_attempt_at: now,
                 last_error:      None,
+                // locale is resolved at the call site and stored here so the
+                // worker renders in the recipient's language (RFC 002 § C).
+                locale:          mail.locale.map(|l| l.tag().to_owned()),
                 created_at:      now,
                 updated_at:      now,
             };
@@ -222,7 +225,8 @@ impl OutboxWorker {
             subject:   payload.subject,
             text_body: payload.text_body,
             html_body: payload.html_body,
-        };
+        locale: None,
+    };
 
         // Attempt delivery.
         match self.smtp.send(mail).await {

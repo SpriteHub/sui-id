@@ -24,7 +24,8 @@ fn parse_tolerates_region_suffix() {
 
 #[test]
 fn parse_unknown_returns_none() {
-    assert_eq!(Locale::parse("zh"), None);
+    // "zh" is now a recognised locale
+    assert_eq!(Locale::parse("zh"), Some(Locale::Zh));
     assert_eq!(Locale::parse(""), None);
     assert_eq!(Locale::parse("xyz-RegionTag"), None);
 }
@@ -42,7 +43,8 @@ fn negotiate_picks_first_recognised() {
         Some(Locale::Ja)
     );
     assert_eq!(negotiate_from_accept_language(""), None);
-    assert_eq!(negotiate_from_accept_language("zh, fr"), None);
+    // zh is now recognised
+    assert_eq!(negotiate_from_accept_language("zh, fr"), Some(Locale::Zh));
 }
 
 #[test]

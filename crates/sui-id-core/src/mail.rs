@@ -56,6 +56,9 @@ pub struct OutgoingMail {
     pub subject: String,
     pub text_body: String,
     pub html_body: Option<String>,
+    /// Resolved recipient locale for the outbox worker (RFC 002 § C).
+    /// `None` falls back to the server default at render time.
+    pub locale: Option<sui_id_i18n::Locale>,
 }
 
 /// Outcome of a successful send. The caller folds this into the

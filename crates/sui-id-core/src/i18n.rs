@@ -190,7 +190,7 @@ mod tests {
             &LocaleInputs {
                 user_id: None,
                 cookie: None,
-                accept_language: Some("zh"),
+                accept_language: Some("xx"),  // unknown locale → fall back
             },
         ).await
         .expect("resolve");
@@ -203,7 +203,8 @@ mod tests {
         // we don't recognise. Resolution should not error; it
         // should fall through to subsequent tiers.
         let db = fresh_db();
-        let uid = make_user(&db, Some("zh")).await;
+        // Use a locale tag that will remain unknown even after zh is added.
+        let uid = make_user(&db, Some("xx-UnknownLocale")).await;
         let loc = resolve(
             &db,
             &LocaleInputs {

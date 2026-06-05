@@ -35,8 +35,9 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<EmailOutboxRow> {
         attempt_count:   row.get(5)?,
         next_attempt_at: row.get(6)?,
         last_error:      row.get(7)?,
-        created_at:      row.get(8)?,
-        updated_at:      row.get(9)?,
+        locale:          row.get(8)?,
+        created_at:      row.get(9)?,
+        updated_at:      row.get(10)?,
     })
 }
 
@@ -49,8 +50,8 @@ pub async fn enqueue(db: &Database, row: EmailOutboxRow) -> StoreResult<EmailOut
         conn.execute(
             "INSERT INTO email_outbox \
              (id, state, template, recipient_enc, payload_enc, attempt_count, \
-              next_attempt_at, last_error, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+              next_attempt_at, last_error, locale, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![
                 row.id.to_string(),
                 EmailOutboxState::Queued.as_str(),
@@ -60,6 +61,7 @@ pub async fn enqueue(db: &Database, row: EmailOutboxRow) -> StoreResult<EmailOut
                 0_i64,
                 row.next_attempt_at,
                 Option::<String>::None,
+                row.locale,
                 row.created_at,
                 row.updated_at,
             ],
@@ -81,7 +83,7 @@ pub async fn claim_one_eligible(
         let maybe_row: Option<EmailOutboxRow> = tx
             .query_row(
                 "SELECT id, state, template, recipient_enc, payload_enc, \
-                        attempt_count, next_attempt_at, last_error, created_at, updated_at \
+                        attempt_count, next_attempt_at, last_error, locale, created_at, updated_at \
                  FROM email_outbox \
                  WHERE state = 'queued' AND next_attempt_at <= ?1 \
                  ORDER BY next_attempt_at ASC LIMIT 1",
@@ -239,6 +241,7 @@ mod tests {
             attempt_count: 0,
             next_attempt_at: now,
             last_error: None,
+            locale: None,
             created_at: now,
             updated_at: now,
         }

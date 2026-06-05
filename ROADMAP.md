@@ -10,7 +10,6 @@ Completed work is tracked in [CHANGELOG.md](CHANGELOG.md) and the
 
 | RFC | Title | Priority | Notes |
 |---|---|---|---|
-| [RFC 002](rfcs/proposed/002-i18n-expansion.md) | i18n expansion (admin domain) | Low-Medium | Admin panel in full ja/en; depends on RFC 017 |
 | [RFC 004](rfcs/proposed/004-federation.md) | OIDC/SAML federation (upstream IdP) | Low | Identity provider chaining |
 | [RFC 005](rfcs/proposed/005-pluggable-user-backends.md) | Pluggable user backends | Low | LDAP/AD directory integration |
 | [RFC 006](rfcs/proposed/006-metrics.md) | Metrics and observability | Low | Prometheus / OpenTelemetry |
@@ -41,6 +40,7 @@ from RFC 017 § 4.
 
 | Version | What shipped |
 |---|---|
+| v0.34.0 | RFC 002 (i18n: zh locale, Formatters, audit labels, dir=, per-recipient locale) |
 | v0.33.0 | RFC 001 (email outbox + retry worker) |
 | v0.32.0 | RFC 017 (UI/UX contracts), RFC 023 (visual design system), RFC 024 (doc consolidation) |
 | v0.31.0 | RFC 014 (hot-path caches), RFC 028 (copy buttons) |
