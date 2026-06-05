@@ -27,6 +27,9 @@ pub struct HttpError {
     representation: ErrorRepresentation,
     forced_status: Option<StatusCode>,
     retry_after_secs: Option<i64>,
+    /// Locale for HTML error page rendering (RFC 042).
+    /// Defaults to Ja; set via `.with_lang(loc)` in handlers that resolve locale.
+    pub lang: sui_id_i18n::Locale,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -58,6 +61,7 @@ impl HttpError {
             representation: ErrorRepresentation::Json,
             forced_status: None,
             retry_after_secs: None,
+            lang: sui_id_i18n::Locale::default(),
         }
     }
 
@@ -68,6 +72,7 @@ impl HttpError {
             representation: ErrorRepresentation::Html,
             forced_status: None,
             retry_after_secs: None,
+            lang: sui_id_i18n::Locale::default(),
         }
     }
 
@@ -92,6 +97,7 @@ impl HttpError {
             representation: ErrorRepresentation::OAuth,
             forced_status: None,
             retry_after_secs: None,
+            lang: sui_id_i18n::Locale::default(),
         }
     }
 
@@ -106,6 +112,12 @@ impl HttpError {
 
     pub fn request_id(&self) -> &str {
         &self.request_id
+    }
+
+    /// Set the locale for HTML error page rendering (RFC 042).
+    pub fn with_lang(mut self, lang: sui_id_i18n::Locale) -> Self {
+        self.lang = lang;
+        self
     }
 
     pub fn inner(&self) -> &CoreError {
@@ -224,8 +236,8 @@ fn html_error_response(e: HttpError, code: ApiErrorCode) -> Response {
         ApiErrorCode::Protocol => "Protocol error",
         ApiErrorCode::Internal => "Something went wrong",
     };
-    let safe_message = safe_user_message(&e.inner);
-    let body = sui_id_web::render_error(title.to_owned(), safe_message, e.request_id.clone());
+    let status_u16 = status.as_u16();
+    let body = sui_id_web::render_error(status_u16, &e.request_id, e.lang);
     let mut resp = (status, Html(body)).into_response();
     if let Some(secs) = e.retry_after_secs {
         if let Ok(value) = axum::http::HeaderValue::from_str(&secs.to_string()) {

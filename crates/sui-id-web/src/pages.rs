@@ -773,6 +773,13 @@ pub struct DashboardSparkline {
     pub buckets: Vec<DashboardSparkBucket>,
 }
 
+pub struct DashboardEventRow {
+    pub at: chrono::DateTime<chrono::Utc>,
+    pub action: String,
+    pub actor_label: String,
+    pub result: String,
+}
+
 pub struct DashboardData {
     pub admin_username: String,
     pub user_count: usize,
@@ -784,6 +791,8 @@ pub struct DashboardData {
     pub warn_smtp_not_configured: bool,
     pub warn_hibp_off: bool,
     pub warn_cookie_insecure: bool,
+    // RFC 043: last N important audit events shown on dashboard
+    pub recent_important: Vec<DashboardEventRow>,
 }
 
 /// Render the inline SVG sparkline.
@@ -903,6 +912,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
             warn_smtp_not_configured,
             warn_hibp_off,
             warn_cookie_insecure,
+            recent_important,
         } = data;
 
         let active_range = sparkline.active_range_query.clone();
@@ -1028,6 +1038,44 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
                             </tbody>
                         </table>
                     </div>
+                </section>
+
+                // RFC 043 — Recent important events card
+                <section class="card">
+                    <h2 class="card__title">{t.dashboard_recent_events_title}</h2>
+                    {if recent_important.is_empty() {
+                        view! { <p class="muted">{t.dashboard_recent_events_empty}</p> }.into_any()
+                    } else {
+                        let rows: Vec<_> = recent_important.into_iter().map(|r| {
+                            let badge_class = match r.result.as_str() {
+                                "ok"  => "badge badge--ok",
+                                "fail" | "denied" | "error" => "badge badge--danger",
+                                _ => "badge",
+                            };
+                            view! {
+                                <tr>
+                                    <td class="audit-mini__time">
+                                        <time>{r.at.format("%m/%d %H:%M").to_string()}</time>
+                                    </td>
+                                    <td><code class="audit-action">{r.action}</code></td>
+                                    <td class="muted">{r.actor_label}</td>
+                                    <td><span class=badge_class>{r.result}</span></td>
+                                </tr>
+                            }
+                        }).collect();
+                        view! {
+                            <>
+                            <div class="table-wrap">
+                                <table class="audit-mini">
+                                    <tbody>{rows}</tbody>
+                                </table>
+                            </div>
+                            <p class="card__footer" style="margin-top:var(--space-2)">
+                                <a href="/admin/audit">{t.dashboard_recent_events_view_all}</a>
+                            </p>
+                            </>
+                        }.into_any()
+                    }}
                 </section>
             </Shell>
         }
@@ -2228,21 +2276,295 @@ pub fn render_consent(data: ConsentData, lang: sui_id_i18n::Locale) -> String {
 
 // ---------- error ----------
 
-pub fn render_error(title: String, message: String, request_id: String) -> String {
+/// Render a localized error page (RFC 042).
+///
+/// `status` is the HTTP status code (404 / 429 / 500 etc.).
+/// `request_id` is the opaque ID to show when asking for operator help.
+pub fn render_error(status: u16, request_id: &str, lang: sui_id_i18n::Locale) -> String {
+    let t = lang.strings();
+    let (title, lede) = match status {
+        404 => (t.error_not_found_title, t.error_not_found_lede),
+        429 => (t.error_too_many_requests_label, t.error_too_many_requests_lede),
+        500..=599 => (t.error_internal, t.error_internal_lede),
+        _ => (t.error_generic_title, t.error_generic_lede),
+    };
+    let rid = request_id.to_string();
+    let req_id_label = t.error_request_id_label;
+    let back_home = t.error_back_home;
     render(move || {
-        let title2 = title.clone();
         view! {
-            <crate::layout::AuthShell title=title.clone()>
-                <h1>{title2}</h1>
-                <div class="flash error" role="alert">{message}</div>
-                <p class="muted">
-                    "管理者に連絡する場合、以下の ID をお伝えください: "
-                    <span class="code">{request_id}</span>
-                </p>
-                <p>
-                    <a href="/" class="button secondary">"ホームへ戻る"</a>
-                </p>
+            <crate::layout::AuthShell title=title.to_string() lang=lang>
+                <div class="auth-card">
+                    <h1>{status.to_string()}</h1>
+                    <h2>{title}</h2>
+                    <p class="muted">{lede}</p>
+                    <p class="muted" style="font-size:0.85em">
+                        {req_id_label} ": "
+                        <span class="code">{rid}</span>
+                    </p>
+                    <p>
+                        <a href="/" class="button secondary">{back_home}</a>
+                    </p>
+                </div>
             </crate::layout::AuthShell>
+        }
+    })
+}
+
+
+// ---------- /me/security/* tabbed pages (RFC 040) ----------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeTab {
+    Overview,
+    Mfa,
+    Passkey,
+    Sessions,
+    Language,
+}
+
+pub struct MeShellData {
+    pub username: String,
+    pub is_admin: bool,
+    pub active_tab: MeTab,
+}
+
+pub struct MeOverviewData {
+    pub shell: MeShellData,
+    pub totp_enabled: bool,
+    pub passkey_count: usize,
+    pub active_session_count: usize,
+    pub recent_events: Vec<MeAuditEntry>,
+    pub csrf_token: String,
+}
+
+pub struct MePasskeyData {
+    pub shell: MeShellData,
+    pub passkeys: Vec<PasskeyDescriptor>,
+    /// False = origin is plain HTTP on a non-localhost host → show warning.
+    pub origin_eligible: bool,
+    pub csrf_token: String,
+}
+
+pub struct MeLanguageData {
+    pub shell: MeShellData,
+    pub current_preferred_lang: Option<String>,
+    pub csrf_token: String,
+}
+
+fn me_security_tabs(active: MeTab, lang: sui_id_i18n::Locale) -> impl IntoView {
+    let t = lang.strings();
+    let items = [
+        (MeTab::Overview, t.me_tab_overview, "/me/security/overview"),
+        (MeTab::Mfa,      t.me_tab_mfa,      "/me/security/mfa"),
+        (MeTab::Passkey,  t.me_tab_passkey,  "/me/security/passkeys"),
+        (MeTab::Sessions, t.me_tab_sessions, "/me/security/sessions"),
+        (MeTab::Language, t.me_tab_language, "/me/security/language"),
+    ];
+    let tab_items: Vec<_> = items.iter().map(|(tab, label, href)| {
+        let cls = if *tab == active { "tab tab--active" } else { "tab" };
+        view! { <a href=*href class=cls>{*label}</a> }
+    }).collect();
+    view! {
+        <nav class="tabs" aria-label="Security sections">
+            {tab_items}
+        </nav>
+    }
+}
+
+pub fn render_me_overview(
+    data: MeOverviewData,
+    _is_dev: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let tabs = me_security_tabs(MeTab::Overview, lang);
+        let MeOverviewData { shell, totp_enabled, passkey_count, active_session_count, recent_events, .. } = data;
+        let event_rows: Vec<_> = recent_events.iter().map(|e| {
+            let badge = match e.result.as_str() {
+                "ok"   => view! { <span class="badge badge--ok">{"ok"}</span> }.into_any(),
+                "fail" | "denied" => view! { <span class="badge badge--danger">{e.result.clone()}</span> }.into_any(),
+                other  => view! { <span class="badge">{other.to_string()}</span> }.into_any(),
+            };
+            view! {
+                <tr>
+                    <td><time>{e.at.format("%Y/%m/%d %H:%M").to_string()}</time></td>
+                    <td><code>{e.action.clone()}</code></td>
+                    <td>{badge}</td>
+                </tr>
+            }
+        }).collect();
+        view! {
+            <Shell title=t.me_tab_overview.to_string() show_nav=true current=Some("me".to_string()) lang=lang>
+                <header class="page-header"><h1 class="page-header__title">{t.me_tab_overview}</h1></header>
+                {tabs}
+                <div class="stack" style="margin-top:var(--space-4)">
+                    <section class="card">
+                        <h2 class="card__title">{t.me_overview_section_status}</h2>
+                        <dl class="kv-list">
+                            {kv_bool_badge("MFA (TOTP)", totp_enabled)}
+                            {kv_row("Passkeys", passkey_count.to_string())}
+                            {kv_row(t.me_security_sessions_section,
+                                    active_session_count.to_string())}
+                        </dl>
+                    </section>
+                    <section class="card">
+                        <h2 class="card__title">{t.me_overview_section_activity}</h2>
+                        {if event_rows.is_empty() {
+                            view! { <p class="muted">{t.me_security_sessions_lede}</p> }.into_any()
+                        } else {
+                            view! {
+                                <div class="table-wrap">
+                                    <table><tbody>{event_rows}</tbody></table>
+                                </div>
+                            }.into_any()
+                        }}
+                    </section>
+                    <div class="row">
+                        <a href="/me/security/mfa" class="button secondary">{t.me_tab_mfa}</a>
+                        <a href="/me/security/passkeys" class="button secondary">{t.me_tab_passkey}</a>
+                        <a href="/me/security/sessions" class="button secondary">{t.me_tab_sessions}</a>
+                    </div>
+                </div>
+            </Shell>
+        }
+    })
+}
+
+pub fn render_me_passkey(
+    data: MePasskeyData,
+    flash: Option<Flash>,
+    _is_dev: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let tabs = me_security_tabs(MeTab::Passkey, lang);
+        let MePasskeyData { shell: _, passkeys, origin_eligible, csrf_token } = data;
+        let warning = (!origin_eligible).then(|| view! {
+            <div class="banner banner--warning" role="alert">
+                {t.me_passkey_origin_warning}
+            </div>
+        });
+        let rows: Vec<_> = passkeys.iter().map(|p| {
+            let cred_id = p.id.clone();
+            let nick = p.nickname.clone();
+            let nick2 = p.nickname.clone();
+            let csrf = csrf_token.clone();
+            let delete_action = format!("/me/security/passkeys/{}/delete", cred_id);
+            view! {
+                <tr>
+                    <td>
+                        <strong>{nick}</strong>
+                        <br/>
+                        <span class="muted" style="font-size:0.85em">
+                            {t.profile_passkeys_th_registered} ": " {p.created_at.format("%Y/%m/%d").to_string()}
+                        </span>
+                    </td>
+                    <td>
+                        <details>
+                            <summary class="button secondary" style="font-size:0.85em">
+                                {t.me_passkey_button_rename}
+                            </summary>
+                            <form method="post"
+                                  action={format!("/me/security/passkeys/{cred_id}/rename")}
+                                  style="margin-top:var(--space-2)">
+                                <input type="hidden" name="_csrf" value=csrf.clone()/>
+                                <div class="row">
+                                    <input type="text" name="nickname"
+                                           placeholder=t.me_passkey_nickname_placeholder
+                                           required=true maxlength="64"
+                                           style="flex:1"/>
+                                    <button type="submit">{t.button_save}</button>
+                                </div>
+                            </form>
+                        </details>
+                    </td>
+                    <td>
+                        <form method="post" action=delete_action>
+                            <input type="hidden" name="_csrf" value=csrf/>
+                            <button type="submit" class="button danger"
+                                    aria-label={format!("{} {nick2}", t.button_delete)}>
+                                {t.button_delete}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        }).collect();
+        view! {
+            <Shell title=t.me_passkey_section_title.to_string() show_nav=true current=Some("me".to_string()) lang=lang>
+                <header class="page-header"><h1 class="page-header__title">{t.me_passkey_section_title}</h1></header>
+                {tabs}
+                {flash_banner(flash)}
+                {warning}
+                <div class="stack" style="margin-top:var(--space-4)">
+                    {if rows.is_empty() {
+                        view! { <p class="muted">{t.profile_passkeys_empty}</p> }.into_any()
+                    } else {
+                        view! {
+                            <div class="table-wrap">
+                                <table><tbody>{rows}</tbody></table>
+                            </div>
+                        }.into_any()
+                    }}
+                    {origin_eligible.then(|| view! {
+                        <a href="/me/security/passkeys/register" class="button">{t.profile_passkeys_register_button}</a>
+                    })}
+                </div>
+            </Shell>
+        }
+    })
+}
+
+pub fn render_me_language(
+    data: MeLanguageData,
+    flash: Option<Flash>,
+    _is_dev: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let tabs = me_security_tabs(MeTab::Language, lang);
+        let MeLanguageData { shell: _, current_preferred_lang, csrf_token } = data;
+        let cur = current_preferred_lang.clone().unwrap_or_default();
+        let cur2 = cur.clone();
+        let cur3 = cur.clone();
+        view! {
+            <Shell title=t.me_language_title.to_string() show_nav=true current=Some("me".to_string()) lang=lang>
+                <header class="page-header"><h1 class="page-header__title">{t.me_language_title}</h1></header>
+                {tabs}
+                {flash_banner(flash)}
+                <div class="card" style="margin-top:var(--space-4)">
+                    <p class="muted">{t.me_language_lede}</p>
+                    <form method="post" action="/me/security/language" class="stack">
+                        <input type="hidden" name="_csrf" value=csrf_token/>
+                        <div class="field">
+                            <div class="stack" style="gap:var(--space-2)">
+                                <label class="row" style="align-items:center;gap:var(--space-2)">
+                                    <input type="radio" name="locale" value=""
+                                           checked=move || cur.is_empty()/>
+                                    {t.me_language_use_default}
+                                </label>
+                                <label class="row" style="align-items:center;gap:var(--space-2)">
+                                    <input type="radio" name="locale" value="ja"
+                                           checked=move || cur2 == "ja"/>
+                                    "日本語"
+                                </label>
+                                <label class="row" style="align-items:center;gap:var(--space-2)">
+                                    <input type="radio" name="locale" value="en"
+                                           checked=move || cur3 == "en"/>
+                                    "English"
+                                </label>
+                            </div>
+                        </div>
+                        <div>
+                            <button type="submit">{t.button_save}</button>
+                        </div>
+                    </form>
+                </div>
+            </Shell>
         }
     })
 }

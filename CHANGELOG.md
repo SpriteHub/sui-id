@@ -5,7 +5,131 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.39.0] — Unreleased
+## [0.40.0] — Unreleased
+
+**PDF-spec compliance pass.** A re-review of both UI/UX design documents
+(`suiiduiuxonepageoverviewv0.29x.pdf`,
+`suiiduiuxdevelopmentsupportv0.29x.pdf`) identified 14 gaps. This release
+closes the five highest-priority ones across four RFCs (040–044).
+
+---
+
+### RFC 040 — `/me/security` tabbed structure
+
+The UI/UX spec requires five separate tabs on `/me/security`. The previous
+implementation was a single page. This release splits the surface.
+
+#### New routes
+
+| Route | Purpose |
+|---|---|
+| `GET /me/security` | Redirects to `/me/security/overview` |
+| `GET /me/security/overview` | Security status + recent activity |
+| `GET /me/security/passkeys` | Passkey list with nicknames |
+| `POST /me/security/passkeys/{id}/rename` | Rename a passkey |
+| `GET /me/security/language` | User language preference |
+| `POST /me/security/language` | Save language preference |
+
+#### New data model
+
+Migration 0026 adds an index on `users.preferred_lang` for efficient
+language resolution.
+
+`update_nickname(db, credential_id, user_id, new_nickname)` is added to
+`user_webauthn_credentials` repo. The `user_id` predicate ensures users can
+only rename their own credentials.
+
+#### New render functions
+
+`render_me_overview`, `render_me_passkey`, `render_me_language` with their
+respective data structs (`MeOverviewData`, `MePasskeyData`,
+`MeLanguageData`).
+
+All three render functions use the shared `me_security_tabs()` navigation
+component (`MeTab` enum: Overview / Mfa / Passkey / Sessions / Language).
+
+#### i18n
+
+New keys (×3 locales): `me_tab_*`, `me_overview_section_*`,
+`me_passkey_*`, `me_language_*`.
+
+---
+
+### RFC 041 — HIBP enforcement consistency
+
+`admin::create_user` previously skipped the HIBP check. With this release
+all five password entrypoints enforce the configured `hibp_mode` policy
+consistently:
+
+| Entrypoint | Before | After |
+|---|---|---|
+| Setup wizard admin | ✅ | ✅ |
+| `admin::create_user` | ❌ | ✅ |
+| `admin::reset_user_password` | ✅ | ✅ |
+| Self password change | ✅ | ✅ |
+| Forgot-password redemption | ✅ | ✅ |
+
+When `hibp_mode=warn` and the password is known-pwned, `create_user` now
+emits `user.create_warned_hibp` to the audit log instead of `user.create`.
+
+Dev-mode user seeding passes `HibpMode::Off` explicitly so dev seeds are
+never rejected.
+
+---
+
+### RFC 042 — Error page i18n completion
+
+`render_error` now takes `(status: u16, request_id: &str, lang: Locale)`
+and emits fully localized HTML for every HTTP error class:
+
+| Status | Key |
+|---|---|
+| 404 | `error_not_found_title` / `error_not_found_lede` |
+| 429 | `error_too_many_requests_label` / `error_too_many_requests_lede` |
+| 5xx | `error_internal` / `error_internal_lede` |
+| other | `error_generic_title` / `error_generic_lede` |
+
+`HttpError` gains a `lang: Locale` field (default `Locale::Ja`) and a
+`.with_lang(loc)` builder so handlers can set the locale for error pages.
+
+---
+
+### RFC 043 — Dashboard "Recent important events" card
+
+`audit::recent_important(db, n)` fetches the last N audit rows whose
+`action` starts with one of 13 important prefixes
+(`user.create`, `user.disable`, `user.delete`, `client.create`,
+`auth.lockout`, `auth.refresh_theft_detected`, etc.).
+
+`users::resolve_usernames(db, ids)` batch-resolves actor IDs to usernames.
+
+`DashboardData` gains `recent_important: Vec<DashboardEventRow>`. The
+admin dashboard now shows a "Recent important events" card with time,
+action, actor, and a coloured result badge. An "→ View all" link leads
+to the full audit log.
+
+---
+
+### RFC 044 — UI state word contract documentation
+
+`docs/src/contributing/state-contract.md` and
+`crates/sui-id-i18n/STATE_WORDS.md` codify the five-state
+(empty / error / success / loading / disabled) contract: when each
+state applies, which CSS class and key prefix to use, and a page-by-page
+audit table.
+
+---
+
+### Test results
+
+- `sui-id-i18n`: **12 tests pass**
+- `sui-id-store`: **36 tests pass**
+- `sui-id-core`: **114 tests pass**
+- `cargo check --workspace` + `cargo check --tests`: clean
+
+---
+
+## [0.39.0] — Previous release
 
 **Minor version bump.** RFC 038 adds a new migration, new routes, and new
 screens. RFC 039 completes the settings UI translation. Together these

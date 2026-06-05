@@ -313,12 +313,24 @@ pub struct Strings {
     pub email_password_changed_security_warning: &'static str,
     pub email_password_changed_link_security: &'static str,
 
-    // ---- Errors / generic ----
+    // ---- Errors / generic (RFC 042 extended) ----
     pub error_generic_title: &'static str,
+    pub error_generic_lede: &'static str,
     pub error_not_found_title: &'static str,
     pub error_not_found_lede: &'static str,
     pub error_internal: &'static str,
+    pub error_internal_lede: &'static str,
     pub error_too_many_requests_label: &'static str,
+    pub error_too_many_requests_lede: &'static str,
+    pub error_request_id_label: &'static str,
+    pub error_back_home: &'static str,
+    // Aliases used in locale files from prior sessions — kept for compatibility.
+    pub error_404_title: &'static str,
+    pub error_404_lede: &'static str,
+    pub error_429_title: &'static str,
+    pub error_429_lede: &'static str,
+    pub error_500_title: &'static str,
+    pub error_500_lede: &'static str,
 
     // ---- Audit log labels ----
     pub audit_title: &'static str,
@@ -408,6 +420,32 @@ pub struct Strings {
     pub settings_advanced_build_section: &'static str,
     pub settings_advanced_storage_section: &'static str,
     pub settings_advanced_record_counts: &'static str,
+    // ---- /me/security tabs (RFC 040) ----
+    pub me_tab_overview: &'static str,
+    pub me_tab_mfa: &'static str,
+    pub me_tab_passkey: &'static str,
+    pub me_tab_sessions: &'static str,
+    pub me_tab_language: &'static str,
+    // Overview tab
+    pub me_overview_section_status: &'static str,
+    pub me_overview_section_activity: &'static str,
+    // Passkey tab
+    pub me_passkey_origin_warning: &'static str,
+    pub me_passkey_section_title: &'static str,
+    pub me_passkey_button_rename: &'static str,
+    pub me_passkey_nickname_label: &'static str,
+    pub me_passkey_nickname_placeholder: &'static str,
+    // Language tab
+    pub me_language_title: &'static str,
+    pub me_language_lede: &'static str,
+    pub me_language_use_default: &'static str,
+    pub me_language_saved_flash: &'static str,
+
+    // ---- Dashboard recent events (RFC 043) ----
+    pub dashboard_recent_events_title: &'static str,
+    pub dashboard_recent_events_empty: &'static str,
+    pub dashboard_recent_events_view_all: &'static str,
+
     // ---- Settings: page titles (RFC 039) ----
     pub settings_title_basic: &'static str,
     pub settings_title_security: &'static str,

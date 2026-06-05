@@ -378,6 +378,29 @@ pub async fn dashboard(
         .unwrap_or(true);  // assume Off if settings missing
     let smtp_configured = sui_id_store::repos::smtp_config::get(&app.db)
         .await.map(|o| o.is_some()).unwrap_or(false);
+
+    // RFC 043: fetch last 5 important audit events for the dashboard card.
+    let audit_rows = sui_id_store::repos::audit::recent_important(&app.db, 5)
+        .await.unwrap_or_default();
+    // Best-effort: resolve actor IDs to usernames.
+    let actor_ids: Vec<_> = audit_rows.iter()
+        .filter_map(|r| r.actor)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter().collect();
+    let actor_map = sui_id_store::repos::users::resolve_usernames(&app.db, &actor_ids)
+        .await.unwrap_or_default();
+    let recent_important: Vec<sui_id_web::DashboardEventRow> = audit_rows
+        .into_iter()
+        .map(|r| sui_id_web::DashboardEventRow {
+            at: r.at,
+            action: r.action,
+            actor_label: r.actor
+                .and_then(|id| actor_map.get(&id).cloned())
+                .unwrap_or_default(),
+            result: r.result,
+        })
+        .collect();
+
     let data = DashboardData {
         admin_username: admin.username,
         user_count: users_n,
@@ -388,6 +411,7 @@ pub async fn dashboard(
         warn_smtp_not_configured: !smtp_configured,
         warn_hibp_off: hibp_is_off,
         warn_cookie_insecure: !app.config.server.cookie_secure,
+        recent_important,
     };
     let token = crate::csrf::ensure_token(&jar);
     let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
@@ -474,6 +498,12 @@ pub async fn users_create(
     let create_result = admin_uc::create_user(
         &app.db,
         &app.clock,
+        Some(app.hibp_client.as_ref()),
+        {
+            sui_id_store::repos::server_settings::get(&app.db).await
+                .map(|s| s.hibp_mode)
+                .unwrap_or_default()
+        },
         admin_id,
         CreateUserSpec {
             username: form.username.trim(),

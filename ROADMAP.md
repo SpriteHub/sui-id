@@ -60,8 +60,54 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-All major features are complete. Remaining proposed RFCs are post-1.0 enhancements.
-The project is approaching v1.0 readiness.
+v0.39.0 closes RFCs 038 (OIDC consent screen) and 039 (settings i18n
+complete). The project is approaching v1.0 readiness, with v0.40 work
+underway to close the last PDF-spec compliance gaps before the 1.0
+release candidate.
+
+### v0.40.0 — planned scope
+
+PDF-spec compliance pass. After re-reviewing the two UI/UX design PDFs
+(`suiiduiuxonepageoverviewv0.29x.pdf`,
+`suiiduiuxdevelopmentsupportv0.29x.pdf`), we identified 14 gaps and
+grouped them into 8 RFCs.
+
+### v0.40.0 — released (this version)
+
+- **RFC 040** `/me/security` tabbed structure (Overview/Passkeys/Language routes, new migration 0026)
+- **RFC 041** HIBP consistency: `admin::create_user` now enforces hibp_mode
+- **RFC 042** Error / rate-limited page i18n completion
+- **RFC 043** Dashboard "Recent important events" card
+- **RFC 044** UI state word contract documentation
+
+### Next: v0.40.1 / v0.41 (deferred P2 items)
+
+- RFC 045 — User disable reason input
+- RFC 046 — Audit log per-row copy ID button
+- RFC 047 — Dev mode summary copy + client secret rotation audit
+
+**P0 (must, included in v0.40.0):**
+- RFC 040 — `/me/security` tabbed structure (Overview / MFA / Passkey
+  / Sessions / Language). Largest scope: new migration 0026, 8 new routes,
+  5 new render structs, user-facing language preference.
+- RFC 041 — HIBP enforcement consistency. Closes the `admin::create_user`
+  gap; adds HIBP mode edit UI to `/admin/settings/authentication`.
+- RFC 042 — Error / rate-limited page i18n completion. The last
+  i18n gap from the design doc's a11y + i18n contract.
+
+**P1 (recommended, included in v0.40.0):**
+- RFC 043 — Dashboard "Recent important events" card. Surfaces the last
+  5 admin-relevant audit events.
+- RFC 044 — State word contract documentation. Process-only RFC
+  codifying the empty/error/success/loading/disabled patterns.
+
+**P2 (deferred to v0.40.1 or v0.41):**
+- RFC 045 — User disable reason input.
+- RFC 046 — Audit log per-row copy ID button.
+- RFC 047 — Dev mode summary copy-friendliness + client secret rotation
+  audit.
+
+Estimated total effort for v0.40.0: ~28–32 hours of focused work.
 
 ---
 

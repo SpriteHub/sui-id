@@ -205,7 +205,17 @@ pub fn build_router(app: AppState) -> Router {
         // require admin privilege; they're for any signed-in user.
         // The handler enforces ownership: a user can only see and
         // revoke their own sessions.
-        .route("/me/security", get(crate::handlers::me_security::page_get))
+        .route("/me/security",
+               get(crate::handlers::me_security::security_redirect))
+        .route("/me/security/overview",
+               get(crate::handlers::me_security::overview_get))
+        .route("/me/security/passkeys",
+               get(crate::handlers::me_security::passkeys_get))
+        .route("/me/security/passkeys/{id}/rename",
+               post(crate::handlers::me_security::passkey_rename_post))
+        .route("/me/security/language",
+               get(crate::handlers::me_security::language_get)
+               .post(crate::handlers::me_security::language_post))
         .route(
             "/me/security/sessions/{id}/revoke",
             post(crate::handlers::me_security::revoke_one),

@@ -260,6 +260,8 @@ async fn admin_can_reset_users_mfa_factors() {
     sui_id_core::admin::create_user(
         &state.db,
         &state.clock,
+        None,
+        sui_id_store::models::HibpMode::Off,
         admin_id,
         CreateUserSpec {
             username: "bob",
@@ -317,6 +319,8 @@ async fn admin_mfa_reset_via_http_redirects_and_disables_mfa_requirement() {
     sui_id_core::admin::create_user(
         &state.db,
         &state.clock,
+        None,
+        sui_id_store::models::HibpMode::Off,
         admin_id,
         CreateUserSpec {
             username: "carol",

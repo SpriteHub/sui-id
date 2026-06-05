@@ -31,7 +31,7 @@ async fn delete_user_without_confirmed_is_rejected() {
     let admin_id = sui_id_store::repos::users::find_by_username(&state.db, "alice")
         .await.expect("alice").id;
     let target = sui_id_core::admin::create_user(
-        &state.db, &clock, admin_id,
+        &state.db, &clock, None, sui_id_store::models::HibpMode::Off, admin_id,
         sui_id_core::admin::CreateUserSpec {
             username: "target-for-delete-test".into(),
             display_name: None,
@@ -83,7 +83,7 @@ async fn mfa_reset_without_confirmed_is_rejected() {
     let admin_id = sui_id_store::repos::users::find_by_username(&state.db, "alice")
         .await.expect("alice").id;
     let target = sui_id_core::admin::create_user(
-        &state.db, &clock, admin_id,
+        &state.db, &clock, None, sui_id_store::models::HibpMode::Off, admin_id,
         sui_id_core::admin::CreateUserSpec {
             username: "target-mfa-test".into(),
             display_name: None, email: None,
@@ -126,7 +126,7 @@ async fn delete_confirm_page_renders() {
     let admin_id = sui_id_store::repos::users::find_by_username(&state.db, "alice")
         .await.expect("alice").id;
     let target = sui_id_core::admin::create_user(
-        &state.db, &clock, admin_id,
+        &state.db, &clock, None, sui_id_store::models::HibpMode::Off, admin_id,
         sui_id_core::admin::CreateUserSpec {
             username: "confirm-page-target".into(),
             display_name: None, email: None,
@@ -264,7 +264,7 @@ async fn user_detail_page_renders() {
     let admin_id = sui_id_store::repos::users::find_by_username(&state.db, "alice")
         .await.expect("alice").id;
     let target = sui_id_core::admin::create_user(
-        &state.db, &clock, admin_id,
+        &state.db, &clock, None, sui_id_store::models::HibpMode::Off, admin_id,
         sui_id_core::admin::CreateUserSpec {
             username: "detail-page-user".into(),
             display_name: Some("Detail Page User".into()),

@@ -518,4 +518,45 @@ pub static STRINGS_JA: Strings = Strings {
     settings_email_base_url_hint: "メール内のリセットリンクに記載する URL。Issuer URL とは別に設定できます。",
     settings_email_test_button: "接続をテスト",
     settings_email_test_hint: "現在の設定で SMTP サーバーへの接続を試みます。メールは送信されません。",
+
+    // エラーページ (RFC 042)
+    error_404_title: "見つかりませんでした",
+    error_404_lede: "そのページは存在しないか、削除されました。",
+    error_429_title: "リクエストが多すぎます",
+    error_429_lede: "しばらく時間をおいてから、もう一度お試しください。",
+    error_500_title: "サーバーエラー",
+    error_500_lede: "問題が発生しました。サーバー管理者にお問い合わせください。",
+    error_generic_lede: "リクエストを処理できませんでした。",
+    error_request_id_label: "リクエスト ID",
+    error_back_home: "ホームへ戻る",
+
+    // RFC 042
+    error_internal_lede: "問題が発生しました。サーバー管理者にお問い合わせください。",
+
+    // RFC 042
+    error_too_many_requests_lede: "しばらく時間をおいてから、もう一度お試しください。",
+
+    dashboard_recent_events_title: "最近の重要イベント",
+
+    dashboard_recent_events_empty: "重要なイベントはありません。",
+
+    dashboard_recent_events_view_all: "全件を見る →",
+
+    // /me/security タブ (RFC 040)
+    me_tab_overview: "概要",
+    me_tab_mfa: "MFA",
+    me_tab_passkey: "パスキー",
+    me_tab_sessions: "セッション",
+    me_tab_language: "言語",
+    me_overview_section_status: "セキュリティ状態",
+    me_overview_section_activity: "最近のアクティビティ",
+    me_passkey_origin_warning: "パスキーは HTTPS または localhost 上でのみ使用できます。",
+    me_passkey_section_title: "登録済みパスキー",
+    me_passkey_button_rename: "名前を変更",
+    me_passkey_nickname_label: "ニックネーム",
+    me_passkey_nickname_placeholder: "例: YubiKey 5C",
+    me_language_title: "表示言語",
+    me_language_lede: "優先言語を設定します。未設定の場合はブラウザ設定またはサーバー既定値が使用されます。",
+    me_language_use_default: "システム既定（Cookie / Accept-Language）",
+    me_language_saved_flash: "言語設定を保存しました。",
 };

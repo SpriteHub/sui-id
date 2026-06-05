@@ -518,4 +518,45 @@ pub static STRINGS_EN: Strings = Strings {
     settings_email_base_url_hint: "Base URL for reset links in email. Can differ from issuer URL.",
     settings_email_test_button: "Test connection",
     settings_email_test_hint: "Attempts SMTP connection with current settings. No mail is sent.",
+
+    // Error pages (RFC 042)
+    error_404_title: "Not found",
+    error_404_lede: "That page does not exist or has been removed.",
+    error_429_title: "Too many requests",
+    error_429_lede: "Please wait a moment and try again.",
+    error_500_title: "Server error",
+    error_500_lede: "Something went wrong. Please contact the server administrator.",
+    error_generic_lede: "We could not process the request.",
+    error_request_id_label: "Request ID",
+    error_back_home: "Back to home",
+
+    // RFC 042
+    error_internal_lede: "Something went wrong. Please contact the server administrator.",
+
+    // RFC 042
+    error_too_many_requests_lede: "Please wait a moment and try again.",
+
+    dashboard_recent_events_title: "Recent important events",
+
+    dashboard_recent_events_empty: "No important events.",
+
+    dashboard_recent_events_view_all: "View all →",
+
+    // /me/security tabs (RFC 040)
+    me_tab_overview: "Overview",
+    me_tab_mfa: "MFA",
+    me_tab_passkey: "Passkeys",
+    me_tab_sessions: "Sessions",
+    me_tab_language: "Language",
+    me_overview_section_status: "Security status",
+    me_overview_section_activity: "Recent activity",
+    me_passkey_origin_warning: "Passkeys require HTTPS or localhost.",
+    me_passkey_section_title: "Registered passkeys",
+    me_passkey_button_rename: "Rename",
+    me_passkey_nickname_label: "Nickname",
+    me_passkey_nickname_placeholder: "e.g. YubiKey 5C",
+    me_language_title: "Display language",
+    me_language_lede: "Set your preferred language. If not set, your browser settings or the server default will be used.",
+    me_language_use_default: "System default (Cookie / Accept-Language)",
+    me_language_saved_flash: "Language preference saved.",
 };

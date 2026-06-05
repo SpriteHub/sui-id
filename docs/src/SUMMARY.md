@@ -33,3 +33,4 @@
 - [Architecture](./contributing/architecture.md)
 - [Local development](./contributing/local-dev.md)
 - [Adding translations](./contributing/translators.md)
+- [UI state word contract](./contributing/state-contract.md)

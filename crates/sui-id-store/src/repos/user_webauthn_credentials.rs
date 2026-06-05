@@ -182,3 +182,24 @@ pub fn reseal_all(
     }
     Ok(count)
 }
+
+/// Rename a passkey credential (RFC 040). The `user_id` predicate
+/// ensures a user can only rename their own credentials.
+pub async fn update_nickname(
+    db: &Database,
+    credential_id: &str,
+    user_id: UserId,
+    new_nickname: &str,
+) -> StoreResult<()> {
+    let cid = credential_id.to_string();
+    let nick = new_nickname.to_string();
+    db.with_conn(move |conn| {
+        conn.execute(
+            "UPDATE user_webauthn_credentials \
+             SET nickname = ?1 \
+             WHERE id = ?2 AND user_id = ?3",
+            rusqlite::params![nick, cid, user_id.to_string()],
+        )?;
+        Ok(())
+    }).await
+}

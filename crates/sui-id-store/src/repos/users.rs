@@ -329,3 +329,41 @@ pub async fn update_email(
         }
     }).await
 }
+
+/// Batch-resolve user IDs to usernames (RFC 043 dashboard).
+/// Unknown IDs are silently skipped.
+pub async fn resolve_usernames(
+    db: &Database,
+    ids: &[UserId],
+) -> StoreResult<std::collections::HashMap<UserId, String>> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: Vec<String> = (1..=ids.len())
+        .map(|i| format!("?{i}"))
+        .collect();
+    let sql = format!(
+        "SELECT id, username FROM users WHERE id IN ({})",
+        placeholders.join(", ")
+    );
+    let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+    db.with_conn(move |conn| {
+        let mut stmt = conn.prepare(&sql)?;
+        let params: Vec<rusqlite::types::Value> =
+            id_strings.iter().map(|s| rusqlite::types::Value::Text(s.clone())).collect();
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                let id_str: String = row.get(0)?;
+                let username: String = row.get(1)?;
+                Ok((id_str, username))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut map = std::collections::HashMap::new();
+        for (id_str, username) in rows {
+            if let Ok(uid) = id_str.parse::<UserId>() {
+                map.insert(uid, username);
+            }
+        }
+        Ok(map)
+    }).await
+}

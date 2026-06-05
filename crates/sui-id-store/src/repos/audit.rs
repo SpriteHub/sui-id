@@ -509,3 +509,51 @@ pub async fn count_by_action_in_window(
         Ok(rows)
     }).await
 }
+
+/// Action prefix patterns that are surfaced on the admin dashboard
+/// as "recent important events" (RFC 043).
+pub const DASHBOARD_IMPORTANT_PREFIXES: &[&str] = &[
+    "user.create",
+    "user.disable",
+    "user.delete",
+    "user.reset_password",
+    "user.reset_mfa",
+    "client.create",
+    "client.delete",
+    "client.rotate_secret",
+    "signing_key.rotate",
+    "signing_key.delete",
+    "auth.lockout",
+    "auth.refresh_theft_detected",
+    "admin.master_key.rotated",
+];
+
+/// Fetch the `n` most-recent audit rows whose `action` starts with any
+/// of [`DASHBOARD_IMPORTANT_PREFIXES`]. Used by the admin dashboard.
+pub async fn recent_important(
+    db: &Database,
+    n: usize,
+) -> StoreResult<Vec<AuditLogRow>> {
+    let n_i64 = n as i64;
+    let clauses: Vec<String> = (0..DASHBOARD_IMPORTANT_PREFIXES.len())
+        .map(|i| format!("action LIKE ?{}", i + 2))
+        .collect();
+    let sql = format!(
+        "SELECT at, actor, action, target, result, note \
+         FROM audit_log WHERE {} \
+         ORDER BY seq DESC LIMIT ?1",
+        clauses.join(" OR ")
+    );
+    db.with_conn(move |conn| {
+        let mut stmt = conn.prepare(&sql)?;
+        let mut params: Vec<rusqlite::types::Value> =
+            vec![rusqlite::types::Value::Integer(n_i64)];
+        for p in DASHBOARD_IMPORTANT_PREFIXES {
+            params.push(rusqlite::types::Value::Text(format!("{p}%")));
+        }
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params.iter()), map)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }).await
+}

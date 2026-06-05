@@ -521,4 +521,45 @@ pub static STRINGS_ZH: Strings = Strings {
     settings_email_base_url_hint: "邮件中重置链接的 URL 基础。可与 Issuer URL 不同。",
     settings_email_test_button: "测试连接",
     settings_email_test_hint: "使用当前设置尝试连接 SMTP 服务器，不会发送邮件。",
+
+    // 错误页面 (RFC 042)
+    error_404_title: "未找到页面",
+    error_404_lede: "该页面不存在或已被删除。",
+    error_429_title: "请求过多",
+    error_429_lede: "请稍候片刻后再试。",
+    error_500_title: "服务器错误",
+    error_500_lede: "发生了问题，请联系服务器管理员。",
+    error_generic_lede: "无法处理该请求。",
+    error_request_id_label: "请求 ID",
+    error_back_home: "返回首页",
+
+    // RFC 042
+    error_internal_lede: "发生了问题，请联系服务器管理员。",
+
+    // RFC 042
+    error_too_many_requests_lede: "请稍候片刻后再试。",
+
+    dashboard_recent_events_title: "最近的重要事件",
+
+    dashboard_recent_events_empty: "暂无重要事件。",
+
+    dashboard_recent_events_view_all: "查看全部 →",
+
+    // /me/security 选项卡 (RFC 040)
+    me_tab_overview: "概览",
+    me_tab_mfa: "多重认证",
+    me_tab_passkey: "通行密钥",
+    me_tab_sessions: "会话",
+    me_tab_language: "语言",
+    me_overview_section_status: "安全状态",
+    me_overview_section_activity: "最近活动",
+    me_passkey_origin_warning: "通行密钥需要 HTTPS 或 localhost。",
+    me_passkey_section_title: "已注册的通行密钥",
+    me_passkey_button_rename: "重命名",
+    me_passkey_nickname_label: "昵称",
+    me_passkey_nickname_placeholder: "例: YubiKey 5C",
+    me_language_title: "显示语言",
+    me_language_lede: "设置您的首选语言。未设置时将使用浏览器设置或服务器默认值。",
+    me_language_use_default: "系统默认（Cookie / Accept-Language）",
+    me_language_saved_flash: "语言偏好已保存。",
 };

@@ -441,6 +441,8 @@ pub async fn apply_seed(
         create_user(
             db,
             clock,
+            None,                                    // dev-mode: HIBP off
+            sui_id_store::models::HibpMode::Off,
             admin_id,
             CreateUserSpec {
                 username: &u.username,

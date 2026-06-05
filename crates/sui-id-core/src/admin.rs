@@ -61,6 +61,8 @@ pub struct CreateUserSpec<'a> {
 pub async fn create_user(
     db: &Database,
     clock: &SharedClock,
+    hibp_client: Option<&dyn HibpClient>,
+    hibp_mode: sui_id_store::models::HibpMode,
     actor: UserId,
     spec: CreateUserSpec<'_>,
 ) -> CoreResult<UserRow> {
@@ -69,6 +71,9 @@ pub async fn create_user(
         return Err(CoreError::BadRequest("username must not be empty".into()));
     }
     check_password_policy(spec.password)?;
+    // RFC 041: enforce HIBP consistently with all other password entrypoints.
+    let hibp_result = hibp::enforce_hibp(hibp_mode, hibp_client, spec.password).await;
+    let hibp_warned = matches!(hibp_result, HibpEnforcement::AllowedWithWarning { .. });
 
     let now = clock.now();
     let row = UserRow {
@@ -112,7 +117,8 @@ pub async fn create_user(
             updated_at: now,
         },
     ).await?;
-    audit_ok(db, actor, "user.create", Some(row.id.to_string())).await;
+    let action = if hibp_warned { "user.create_warned_hibp" } else { "user.create" };
+    audit_ok(db, actor, action, Some(row.id.to_string())).await;
     Ok(row)
 }
 

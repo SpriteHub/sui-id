@@ -435,3 +435,211 @@ pub async fn password_change_post(
     }
     Ok(Redirect::to("/me/security?msg=password_changed").into_response())
 }
+
+// =====================================================================
+// RFC 040 — /me/security tabbed pages
+// =====================================================================
+
+use sui_id_web::{MeOverviewData, MePasskeyData, MeLanguageData, MeShellData, MeTab};
+
+/// Resolve locale for the current user (used by all tab handlers).
+async fn resolve_me_locale(
+    app: &crate::AppState,
+    user_id: sui_id_shared::ids::UserId,
+) -> sui_id_i18n::Locale {
+    let preferred = sui_id_store::repos::users::get(&app.db, user_id)
+        .await
+        .ok()
+        .and_then(|u| u.preferred_lang);
+    if let Some(ref tag) = preferred {
+        if let Some(loc) = sui_id_i18n::Locale::parse(tag) {
+            return loc;
+        }
+    }
+    sui_id_store::repos::server_settings::get(&app.db)
+        .await
+        .ok()
+        .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
+        .unwrap_or_default()
+}
+
+/// GET /me/security → redirect to /me/security/overview
+pub async fn security_redirect() -> Redirect {
+    Redirect::to("/me/security/overview")
+}
+
+/// GET /me/security/overview
+pub async fn overview_get(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let lang = resolve_me_locale(&app, user_id).await;
+    let user = sui_id_store::repos::users::get(&app.db, user_id)
+        .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
+    let shell = MeShellData {
+        username: user.username,
+        is_admin: user.is_admin,
+        active_tab: MeTab::Overview,
+    };
+    let totp_enabled = user_totp::get(&app.db, user_id)
+        .await.ok().flatten()
+        .map(|r| r.enabled).unwrap_or(false);
+    let passkey_count = sui_id_store::repos::user_webauthn_credentials::count_for_user(
+        &app.db, user_id
+    ).await.unwrap_or(0);
+    let active_session_count = sessions::list_active_for_user(&app.db, user_id)
+        .await.map(|v| v.len()).unwrap_or(0);
+    let recent_events: Vec<sui_id_web::MeAuditEntry> =
+        audit::recent_for_user(&app.db, user_id, 10)
+        .await.unwrap_or_default()
+        .into_iter()
+        .map(|r| sui_id_web::MeAuditEntry {
+            at: r.at,
+            action: r.action,
+            result: r.result,
+            note: r.note,
+        })
+        .collect();
+    let csrf_tok = csrf::ensure_token(&jar);
+    let resp = axum::response::Html(sui_id_web::render_me_overview(
+        MeOverviewData { shell, totp_enabled, passkey_count, active_session_count, recent_events, csrf_token: csrf_tok.clone() },
+        app.is_dev_mode, lang,
+    )).into_response();
+    Ok(with_csrf_cookie(resp, &app, &csrf_tok))
+}
+
+/// GET /me/security/passkeys
+pub async fn passkeys_get(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let lang = resolve_me_locale(&app, user_id).await;
+    let user = sui_id_store::repos::users::get(&app.db, user_id)
+        .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
+    let shell = MeShellData {
+        username: user.username,
+        is_admin: user.is_admin,
+        active_tab: MeTab::Passkey,
+    };
+    let passkeys = sui_id_store::repos::user_webauthn_credentials::list_for_user(
+        &app.db, user_id
+    ).await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
+    let descriptors = passkeys.into_iter().map(|p| sui_id_web::PasskeyDescriptor {
+        id: p.id.to_string(),
+        nickname: p.nickname,
+        created_at: p.created_at,
+        last_used_at: None,
+    }).collect();
+    // Check if issuer is HTTPS or localhost
+    let origin_eligible = {
+        let issuer = app.issuer();
+        issuer.starts_with("https://")
+            || issuer.starts_with("http://localhost")
+            || issuer.starts_with("http://127.0.0.1")
+    };
+    let flash: Option<sui_id_web::Flash> = None;
+    let csrf_tok = csrf::ensure_token(&jar);
+    let resp = axum::response::Html(sui_id_web::render_me_passkey(
+        MePasskeyData { shell, passkeys: descriptors, origin_eligible, csrf_token: csrf_tok.clone() },
+        flash, app.is_dev_mode, lang,
+    )).into_response();
+    Ok(with_csrf_cookie(resp, &app, &csrf_tok))
+}
+
+#[derive(serde::Deserialize)]
+pub struct PasskeyRenameForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    pub nickname: String,
+}
+
+/// POST /me/security/passkeys/{id}/rename
+pub async fn passkey_rename_post(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Path(cred_id): Path<String>,
+    Form(form): Form<PasskeyRenameForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    enforce_csrf(&jar, Some(&form.csrf))?;
+    let new_name = form.nickname.trim();
+    if new_name.is_empty() || new_name.len() > 64 {
+        return Err(HttpError::html(CoreError::BadRequest(
+            "nickname must be 1–64 characters".into()
+        )));
+    }
+    sui_id_store::repos::user_webauthn_credentials::update_nickname(
+        &app.db, &cred_id, user_id, new_name,
+    ).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+    Ok(Redirect::to("/me/security/passkeys").into_response())
+}
+
+/// GET /me/security/language
+pub async fn language_get(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let lang = resolve_me_locale(&app, user_id).await;
+    let user = sui_id_store::repos::users::get(&app.db, user_id)
+        .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
+    let shell = MeShellData {
+        username: user.username.clone(),
+        is_admin: user.is_admin,
+        active_tab: MeTab::Language,
+    };
+    let flash: Option<sui_id_web::Flash> = None;
+    let csrf_tok = csrf::ensure_token(&jar);
+    let resp = axum::response::Html(sui_id_web::render_me_language(
+        MeLanguageData {
+            shell,
+            current_preferred_lang: user.preferred_lang.clone(),
+            csrf_token: csrf_tok.clone(),
+        },
+        flash, app.is_dev_mode, lang,
+    )).into_response();
+    Ok(with_csrf_cookie(resp, &app, &csrf_tok))
+}
+
+#[derive(serde::Deserialize)]
+pub struct LanguageForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    /// "ja" / "en" / "zh" / "" (= clear preference)
+    pub locale: String,
+}
+
+/// POST /me/security/language
+pub async fn language_post(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+    Form(form): Form<LanguageForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    enforce_csrf(&jar, Some(&form.csrf))?;
+    let lang = resolve_me_locale(&app, user_id).await;
+    let new_lang = if form.locale.trim().is_empty() {
+        None
+    } else {
+        match sui_id_i18n::Locale::parse(form.locale.trim()) {
+            Some(loc) => Some(loc.tag().to_string()),
+            None => return Err(HttpError::html(CoreError::BadRequest(
+                "unsupported locale".into()
+            )).with_lang(lang)),
+        }
+    };
+    sui_id_store::repos::users::set_preferred_lang(
+        &app.db,
+        user_id,
+        new_lang.as_deref(),
+        app.clock.now(),
+    ).await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
+    Ok(Redirect::to("/me/security/language?saved=1").into_response())
+}
