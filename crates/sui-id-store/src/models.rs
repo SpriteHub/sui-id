@@ -6,7 +6,7 @@
 //! formats evolve independently.
 
 use chrono::{DateTime, Utc};
-use sui_id_shared::ids::{ClientId, SessionId, SigningKeyId, UserId};
+use sui_id_shared::ids::{ClientId, EmailOutboxId, SessionId, SigningKeyId, UserId};
 
 #[derive(Debug, Clone)]
 pub struct UserRow {
@@ -412,3 +412,57 @@ pub struct ServerSettingsRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
+
+// ── Email outbox (RFC 001) ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmailOutboxState {
+    Queued,
+    Sending,
+    Sent,
+    Failed,
+}
+
+impl EmailOutboxState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Queued  => "queued",
+            Self::Sending => "sending",
+            Self::Sent    => "sent",
+            Self::Failed  => "failed",
+        }
+    }
+}
+
+impl std::str::FromStr for EmailOutboxState {
+    type Err = crate::errors::StoreError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "queued"  => Ok(Self::Queued),
+            "sending" => Ok(Self::Sending),
+            "sent"    => Ok(Self::Sent),
+            "failed"  => Ok(Self::Failed),
+            other     => Err(crate::errors::StoreError::InvalidData(
+                format!("unknown outbox state: {other:?}"),
+            )),
+        }
+    }
+}
+
+/// A row in the `email_outbox` table. Both `recipient_enc` and `payload_enc`
+/// are AAD-bound ciphertext sealed under the master key.
+#[derive(Debug, Clone)]
+pub struct EmailOutboxRow {
+    pub id:              EmailOutboxId,
+    pub state:           EmailOutboxState,
+    /// Stable template identifier, e.g. `"forgot_password"`.
+    pub template:        String,
+    pub recipient_enc:   Vec<u8>,
+    pub payload_enc:     Vec<u8>,
+    pub attempt_count:   i64,
+    pub next_attempt_at: DateTime<Utc>,
+    pub last_error:      Option<String>,
+    pub created_at:      DateTime<Utc>,
+    pub updated_at:      DateTime<Utc>,
+}
+

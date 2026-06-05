@@ -5,6 +5,7 @@
 use crate::config::Config;
 use crate::keyring::{self, KeyOrigin};
 use crate::AppState;
+use sui_id_core::time::system_clock;
 use anyhow::{Context, Result};
 use base64ct::{Base64, Encoding};
 use rand::rngs::OsRng;
@@ -205,7 +206,14 @@ pub async fn prepare(cfg: Config) -> Result<Startup> {
             std::sync::Arc::new(sui_id_core::cache::Caches::new())
         }
     };
-    let state = AppState::new(db, cfg, setup_token, mailer, hibp_client, caches);
+    // RFC 001: use the persistent outbox sender in production (not dev-mode).
+    // Dev mode retains the direct SmtpMailSender (via test_app() helpers).
+    let outbox_sender: std::sync::Arc<dyn sui_id_core::mail::MailSender> =
+        std::sync::Arc::new(sui_id_core::mail::outbox::OutboxMailSender::new(
+            db.clone(),
+            system_clock(),
+        ));
+    let state = AppState::new(db, cfg, setup_token, outbox_sender, hibp_client, caches);
     Ok(Startup { state, listen_addr, _log_guard: log_guard })
 }
 

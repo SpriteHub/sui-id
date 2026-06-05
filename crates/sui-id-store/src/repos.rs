@@ -5,6 +5,7 @@
 //! the caller can distinguish "not found" from real failures.
 
 pub mod audit;
+pub mod email_outbox;
 pub mod auth_codes;
 pub mod clients;
 pub mod credentials;

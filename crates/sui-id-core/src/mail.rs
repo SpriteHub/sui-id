@@ -34,6 +34,9 @@
 //! - **No DKIM signing.** Out of scope for v0.22.0 — see the
 //!   ROADMAP entry on email deliverability.
 
+pub mod outbox;
+
+
 use crate::errors::{CoreError, CoreResult};
 use crate::time::SharedClock;
 use mail_builder::MessageBuilder;

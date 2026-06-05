@@ -5,7 +5,79 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.32.0] — Unreleased
+## [0.33.0] — Unreleased
+
+**Minor version bump.** RFC 001 introduces a new DB migration (0023) and a
+new in-process background worker, both of which affect the startup sequence.
+
+### RFC 001 — Persistent email outbox + retry worker
+
+Outgoing mail is no longer sent inline with the HTTP request that triggered
+it. Instead, requests enqueue a row in the new `email_outbox` table and
+return immediately; the `OutboxWorker` background task drains the queue
+with exponential backoff.
+
+#### What changed for operators
+
+- **Reduced handler latency.** `/forgot-password` and password-change
+  notifications no longer block on SMTP. The response returns immediately
+  regardless of SMTP availability.
+- **Automatic retry.** Failed deliveries are retried up to 5 times on the
+  schedule: 30 s → 2 m → 10 m → 1 h → 6 h. After 5 attempts the row is
+  marked `failed` and a `mail.outbox.permanent_failure` audit event is
+  written.
+- **Restart safety.** Any row in `sending` state when the process exits is
+  reset to `queued` on the next startup by `requeue_stuck_sending`.
+- **Encryption unchanged.** `recipient_enc` and `payload_enc` are sealed
+  under the master key with dedicated AADs; both columns are added to the
+  `admin rotate-key` reseal harness.
+
+#### Schema
+
+Migration **0023** adds:
+
+```
+email_outbox (id, state, template, recipient_enc, payload_enc,
+              attempt_count, next_attempt_at, last_error,
+              created_at, updated_at)
+```
+
+Partial index on `(next_attempt_at) WHERE state = 'queued'` for fast
+scheduler polls.
+
+#### New types and APIs (all in `sui-id-core` / `sui-id-store`)
+
+- `sui_id_shared::ids::EmailOutboxId`
+- `sui_id_store::models::{EmailOutboxState, EmailOutboxRow}`
+- `sui_id_store::StoreError::InvalidData`
+- `sui_id_store::repos::email_outbox::{enqueue, claim_one_eligible,
+  mark_sent, record_failure, mark_permanently_failed,
+  requeue_stuck_sending, reseal_all}`
+- `sui_id_core::mail::outbox::{OutboxMailSender, OutboxWorker}`
+
+#### Dev mode unchanged
+
+`test_app()` / `test_app_with_mailer()` still use `InMemoryMailSender`
+directly. The outbox path is production-only; tests observe mail via the
+in-memory sender as before.
+
+#### Tests
+
+5 new unit tests in `sui-id-store`: `enqueue_and_claim_round_trip`,
+`claim_respects_next_attempt_at`, `mark_sent_after_claim`,
+`record_failure_increments_attempt_count`,
+`requeue_stuck_sending_resets_old_rows`.
+
+### Test results
+
+- `sui-id-store`: **33 tests pass** (28 previous + 5 email_outbox)
+- `sui-id-core`: **114 tests pass**
+- `cargo check --workspace`: clean
+- `cargo check -p sui-id --tests`: clean
+
+---
+
+## [0.32.0] — Previous release
 
 ### RFC 017 — UI/UX design contracts
 

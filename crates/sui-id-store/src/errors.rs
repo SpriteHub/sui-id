@@ -41,6 +41,9 @@ pub enum StoreError {
     /// shutdown condition; treated as an internal error by callers.
     #[error("blocking DB task failed: {0}")]
     JoinError(String),
+
+    #[error("invalid data: {0}")]
+    InvalidData(String),
 }
 
 pub type StoreResult<T> = Result<T, StoreError>;

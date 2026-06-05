@@ -51,7 +51,7 @@
 use crate::errors::{CoreError, CoreResult};
 use sui_id_store::crypto::{open, seal, MasterKey};
 use sui_id_store::repos::{
-    refresh_tokens, signing_keys, smtp_config, user_totp, user_webauthn_credentials,
+    email_outbox, refresh_tokens, signing_keys, smtp_config, user_totp, user_webauthn_credentials,
 };
 use sui_id_store::Database;
 
@@ -66,6 +66,8 @@ pub struct RotationReport {
     pub user_totp_recovery_codes: u64,
     pub user_webauthn_credentials: u64,
     pub smtp_config: u64,
+    /// Rows resealed in `email_outbox` (RFC 001).
+    pub email_outbox_rows: u64,
 }
 
 impl RotationReport {
@@ -76,6 +78,7 @@ impl RotationReport {
             + self.user_totp_recovery_codes
             + self.user_webauthn_credentials
             + self.smtp_config
+            + self.email_outbox_rows
     }
 }
 
@@ -114,6 +117,7 @@ pub async fn rotate_master_key(
         report.user_webauthn_credentials =
             user_webauthn_credentials::reseal_all(tx, old_key, new_key)?;
         report.smtp_config = smtp_config::reseal_all(tx, old_key, new_key)?;
+        report.email_outbox_rows = email_outbox::reseal_all(tx, old_key, new_key)? as u64;
         Ok(())
     })?;
 
@@ -185,6 +189,7 @@ mod tests {
             user_totp_recovery_codes: 3,
             user_webauthn_credentials: 2,
             smtp_config: 1,
+            email_outbox_rows: 0,
         };
         assert_eq!(r.total(), 15);
     }

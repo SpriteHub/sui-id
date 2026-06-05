@@ -71,5 +71,10 @@ define_id!(
     "Identifier of a forgot-password reset token row. The token *value* itself is a 32-byte secret stored hashed; this id is the row's primary key."
 );
 
+define_id!(
+    EmailOutboxId,
+    "Identifier of a queued outbound email row in the persistent outbox."
+);
+
 #[cfg(test)]
 mod tests;

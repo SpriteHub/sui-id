@@ -87,6 +87,21 @@ async fn serve(args: &[String]) -> Result<()> {
     let router = build_router(startup.state.clone());
 
     sui_id::gc::spawn(startup.state.clone());
+    // RFC 001: spawn the persistent email outbox worker.
+    {
+        let smtp = std::sync::Arc::new(sui_id_core::mail::SmtpMailSender::new(
+            startup.state.db.clone(),
+            String::from("sui-id"),
+        ));
+        let worker = sui_id_core::mail::outbox::OutboxWorker::new(
+            startup.state.db.clone(),
+            smtp,
+            startup.state.clock.clone(),
+            5,   // idle_tick_secs
+            5,   // max_attempts
+        );
+        worker.spawn();
+    }
     // One-shot backfill: populate token_hash for any refresh_token rows
     // that predate migration 0019. Runs in the background; the system is
     // correct before it completes.
