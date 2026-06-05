@@ -5,7 +5,113 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.40.0] — Unreleased
+## [0.41.0] — Unreleased
+
+**P2 polish pass + RFC 040 completion.** This release fills the two
+tabs left empty in v0.40.0 (`/me/security/mfa` and
+`/me/security/sessions`), implements three deferred P2 items, and
+ships client secret rotation — a core feature that was missing until
+now.
+
+---
+
+### RFC 040 completion — MFA and Sessions tabs
+
+v0.40.0 added Overview, Passkeys, and Language tabs but left the MFA
+and Sessions tabs as 404 links in the navigation. Both are now
+implemented.
+
+#### `/me/security/mfa` (new route)
+
+Shows TOTP status and passkey count. Links to `/admin/profile` for
+actual enrollment / disable / recovery-code regeneration (the
+enrollment flow already exists there and is not duplicated).
+
+#### `/me/security/sessions` (new route)
+
+A standalone sessions tab backed by the existing
+`/me/security/sessions/{id}/revoke` and
+`/me/security/sessions/revoke-all-others` POST routes. Shows the
+active sessions table with per-row revoke buttons and a
+"sign out everywhere else" button.
+
+New structs: `MeMfaData`, `MeSessionsData`.
+New render functions: `render_me_mfa`, `render_me_sessions`.
+
+---
+
+### RFC 045 — User disable reason input
+
+The disable-user confirmation screen gains an optional `<textarea>`
+for the reason (max 200 chars). When supplied:
+
+- The `reason` field is passed through to `admin_uc::set_user_disabled`
+  as `Option<String>`.
+- A new internal helper `audit_with_note` stores the reason in the
+  `audit_log.note` column alongside the `user.disable` event.
+- Re-enable operations silently discard any reason.
+
+New i18n keys: `disable_reason_label`, `disable_reason_placeholder`,
+`disable_reason_hint` (×3 locales).
+
+---
+
+### RFC 046 — Audit log per-row copy ID button
+
+`audit_row_view` now renders a `copy_btn` (RFC 028 component) in a
+sixth column. The copyable value is a stable row identifier in the
+format `ISO-timestamp|actor|action|target`, useful for correlating
+with server logs and support tickets.
+
+---
+
+### RFC 047 — Dev mode summary + client secret rotation
+
+#### Dev mode summary (Part A)
+
+The `--dev` startup summary is now tab-separated:
+
+```
+==== sui-id dev summary =====================
+listen  http://127.0.0.1:8801
+admin   admin:admin-admin-admin
+user    alice:alice-alice-alice
+client  Test App  <uuid>  <secret>  http://localhost:3000/cb
+=============================================
+```
+
+Each credential is on its own line; terminal triple-click selects the
+value cleanly for copy-paste.
+
+#### Client secret rotation (Part B)
+
+`admin_uc::rotate_client_secret(db, clock, actor, client_id)` is now
+implemented. It generates a new 32-byte URL-safe token, hashes it with
+Argon2id, updates `clients.secret_hash`, and emits
+`client.rotate_secret` to the audit log.
+
+New route: `POST /admin/clients/{id}/rotate-secret`
+
+The new plaintext secret is passed to the client edit page via a
+`?rotated_secret=` query parameter and displayed once in a prominent
+banner. The query string is never stored server-side; the banner
+disappears on the next page load.
+
+New i18n-free UI: the "New client secret (shown once):" banner with
+`copy_btn` integration.
+
+---
+
+### Test results
+
+- `sui-id-i18n`: **12 tests pass**
+- `sui-id-store`: **36 tests pass**
+- `sui-id-core`: **114 tests pass**
+- `cargo check --workspace` + `cargo check --tests`: clean
+
+---
+
+## [0.40.0] — Previous release
 
 **PDF-spec compliance pass.** A re-review of both UI/UX design documents
 (`suiiduiuxonepageoverviewv0.29x.pdf`,

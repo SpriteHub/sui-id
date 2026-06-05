@@ -229,3 +229,20 @@ pub async fn update_consent_policy(
         Ok(())
     }).await
 }
+
+/// Update the client secret hash (RFC 047 — secret rotation).
+pub async fn set_secret_hash(
+    db: &Database,
+    id: ClientId,
+    hash: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> StoreResult<()> {
+    let h = hash.map(str::to_owned);
+    db.with_conn(move |conn| {
+        conn.execute(
+            "UPDATE clients SET secret_hash = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![h, now, id.to_string()],
+        )?;
+        Ok(())
+    }).await
+}

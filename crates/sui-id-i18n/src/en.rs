@@ -559,4 +559,10 @@ pub static STRINGS_EN: Strings = Strings {
     me_language_lede: "Set your preferred language. If not set, your browser settings or the server default will be used.",
     me_language_use_default: "System default (Cookie / Accept-Language)",
     me_language_saved_flash: "Language preference saved.",
+
+    disable_reason_label: "Reason for disabling (optional)",
+
+    disable_reason_placeholder: "e.g. Left company, suspicious activity",
+
+    disable_reason_hint: "Recorded in the audit log so future administrators can understand the context.",
 };

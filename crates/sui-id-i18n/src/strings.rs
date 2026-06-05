@@ -420,6 +420,11 @@ pub struct Strings {
     pub settings_advanced_build_section: &'static str,
     pub settings_advanced_storage_section: &'static str,
     pub settings_advanced_record_counts: &'static str,
+    // ---- User disable reason (RFC 045) ----
+    pub disable_reason_label: &'static str,
+    pub disable_reason_placeholder: &'static str,
+    pub disable_reason_hint: &'static str,
+
     // ---- /me/security tabs (RFC 040) ----
     pub me_tab_overview: &'static str,
     pub me_tab_mfa: &'static str,

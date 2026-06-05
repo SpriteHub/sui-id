@@ -20,6 +20,16 @@ use crate::cache::Caches;
 use sui_id_store::Database;
 
 async fn audit_ok(db: &Database, actor: UserId, action: &str, target: Option<String>) {
+    audit_with_note(db, actor, action, target, None).await;
+}
+
+async fn audit_with_note(
+    db: &Database,
+    actor: UserId,
+    action: &str,
+    target: Option<String>,
+    note: Option<String>,
+) {
     let _ = audit::append(
         db,
         &AuditLogRow {
@@ -28,7 +38,7 @@ async fn audit_ok(db: &Database, actor: UserId, action: &str, target: Option<Str
             action: action.to_owned(),
             target,
             result: "ok".into(),
-            note: None,
+            note,
         },
     ).await;
 }
@@ -132,6 +142,7 @@ pub async fn set_user_disabled(
     actor: UserId,
     target: UserId,
     disabled: bool,
+    reason: Option<String>,
 ) -> CoreResult<()> {
     require_admin(db, actor).await?;
     if actor == target && disabled {
@@ -148,11 +159,12 @@ pub async fn set_user_disabled(
         refresh_tokens::revoke_all_for_user(db, target).await?;
         auth_codes::invalidate_all_for_user(db, target).await?;
     }
-    audit_ok(
+    audit_with_note(
         db,
         actor,
         if disabled { "user.disable" } else { "user.enable" },
         Some(target.to_string()),
+        if disabled { reason } else { None },
     ).await;
     Ok(())
 }
@@ -707,4 +719,35 @@ mod tests {
         let r = validate_redirect_uri("javascript:alert(1)");
         assert!(matches!(r, Err(CoreError::BadRequest(_))));
     }
+}
+
+/// Rotate the client secret for a confidential client.
+///
+/// Returns the new plaintext secret (shown to the operator once).
+/// The plaintext is never stored — only the Argon2id hash is persisted.
+/// Returns `Err(CoreError::BadRequest)` if the client is a public client.
+pub async fn rotate_client_secret(
+    db: &Database,
+    clock: &SharedClock,
+    actor: UserId,
+    client_id: ClientId,
+) -> CoreResult<String> {
+    require_admin(db, actor).await?;
+    let client = clients::get(db, client_id).await.map_err(|e| match e {
+        sui_id_store::StoreError::NotFound => CoreError::NotFound,
+        other => CoreError::from(other),
+    })?;
+    if !client.confidential {
+        return Err(CoreError::BadRequest(
+            "cannot rotate secret for a public (PKCE-only) client".into(),
+        ));
+    }
+    let new_secret = tokens::random_token(32);
+    let new_hash = crate::password::hash_password(&new_secret)?;
+    clients::set_secret_hash(db, client_id, Some(&new_hash), clock.now()).await
+        .map_err(CoreError::from)?;
+    audit_ok(
+        db, actor, "client.rotate_secret", Some(client_id.to_string())
+    ).await;
+    Ok(new_secret)
 }

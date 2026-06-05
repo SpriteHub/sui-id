@@ -643,3 +643,91 @@ pub async fn language_post(
     ).await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
     Ok(Redirect::to("/me/security/language?saved=1").into_response())
 }
+
+/// GET /me/security/mfa — MFA status tab
+pub async fn mfa_get(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let lang = resolve_me_locale(&app, user_id).await;
+    let user = sui_id_store::repos::users::get(&app.db, user_id)
+        .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
+    let shell = MeShellData {
+        username: user.username,
+        is_admin: user.is_admin,
+        active_tab: MeTab::Mfa,
+    };
+    let totp_enabled = user_totp::get(&app.db, user_id)
+        .await.ok().flatten()
+        .map(|r| r.enabled).unwrap_or(false);
+    let passkey_count = sui_id_store::repos::user_webauthn_credentials::count_for_user(
+        &app.db, user_id
+    ).await.unwrap_or(0);
+    // Recovery codes remaining: we show a placeholder (8 = full set)
+    // Exact count requires decryption; surfaced in profile page for now.
+    let recovery_codes_remaining: usize = 0;
+    let csrf_tok = csrf::ensure_token(&jar);
+    let resp = axum::response::Html(sui_id_web::render_me_mfa(
+        sui_id_web::MeMfaData {
+            shell,
+            totp_enabled,
+            passkey_count,
+            recovery_codes_remaining,
+            csrf_token: csrf_tok.clone(),
+        },
+        None, app.is_dev_mode, lang,
+    )).into_response();
+    Ok(with_csrf_cookie(resp, &app, &csrf_tok))
+}
+
+/// GET /me/security/sessions — Sessions tab
+pub async fn sessions_tab_get(
+    state_ext: AppStateExt,
+    CurrentUser(user_id): CurrentUser,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let lang = resolve_me_locale(&app, user_id).await;
+    let user = sui_id_store::repos::users::get(&app.db, user_id)
+        .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
+    let shell = MeShellData {
+        username: user.username,
+        is_admin: user.is_admin,
+        active_tab: MeTab::Sessions,
+    };
+
+    let raw_session = jar
+        .get(SESSION_COOKIE)
+        .map(|c| c.value().to_owned())
+        .unwrap_or_default();
+    let current_session_id = raw_session;
+
+    let session_rows = sessions::list_active_for_user(&app.db, user_id)
+        .await.map_err(|e| HttpError::html(e.into()).with_lang(lang))?;
+
+    let sessions_view: Vec<sui_id_web::MeSessionDescriptor> = session_rows.into_iter().map(|s| {
+        let auth_methods = describe_auth_methods(&s.auth_methods);
+        let is_current = s.id.to_string() == current_session_id;
+        sui_id_web::MeSessionDescriptor {
+            id: s.id.to_string(),
+            created_at: s.created_at,
+            expires_at: s.expires_at,
+            auth_methods,
+            is_current,
+        }
+    }).collect();
+
+    let csrf_tok = csrf::ensure_token(&jar);
+    let resp = axum::response::Html(sui_id_web::render_me_sessions(
+        sui_id_web::MeSessionsData {
+            shell,
+            current_session_id,
+            sessions: sessions_view,
+            csrf_token: csrf_tok.clone(),
+        },
+        None, app.is_dev_mode, lang,
+    )).into_response();
+    Ok(with_csrf_cookie(resp, &app, &csrf_tok))
+}

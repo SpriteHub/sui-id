@@ -545,6 +545,9 @@ pub struct DisableForm {
     pub disabled: String,
     #[serde(rename = "_csrf", default)]
     pub csrf: String,
+    /// Optional reason for disabling the user (RFC 045). Stored in audit note.
+    #[serde(default)]
+    pub reason: String,
 }
 
 pub async fn users_set_disabled(
@@ -559,7 +562,13 @@ pub async fn users_set_disabled(
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
     let value = matches!(form.disabled.as_str(), "true" | "on" | "1");
-    admin_uc::set_user_disabled(&app.db, admin_id, target, value).await.map_err(HttpError::html)?;
+    let reason_opt = if form.reason.trim().is_empty() {
+        None
+    } else {
+        Some(form.reason.trim().to_string())
+    };
+    admin_uc::set_user_disabled(&app.db, admin_id, target, value, reason_opt)
+        .await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/users").into_response())
 }
 
@@ -1004,11 +1013,19 @@ pub async fn clients_delete(
     Ok(Redirect::to("/admin/clients").into_response())
 }
 
+#[derive(Debug, serde::Deserialize, Default)]
+pub struct ClientEditQuery {
+    /// Present after a successful secret rotation — contains the new
+    /// plaintext secret to display once (RFC 047).
+    pub rotated_secret: Option<String>,
+}
+
 pub async fn clients_edit_get(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
     jar: CookieJar,
     Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<ClientEditQuery>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     let target = ClientId::from_str(&id)
@@ -1025,6 +1042,7 @@ pub async fn clients_edit_get(
             confidential: row.confidential,
             is_disabled: row.is_disabled,
             consent_policy: row.consent_policy.as_str().to_string(),
+            freshly_rotated_secret: q.rotated_secret,
         },
         None,
         token.clone(),
@@ -1844,4 +1862,39 @@ fn _silence_state(_: &CurrentUser) {}
 fn _silence_state2() -> Option<bool> {
     let _ = state::is_initialized;
     None
+}
+
+/// POST /admin/clients/{id}/rotate-secret — rotate client secret (RFC 047).
+///
+/// The new plaintext secret is returned in the redirect response via a
+/// dedicated query parameter so the client edit page can display it once.
+/// After the page renders the secret, the query parameter is gone; the
+/// plaintext is never stored in any server-side state.
+pub async fn clients_rotate_secret_post(
+    state_ext: AppStateExt,
+    CurrentAdmin(admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
+    jar: CookieJar,
+    Path(id): Path<String>,
+    Form(form): Form<CsrfOnlyForm>,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/clients").await
+    {
+        return Ok(redirect);
+    }
+    let target = ClientId::from_str(&id)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
+    let new_secret = admin_uc::rotate_client_secret(
+        &app.db, &app.clock, admin_id, target
+    ).await.map_err(HttpError::html)?;
+    // Redirect to edit page with the new secret in the query string.
+    // The secret is URL-encoded; the edit page displays it once and the
+    // browser history entry is replaced by the subsequent navigation.
+    let encoded = percent_encoding::utf8_percent_encode(
+        &new_secret, percent_encoding::NON_ALPHANUMERIC
+    ).to_string();
+    Ok(Redirect::to(&format!("/admin/clients/{id}/edit?rotated_secret={encoded}")).into_response())
 }

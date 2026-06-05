@@ -289,42 +289,22 @@ pub fn print_dev_warnings(bind: &str, seed_source: &str) {
 /// Print a per-credential summary after seeding succeeds.
 pub fn print_seed_summary(seed: &DevSeed, outcome: &SeedOutcome, listen_addr: &str) {
     eprintln!();
-    eprintln!("OIDC discovery: http://{listen_addr}/.well-known/openid-configuration");
-    eprintln!("Admin console:  http://{listen_addr}/admin");
-    eprintln!();
-    eprintln!("Pre-seeded admin:");
-    eprintln!(
-        "  username: {}    password: {}",
-        seed.admin.username, seed.admin.password
-    );
-    if !seed.users.is_empty() {
-        eprintln!();
-        eprintln!("Pre-seeded users:");
-        for u in &seed.users {
-            eprintln!(
-                "  username: {:<10}  password: {}",
-                u.username, u.password
-            );
-        }
+    // RFC 047: tab-separated dev summary for easy terminal triple-click copy.
+    eprintln!("==== sui-id dev summary =============================");
+    eprintln!("listen\thttp://{listen_addr}");
+    eprintln!("admin\t{}:{}", seed.admin.username, seed.admin.password);
+    for u in &seed.users {
+        eprintln!("user\t{}:{}", u.username, u.password);
     }
-    if !outcome.clients.is_empty() {
-        eprintln!();
-        eprintln!("Pre-seeded OIDC clients:");
-        for c in &outcome.clients {
-            eprintln!("  name:          {}", c.name);
-            eprintln!("  client_id:     {}", c.client_id);
-            match c.client_secret.as_deref() {
-                None => eprintln!("  client_secret: (public client / PKCE only)"),
-                Some(s) => eprintln!("  client_secret: {}", s),
-            }
-            eprintln!("  scopes:        {}", c.allowed_scopes);
-            eprintln!("  redirect_uri:");
-            for uri in &c.redirect_uris {
-                eprintln!("                 {}", uri);
-            }
-            eprintln!();
-        }
+    for c in &outcome.clients {
+        let secret_part = c.client_secret.as_deref().unwrap_or("(public)");
+        let uris = c.redirect_uris.join(",");
+        eprintln!("client\t{}\t{}\t{}\t{}",
+            c.name, c.client_id, secret_part, uris);
     }
+    eprintln!("=====================================================");
+    eprintln!("OIDC discovery:\thttp://{listen_addr}/.well-known/openid-configuration");
+    eprintln!("Admin console: \thttp://{listen_addr}/admin");
 }
 
 /// Prompt for `yes` confirmation when binding to an

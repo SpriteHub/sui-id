@@ -144,6 +144,8 @@ pub fn build_router(app: AppState) -> Router {
         )
         .route("/admin/signing-keys", get(admin::signing_keys_get))
         .route("/admin/signing-keys/rotate", post(admin::signing_keys_rotate))
+        .route("/admin/clients/{id}/rotate-secret",
+               post(admin::clients_rotate_secret_post))
         .route(
             "/admin/signing-keys/{id}/delete",
             post(admin::signing_keys_delete),
@@ -209,6 +211,10 @@ pub fn build_router(app: AppState) -> Router {
                get(crate::handlers::me_security::security_redirect))
         .route("/me/security/overview",
                get(crate::handlers::me_security::overview_get))
+        .route("/me/security/mfa",
+               get(crate::handlers::me_security::mfa_get))
+        .route("/me/security/sessions",
+               get(crate::handlers::me_security::sessions_tab_get))
         .route("/me/security/passkeys",
                get(crate::handlers::me_security::passkeys_get))
         .route("/me/security/passkeys/{id}/rename",

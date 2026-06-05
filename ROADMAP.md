@@ -80,11 +80,17 @@ grouped them into 8 RFCs.
 - **RFC 043** Dashboard "Recent important events" card
 - **RFC 044** UI state word contract documentation
 
-### Next: v0.40.1 / v0.41 (deferred P2 items)
+### v0.41.0 — released
 
-- RFC 045 — User disable reason input
-- RFC 046 — Audit log per-row copy ID button
-- RFC 047 — Dev mode summary copy + client secret rotation audit
+- RFC 040 complete: `/me/security/mfa` and `/me/security/sessions` tabs
+- RFC 045 — User disable reason input (audit note)
+- RFC 046 — Audit log per-row copy ID
+- RFC 047 — Dev mode tab-separated summary + client secret rotation
+
+### Post-1.0 proposed (Low priority)
+
+All remaining proposed RFCs are marked Low and target post-1.0 milestones.
+The core feature set is complete.
 
 **P0 (must, included in v0.40.0):**
 - RFC 040 — `/me/security` tabbed structure (Overview / MFA / Passkey

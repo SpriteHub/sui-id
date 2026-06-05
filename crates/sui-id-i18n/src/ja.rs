@@ -559,4 +559,10 @@ pub static STRINGS_JA: Strings = Strings {
     me_language_lede: "優先言語を設定します。未設定の場合はブラウザ設定またはサーバー既定値が使用されます。",
     me_language_use_default: "システム既定（Cookie / Accept-Language）",
     me_language_saved_flash: "言語設定を保存しました。",
+
+    disable_reason_label: "無効化の理由（任意）",
+
+    disable_reason_placeholder: "例: 退職のため、不審なアクティビティのため",
+
+    disable_reason_hint: "監査ログに記録されます。将来の管理者が経緯を確認できます。",
 };

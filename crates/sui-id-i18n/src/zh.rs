@@ -562,4 +562,10 @@ pub static STRINGS_ZH: Strings = Strings {
     me_language_lede: "设置您的首选语言。未设置时将使用浏览器设置或服务器默认值。",
     me_language_use_default: "系统默认（Cookie / Accept-Language）",
     me_language_saved_flash: "语言偏好已保存。",
+
+    disable_reason_label: "禁用原因（可选）",
+
+    disable_reason_placeholder: "例如：已离职、存在可疑活动",
+
+    disable_reason_hint: "将记录在审计日志中，便于未来管理员了解背景。",
 };

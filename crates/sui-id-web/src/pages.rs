@@ -1460,6 +1460,8 @@ pub struct ClientEditData {
     pub is_disabled: bool,
     /// RFC 038: "none", "first_time", or "always"
     pub consent_policy: String,
+    /// RFC 047: populated only when the secret was just rotated. Shown once.
+    pub freshly_rotated_secret: Option<String>,
 }
 
 pub fn render_client_edit(
@@ -1479,6 +1481,7 @@ pub fn render_client_edit(
             confidential,
             is_disabled,
             consent_policy,
+            freshly_rotated_secret,
         } = data;
         let post_url = format!("/admin/clients/{id}/edit");
         let kind = if confidential { "confidential" } else { "public" };
@@ -1500,6 +1503,16 @@ pub fn render_client_edit(
                     </div>
                 </header>
                 {flash_banner(flash)}
+                {freshly_rotated_secret.map(|sec| {
+                    let sec2 = sec.clone();
+                    view! {
+                        <div class="banner banner--warning" role="alert" style="margin-bottom:var(--space-3)">
+                            <strong>"New client secret (shown once):"</strong>
+                            <span class="code" style="margin-left:var(--space-2)">{sec}</span>
+                            {copy_btn(sec2, "Client Secret")}
+                        </div>
+                    }
+                })}
 
                 <div class="card">
                     <h3 class="card__title">"基本情報"</h3>
@@ -1595,13 +1608,23 @@ fn audit_row_view(e: AuditLogEntryDto) -> impl IntoView {
         }
         _ => view! { <span class="badge">{e.result.clone()}</span> }.into_any(),
     };
+    // RFC 046: stable copyable row identifier — time|actor|action|target
+    let row_id = format!(
+        "{}|{}|{}|{}",
+        e.at.format("%Y-%m-%dT%H:%M:%SZ"),
+        e.actor.map(|a| a.to_string()).unwrap_or_else(|| "-".into()),
+        e.action,
+        e.target.clone().unwrap_or_default(),
+    );
+    let actor_str = e.actor.map(|a| a.to_string()).unwrap_or_else(|| "-".into());
     view! {
         <tr>
             <td class="muted">{fmt_time(e.at)}</td>
-            <td><span class="code">{e.actor.map(|a| a.to_string()).unwrap_or_else(|| "-".into())}</span></td>
+            <td><span class="code">{actor_str}</span></td>
             <td>{e.action}</td>
             <td><span class="code">{e.target.unwrap_or_default()}</span></td>
             <td>{result_badge}</td>
+            <td>{copy_btn(row_id, "row ID")}</td>
         </tr>
     }
 }
@@ -1872,14 +1895,26 @@ pub fn render_confirm_disable_user(
                         <p>{badge}</p>
                         <p class="muted" style="font-size:var(--font-size-caption)">{rev}</p>
                     })}
-                    <form method="post" action=action class="row" style="gap:var(--space-2);margin-top:var(--space-4)">
+                    <form method="post" action=action class="stack" style="margin-top:var(--space-4)">
                         <input type="hidden" name="_csrf" value=data.csrf_token />
                         <input type="hidden" name="disabled" value=new_state />
                         <input type="hidden" name="_confirmed" value="1" />
-                        <button type="submit" class={if data.is_disabled {"btn"} else {"danger"}}>
-                            {btn}
-                        </button>
-                        <a href="/admin/users" class="button secondary">{t.confirm_cancel}</a>
+                        {(!data.is_disabled).then(|| view! {
+                            <div class="field">
+                                <label for="disable-reason" class="field__label">
+                                    {t.disable_reason_label}
+                                </label>
+                                <textarea id="disable-reason" name="reason" rows="2" maxlength="200"
+                                          placeholder=t.disable_reason_placeholder></textarea>
+                                <span class="field__hint">{t.disable_reason_hint}</span>
+                            </div>
+                        })}
+                        <div class="row" style="gap:var(--space-2)">
+                            <button type="submit" class={if data.is_disabled {"btn"} else {"danger"}}>
+                                {btn}
+                            </button>
+                            <a href="/admin/users" class="button secondary">{t.confirm_cancel}</a>
+                        </div>
                     </form>
                 </div>
             </Shell>
@@ -2370,6 +2405,181 @@ fn me_security_tabs(active: MeTab, lang: sui_id_i18n::Locale) -> impl IntoView {
             {tab_items}
         </nav>
     }
+}
+
+
+pub struct MeMfaData {
+    pub shell: MeShellData,
+    pub totp_enabled: bool,
+    pub passkey_count: usize,
+    pub recovery_codes_remaining: usize,
+    pub csrf_token: String,
+}
+
+pub struct MeSessionsData {
+    pub shell: MeShellData,
+    pub current_session_id: String,
+    pub sessions: Vec<MeSessionDescriptor>,
+    pub csrf_token: String,
+}
+
+pub fn render_me_mfa(
+    data: MeMfaData,
+    flash: Option<Flash>,
+    _is_dev: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let tabs = me_security_tabs(MeTab::Mfa, lang);
+        let MeMfaData { shell: _, totp_enabled, passkey_count, recovery_codes_remaining, csrf_token } = data;
+        view! {
+            <Shell title=t.me_tab_mfa.to_string() show_nav=true current=Some("me".to_string()) lang=lang>
+                <header class="page-header">
+                    <h1 class="page-header__title">{t.me_tab_mfa}</h1>
+                </header>
+                {tabs}
+                {flash_banner(flash)}
+                <div class="stack" style="margin-top:var(--space-4)">
+                    // TOTP card
+                    <section class="card">
+                        <h2 class="card__title">{t.profile_mfa_totp_card_title}</h2>
+                        <dl class="kv-list">
+                            {kv_bool_badge(t.me_security_mfa_status_label, totp_enabled)}
+                            {if totp_enabled {
+                                view! {
+                                    <div>
+                                        {kv_row(t.me_overview_section_activity,
+                                                format!("{} codes remaining", recovery_codes_remaining))}
+                                    </div>
+                                }.into_any()
+                            } else { view! { <div/> }.into_any() }}
+                        </dl>
+                        <div class="row" style="margin-top:var(--space-3)">
+                            {if totp_enabled {
+                                view! {
+                                    <>
+                                    <form method="post" action="/admin/profile/mfa/recovery-codes/regenerate">
+                                        <input type="hidden" name="_csrf" value=csrf_token.clone()/>
+                                        <button type="submit" class="secondary">{t.profile_mfa_regenerate_codes}</button>
+                                    </form>
+                                    <a href="/admin/profile" class="button secondary">{t.me_security_mfa_manage}</a>
+                                    </>
+                                }.into_any()
+                            } else {
+                                view! {
+                                    <a href="/admin/profile" class="button">{t.me_security_mfa_manage}</a>
+                                }.into_any()
+                            }}
+                        </div>
+                    </section>
+                    // Passkeys summary
+                    <section class="card">
+                        <h2 class="card__title">{t.me_passkey_section_title}</h2>
+                        {kv_row(t.profile_passkeys_section, passkey_count.to_string())}
+                        <p style="margin-top:var(--space-3)">
+                            <a href="/me/security/passkeys" class="button secondary">{t.me_tab_passkey}</a>
+                        </p>
+                    </section>
+                </div>
+            </Shell>
+        }
+    })
+}
+
+pub fn render_me_sessions(
+    data: MeSessionsData,
+    flash: Option<Flash>,
+    _is_dev: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        let tabs = me_security_tabs(MeTab::Sessions, lang);
+        let MeSessionsData { shell: _, current_session_id, sessions, csrf_token } = data;
+        let revoke_label = t.me_security_sessions_revoke;
+        let revoke_confirm = t.me_security_sessions_revoke_confirm.to_owned();
+        let current_badge = t.me_security_sessions_current_badge;
+        let csrf2 = csrf_token.clone();
+
+        let session_rows: Vec<_> = sessions.into_iter().map(|s| {
+            let sid = s.id.clone();
+            let created = s.created_at.format("%Y/%m/%d %H:%M").to_string();
+            let expires = s.expires_at.format("%Y/%m/%d %H:%M").to_string();
+            let methods = s.auth_methods.clone();
+            let is_current = s.is_current;
+            let csrf_row = csrf_token.clone();
+            let revoke_action = format!("/me/security/sessions/{sid}/revoke");
+            let confirm_js = revoke_confirm.replace('\'', "\'");
+            let action_cell = if is_current {
+                view! {
+                    <td><span class="badge badge--ok">{current_badge}</span></td>
+                }.into_any()
+            } else {
+                view! {
+                    <td>
+                        <form method="post" action=revoke_action
+                              onsubmit=format!("return confirm('{confirm_js}')")>
+                            <input type="hidden" name="_csrf" value=csrf_row/>
+                            <button type="submit" class="secondary danger-text">{revoke_label}</button>
+                        </form>
+                    </td>
+                }.into_any()
+            };
+            view! {
+                <tr>
+                    <td><time>{created}</time></td>
+                    <td><time>{expires}</time></td>
+                    <td>{methods}</td>
+                    {action_cell}
+                </tr>
+            }
+        }).collect();
+
+        let revoke_all_confirm = t.me_security_sessions_revoke_all_others_confirm.replace('\'', "\'");
+        view! {
+            <Shell title=t.me_security_sessions_section.to_string() show_nav=true current=Some("me".to_string()) lang=lang>
+                <header class="page-header">
+                    <h1 class="page-header__title">{t.me_security_sessions_section}</h1>
+                </header>
+                {tabs}
+                {flash_banner(flash)}
+                <div class="stack" style="margin-top:var(--space-4)">
+                    <section class="card">
+                        <p class="muted">{t.me_security_sessions_lede}</p>
+                        {if session_rows.is_empty() {
+                            view! { <p class="muted">{t.me_security_sessions_lede}</p> }.into_any()
+                        } else {
+                            view! {
+                                <div class="table-wrap">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>{t.me_security_sessions_th_started}</th>
+                                                <th>{t.me_security_sessions_th_expires}</th>
+                                                <th>{t.me_security_sessions_th_factors}</th>
+                                                <th/>
+                                            </tr>
+                                        </thead>
+                                        <tbody>{session_rows}</tbody>
+                                    </table>
+                                </div>
+                            }.into_any()
+                        }}
+                        <div style="margin-top:var(--space-3)">
+                            <form method="post" action="/me/security/sessions/revoke-all-others"
+                                  onsubmit=format!("return confirm('{revoke_all_confirm}')")>
+                                <input type="hidden" name="_csrf" value=csrf2/>
+                                <button type="submit" class="secondary">
+                                    {t.me_security_sessions_revoke_all_others}
+                                </button>
+                            </form>
+                        </div>
+                    </section>
+                </div>
+            </Shell>
+        }
+    })
 }
 
 pub fn render_me_overview(
