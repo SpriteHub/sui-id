@@ -23,7 +23,7 @@ async fn me_security_renders_in_en() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/me/security")
+                .uri("/me/security/overview")
                 .header(header::COOKIE, format!("sui_id_session={session}"))
                 .header(header::ACCEPT_LANGUAGE, "en")
                 .body(Body::empty())
@@ -51,7 +51,7 @@ async fn me_security_renders_in_ja() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/me/security")
+                .uri("/me/security/overview")
                 .header(header::COOKIE, format!("sui_id_session={session}"))
                 .header(header::ACCEPT_LANGUAGE, "ja")
                 .body(Body::empty())
@@ -106,7 +106,7 @@ async fn me_security_cookie_overrides_accept_language() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/me/security")
+                .uri("/me/security/overview")
                 .header(
                     header::COOKIE,
                     format!("sui_id_session={session}; sui_id_lang=en"),

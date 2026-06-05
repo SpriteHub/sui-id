@@ -140,8 +140,8 @@ code, .code {
 /* Sign-out form in nav — renders a button that looks like a nav link    */
 .app-nav__signout-form {
     margin-top: auto;
-    border-top: 1px solid var(--color-border);
-    padding-top: var(--space-sm);
+    border-top: 1px solid var(--border-default);
+    padding-top: var(--space-2);
 }
 .app-nav__signout {
     background: none;
@@ -150,13 +150,13 @@ code, .code {
     padding: 0;
     text-align: left;
     width: 100%;
-    color: var(--color-text-secondary);
+    color: var(--fg-muted);
     font: inherit;
 }
 .app-nav__signout:hover,
 .app-nav__signout:focus-visible {
-    color: var(--color-text-primary);
-    background-color: var(--color-surface-raised);
+    color: var(--fg-default);
+    background-color: var(--surface-elevated);
     text-decoration: none;
 }
 
@@ -593,10 +593,10 @@ section + section { margin-top: var(--space-5); }
     align-items: center;
     gap: 0.25em;
     padding: 0.1em 0.5em;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-default);
     border-radius: var(--radius-sm, 4px);
     background: transparent;
-    color: var(--color-text-secondary);
+    color: var(--fg-muted);
     font: inherit;
     font-size: 0.8em;
     cursor: pointer;
@@ -608,9 +608,9 @@ section + section { margin-top: var(--space-5); }
 .clipboard-available .copy-btn { display: inline-flex; }
 .copy-btn:hover,
 .copy-btn:focus-visible {
-    color: var(--color-text-primary);
-    border-color: var(--color-text-secondary);
-    outline: 2px solid var(--color-focus-ring, currentColor);
+    color: var(--fg-default);
+    border-color: var(--fg-muted);
+    outline: 2px solid var(--state-focus, currentColor);
     outline-offset: 2px;
 }
 

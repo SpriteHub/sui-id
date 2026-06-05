@@ -5,6 +5,153 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.0] — Unreleased
+
+**Phase A of the v0.42 → v1.0-rc UI/UX hardening plan.** This release
+addresses three correctness gaps that left the v0.41.0 admin panel
+rendering source identifiers as page titles, dropping styles on the
+warning banner and focus rings, and showing the entire navigation chrome
+in English regardless of the user's locale. Ships three RFCs and three
+new CI invariants to keep the regressions from coming back.
+
+---
+
+### RFC 048 — Fix `t.xxx` brace-missing literals in `pages.rs`
+
+The Leptos `view!` macro treats bare identifiers between tags as text
+content, not expressions. Forty-eight call sites in `pages.rs` omitted
+the curly braces required to interpolate a value, so on the rendered
+page the visitor saw the literal source text (`t.dashboard_title`,
+`t.users_create_button`, `t.audit_title`, …) where a localised heading
+or button label was supposed to appear.
+
+The affected sites covered every admin page: dashboard, users, clients,
+client edit, audit log, signing keys, settings (all five tabs). Page
+titles, primary action buttons, badge text, and section headings were
+all impacted.
+
+**Fix.** Wrap all 48 expressions in `{…}`. Adds a CI step
+(`text-leaks`) that grep-fails on the pattern, preventing the regression
+class from recurring.
+
+The `kv_bool_badge` helper in `pages.rs` gained a `t: &'static Strings`
+parameter (the function referenced `t` without having it in scope after
+the brace fix); 14 call sites updated.
+
+### RFC 049 — CSS token vocabulary freeze
+
+Seven `var(--…)` references in `pages.rs` and `components.rs` pointed
+at CSS custom properties that were never declared in `tokens.rs`.
+Browsers silently drop declarations whose `var()` doesn't resolve, so
+the affected elements rendered with no border, no colour, or no
+spacing.
+
+Specific defects fixed:
+
+- `var(--colour-warn)` → `var(--warning-default)` — dashboard
+  "Action required" banner now has its warn-coloured left border.
+- `var(--color-border)` → `var(--border-default)` — nav signout
+  divider and copy-button border now render.
+- `var(--color-focus-ring)` → `var(--state-focus)` — copy-button
+  focus ring now appears on keyboard focus.
+- `var(--color-surface-raised)` → `var(--surface-elevated)` — nav
+  signout hover/focus background now renders.
+- `var(--color-text-primary)` → `var(--fg-default)` and
+  `var(--color-text-secondary)` → `var(--fg-muted)` — nav signout
+  text colour now distinguishes idle / hover / focus states.
+- `var(--space-sm)` → `var(--space-2)` — nav signout vertical
+  padding now renders.
+
+Adds a CI step (`css-tokens`) that fails when any `var(--…)` reference
+doesn't resolve against a token declared in `tokens.rs` or
+`components.rs`. Logs declared-but-unused tokens as an advisory warning.
+
+### RFC 050 — Admin chrome i18n (Nav, Footer, ThemeToggle)
+
+The application chrome — the navigation rendered by `Shell`, the
+footer tagline and accessibility badges, the theme-toggle buttons —
+hardcoded its visible labels. The `nav_*` i18n keys already existed in
+`Strings` and were never read by any code; the footer tagline,
+accessibility badges and theme-toggle labels had no i18n keys at all.
+As a result, every admin page rendered the same English navigation and
+the same hardcoded Japanese footer line regardless of the user's
+locale.
+
+**Fix.** Threads the resolved `Locale` through `Shell`, `AuthShell`,
+`Nav`, `Footer`, and `ThemeToggle`. The `lang` parameter on `Shell`
+and `AuthShell` is now mandatory (was `Option<Locale>` with an
+`.unwrap_or_default()` fallback that hid the missing-locale case from
+callers). Reads the existing `nav_*` keys; adds 13 new keys for the
+footer tagline (`footer_tagline`), accessibility badges
+(`a11y_keyboard`, `a11y_screen_reader`, `a11y_contrast`,
+`footer_a11y_group_label`), theme-toggle group label and per-button
+labels (`theme_toggle_*`), and navigation aria-labels
+(`nav_aria_main`, `nav_aria_signout`). Each new key has values in
+ja / en / zh.
+
+Eight `<Shell>` call sites in `pages.rs` were updated to pass
+`lang=lang`.
+
+### Resolution chain extended to `/me/security/*`
+
+A pre-existing v0.41.0 bug surfaced while running the e2e suite: the
+`resolve_me_locale` helper inside `handlers/me_security.rs` only
+consulted the user's `preferred_lang` and the server's `default_lang`,
+ignoring the `Accept-Language` header and the `sui_id_lang` cookie.
+The standard `RequestLocale` extractor was already implementing the
+correct four-tier chain (user → cookie → header → server default) for
+the rest of the application, but the self-service routes had grown
+their own incomplete implementation.
+
+**Fix.** Removed `resolve_me_locale`. The six affected handlers
+(`overview_get`, `mfa_get`, `passkeys_get`, `sessions_tab_get`,
+`language_get`, `language_post`) now take
+`RequestLocale(req_locale): RequestLocale` as an extractor argument
+and use it directly. Accept-Language and the `sui_id_lang` cookie now
+correctly override the server's default locale for `/me/security/*`
+pages.
+
+This was strictly necessary for the i18n e2e tests
+(`i18n_me_security::me_security_renders_in_en` and two siblings) to
+pass against the now-locale-aware chrome. It is also a real
+production fix: users with non-default `Accept-Language` previously
+saw self-service pages in the server's default language regardless of
+their browser preference.
+
+---
+
+### Test changes
+
+- `i18n_basic` e2e tests adjusted to assert on `<html lang="ja"`
+  (without the closing `>`), since `AuthShell` now also emits a
+  `dir="ltr"` attribute alongside `lang`. The intent of the test
+  (the lang attribute carries the right value) is preserved.
+- `i18n_me_security` e2e tests updated to target
+  `/me/security/overview` directly instead of `/me/security` (which
+  is a 303 redirect by design — see RFC 040). Pre-existing test bug
+  unrelated to Phase A; fixed in this release to unblock CI.
+
+### CI invariants added
+
+Three new check jobs in `.github/workflows/ci.yml`:
+
+- `text-leaks` — fails on bare `t.field` identifiers between tags
+  (RFC 048).
+- `css-tokens` — fails on `var(--…)` references to undeclared tokens;
+  advisory warning for declared-but-unused tokens (RFC 049).
+
+### Tests
+
+All unit tests pass: i18n 12, web 0, shared 13, store 36, core 114 =
+**175/175 unit tests pass**.
+
+E2e: i18n_basic 8/8 pass, i18n_me_security 4/4 pass, i18n_phase2 pass,
+csrf / dashboard / acr_amr / introspection sampled and passing. The
+full e2e suite (70 tests) is not exhaustively re-verified end-to-end
+in this release as the CI pipeline will do that on PR.
+
+---
+
 ## [0.41.0] — Unreleased
 
 **P2 polish pass + RFC 040 completion.** This release fills the two

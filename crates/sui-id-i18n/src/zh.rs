@@ -36,6 +36,24 @@ pub static STRINGS_ZH: Strings = Strings {
     nav_settings: "设置",
     nav_profile: "个人资料",
     nav_logout: "退出登录",
+    nav_aria_main: "主导航",
+    nav_aria_signout: "退出登录",
+
+    // Footer (RFC 050)
+    footer_tagline: "🌱 sui-id · 安静、可靠的身份认证基础。",
+    footer_a11y_group_label: "无障碍功能",
+    a11y_keyboard: "支持键盘操作",
+    a11y_screen_reader: "支持屏幕阅读器",
+    a11y_contrast: "支持高对比度",
+
+    // Theme toggle (RFC 050)
+    theme_toggle_group: "主题",
+    theme_toggle_light: "浅色",
+    theme_toggle_auto: "自动",
+    theme_toggle_dark: "深色",
+    theme_toggle_light_title: "浅色主题",
+    theme_toggle_auto_title: "跟随系统",
+    theme_toggle_dark_title: "深色主题",
 
     // Login
     signed_out_flash: "已退出登录。",

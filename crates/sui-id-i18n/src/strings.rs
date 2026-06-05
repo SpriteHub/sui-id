@@ -44,6 +44,24 @@ pub struct Strings {
     pub nav_settings: &'static str,
     pub nav_profile: &'static str,
     pub nav_logout: &'static str,
+    pub nav_aria_main: &'static str,
+    pub nav_aria_signout: &'static str,
+
+    // ---- Footer (RFC 050) ----
+    pub footer_tagline: &'static str,
+    pub footer_a11y_group_label: &'static str,
+    pub a11y_keyboard: &'static str,
+    pub a11y_screen_reader: &'static str,
+    pub a11y_contrast: &'static str,
+
+    // ---- Theme toggle (RFC 050) ----
+    pub theme_toggle_group: &'static str,
+    pub theme_toggle_light: &'static str,
+    pub theme_toggle_auto: &'static str,
+    pub theme_toggle_dark: &'static str,
+    pub theme_toggle_light_title: &'static str,
+    pub theme_toggle_auto_title: &'static str,
+    pub theme_toggle_dark_title: &'static str,
 
     // ---- Login ----
     pub signed_out_flash: &'static str,

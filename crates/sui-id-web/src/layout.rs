@@ -96,22 +96,22 @@ const COPY_JS: &str = r#"
 
 /// Wrap a page body in the standard sui-id chrome.
 ///
-/// `lang` controls the `<html lang="…">` attribute; pass the
-/// current request's resolved [`sui_id_i18n::Locale`].
+/// `lang` controls the `<html lang="…">` attribute and propagates
+/// down to `Nav`, `Footer`, and `ThemeToggle` so every label in the
+/// admin chrome reads in the user's locale (RFC 050).
 #[component]
 pub fn Shell(
     title: String,
     show_nav: bool,
     current: Option<String>,
-    #[prop(optional)] lang: Option<sui_id_i18n::Locale>,
+    lang: sui_id_i18n::Locale,
     /// When true, renders the DEV MODE banner (RFC 032).
     #[prop(optional)] dev_mode: Option<bool>,
     children: Children,
 ) -> impl IntoView {
     let stylesheet = format!("{}\n{}", TOKENS_CSS, COMPONENTS_CSS);
-    let locale = lang.unwrap_or_default();
-    let lang_tag = locale.tag();
-    let dir_attr = locale.direction();
+    let lang_tag = lang.tag();
+    let dir_attr = lang.direction();
     view! {
         <html lang=lang_tag dir=dir_attr>
             <head>
@@ -132,10 +132,12 @@ pub fn Shell(
                 })}
                 <header class="app-header">
                     <h1 class="app-header__brand">"sui-id"</h1>
-                    {show_nav.then(|| view! { <Nav current=current.clone() csrf_token="".to_string() /> })}
+                    {show_nav.then(|| view! {
+                        <Nav current=current.clone() lang=lang csrf_token="".to_string() />
+                    })}
                 </header>
                 <main class="app-main">{children()}</main>
-                <Footer />
+                <Footer lang=lang />
             </body>
         </html>
     }
@@ -148,13 +150,14 @@ pub fn Shell(
 #[component]
 pub fn AuthShell(
     title: String,
-    #[prop(optional)] lang: Option<sui_id_i18n::Locale>,
+    lang: sui_id_i18n::Locale,
     children: Children,
 ) -> impl IntoView {
     let stylesheet = format!("{}\n{}", TOKENS_CSS, COMPONENTS_CSS);
-    let lang_tag = lang.unwrap_or_default().tag();
+    let lang_tag = lang.tag();
+    let dir_attr = lang.direction();
     view! {
-        <html lang=lang_tag>
+        <html lang=lang_tag dir=dir_attr>
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -170,29 +173,30 @@ pub fn AuthShell(
                 <main class="app-main app-main--narrow auth-page">
                     <div class="auth-card">{children()}</div>
                 </main>
-                <Footer />
+                <Footer lang=lang />
             </body>
         </html>
     }
 }
 
 #[component]
-fn Nav(current: Option<String>, csrf_token: String) -> impl IntoView {
-    let items = [
-        ("dashboard", "Dashboard", "/admin"),
-        ("users", "Users", "/admin/users"),
-        ("clients", "Clients", "/admin/clients"),
-        ("signing-keys", "Keys", "/admin/signing-keys"),
-        ("audit", "Audit", "/admin/audit"),
-        ("settings", "Settings", "/admin/settings"),
-        ("profile", "Profile", "/admin/profile"),
+fn Nav(current: Option<String>, lang: sui_id_i18n::Locale, csrf_token: String) -> impl IntoView {
+    let t = lang.strings();
+    let items: [(&'static str, &'static str, &'static str); 7] = [
+        ("dashboard",    t.nav_dashboard,    "/admin"),
+        ("users",        t.nav_users,        "/admin/users"),
+        ("clients",      t.nav_clients,      "/admin/clients"),
+        ("signing-keys", t.nav_signing_keys, "/admin/signing-keys"),
+        ("audit",        t.nav_audit,        "/admin/audit"),
+        ("settings",     t.nav_settings,     "/admin/settings"),
+        ("profile",      t.nav_profile,      "/admin/profile"),
     ];
     // The CSRF token for the logout form. If none was passed in by the
     // handler (the page was rendered without the cookie), fall back to
     // reading the cookie via JS on the client side.
     let token_value = if csrf_token.is_empty() { "".into() } else { csrf_token };
     view! {
-        <nav class="app-nav" aria-label="Main">
+        <nav class="app-nav" aria-label=t.nav_aria_main>
             {items.into_iter().map(|(key, label, href)| {
                 let aria = if current.as_deref() == Some(key) { Some("page") } else { None };
                 view! {
@@ -206,8 +210,8 @@ fn Nav(current: Option<String>, csrf_token: String) -> impl IntoView {
                   id="logout-form">
                 <input type="hidden" name="_csrf" id="logout-csrf" value=token_value />
                 <button type="submit" class="app-nav__link app-nav__signout"
-                        aria-label="Sign out">
-                    "Sign out"
+                        aria-label=t.nav_aria_signout>
+                    {t.nav_logout}
                 </button>
             </form>
             <script>
@@ -224,53 +228,55 @@ fn Nav(current: Option<String>, csrf_token: String) -> impl IntoView {
 }
 
 #[component]
-fn Footer() -> impl IntoView {
+fn Footer(lang: sui_id_i18n::Locale) -> impl IntoView {
+    let t = lang.strings();
     view! {
         <footer class="app-footer" role="contentinfo">
             <span class="app-footer__tagline">
-                "🌱 sui-id · 静かで、凛として、やさしい ID 基盤を。"
+                {t.footer_tagline}
             </span>
-            <span class="app-footer__a11y" aria-label="Accessibility features">
-                <span title="Keyboard accessible">"⌨ Keyboard"</span>
-                <span title="Screen reader friendly">"⊙ Screen reader"</span>
-                <span title="High contrast">"◐ Contrast"</span>
+            <span class="app-footer__a11y" aria-label=t.footer_a11y_group_label>
+                <span title=t.a11y_keyboard>"⌨ " {t.a11y_keyboard}</span>
+                <span title=t.a11y_screen_reader>"⊙ " {t.a11y_screen_reader}</span>
+                <span title=t.a11y_contrast>"◐ " {t.a11y_contrast}</span>
             </span>
-            <ThemeToggle />
+            <ThemeToggle lang=lang />
             <span class="app-footer__version">{format!("v{}", env!("CARGO_PKG_VERSION"))}</span>
         </footer>
     }
 }
 
 #[component]
-fn ThemeToggle() -> impl IntoView {
+fn ThemeToggle(lang: sui_id_i18n::Locale) -> impl IntoView {
+    let t = lang.strings();
     // Initial aria-pressed values are filled in by THEME_INIT_JS once
     // localStorage is read; SSR cannot know the user's preference, so
     // we render all three buttons un-pressed and rely on the script.
     view! {
-        <div class="theme-toggle" role="group" aria-label="Theme">
+        <div class="theme-toggle" role="group" aria-label=t.theme_toggle_group>
             <button class="theme-toggle__btn"
                     type="button"
                     data-theme-value="light"
                     aria-pressed="false"
                     onclick="window.__suiIdSetTheme && window.__suiIdSetTheme('light')"
-                    title="Light theme">
-                "☀ Light"
+                    title=t.theme_toggle_light_title>
+                "☀ " {t.theme_toggle_light}
             </button>
             <button class="theme-toggle__btn"
                     type="button"
                     data-theme-value="system"
                     aria-pressed="false"
                     onclick="window.__suiIdSetTheme && window.__suiIdSetTheme('system')"
-                    title="Follow system">
-                "🖥 Auto"
+                    title=t.theme_toggle_auto_title>
+                "🖥 " {t.theme_toggle_auto}
             </button>
             <button class="theme-toggle__btn"
                     type="button"
                     data-theme-value="dark"
                     aria-pressed="false"
                     onclick="window.__suiIdSetTheme && window.__suiIdSetTheme('dark')"
-                    title="Dark theme">
-                "☾ Dark"
+                    title=t.theme_toggle_dark_title>
+                "☾ " {t.theme_toggle_dark}
             </button>
         </div>
     }

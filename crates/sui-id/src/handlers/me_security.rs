@@ -442,27 +442,6 @@ pub async fn password_change_post(
 
 use sui_id_web::{MeOverviewData, MePasskeyData, MeLanguageData, MeShellData, MeTab};
 
-/// Resolve locale for the current user (used by all tab handlers).
-async fn resolve_me_locale(
-    app: &crate::AppState,
-    user_id: sui_id_shared::ids::UserId,
-) -> sui_id_i18n::Locale {
-    let preferred = sui_id_store::repos::users::get(&app.db, user_id)
-        .await
-        .ok()
-        .and_then(|u| u.preferred_lang);
-    if let Some(ref tag) = preferred {
-        if let Some(loc) = sui_id_i18n::Locale::parse(tag) {
-            return loc;
-        }
-    }
-    sui_id_store::repos::server_settings::get(&app.db)
-        .await
-        .ok()
-        .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
-        .unwrap_or_default()
-}
-
 /// GET /me/security → redirect to /me/security/overview
 pub async fn security_redirect() -> Redirect {
     Redirect::to("/me/security/overview")
@@ -473,9 +452,10 @@ pub async fn overview_get(
     state_ext: AppStateExt,
     CurrentUser(user_id): CurrentUser,
     jar: CookieJar,
+    crate::handlers::RequestLocale(req_locale): crate::handlers::RequestLocale,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let lang = resolve_me_locale(&app, user_id).await;
+    let lang = req_locale;
     let user = sui_id_store::repos::users::get(&app.db, user_id)
         .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
     let shell = MeShellData {
@@ -515,9 +495,10 @@ pub async fn passkeys_get(
     state_ext: AppStateExt,
     CurrentUser(user_id): CurrentUser,
     jar: CookieJar,
+    crate::handlers::RequestLocale(req_locale): crate::handlers::RequestLocale,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let lang = resolve_me_locale(&app, user_id).await;
+    let lang = req_locale;
     let user = sui_id_store::repos::users::get(&app.db, user_id)
         .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
     let shell = MeShellData {
@@ -584,9 +565,10 @@ pub async fn language_get(
     state_ext: AppStateExt,
     CurrentUser(user_id): CurrentUser,
     jar: CookieJar,
+    crate::handlers::RequestLocale(req_locale): crate::handlers::RequestLocale,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let lang = resolve_me_locale(&app, user_id).await;
+    let lang = req_locale;
     let user = sui_id_store::repos::users::get(&app.db, user_id)
         .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
     let shell = MeShellData {
@@ -620,11 +602,12 @@ pub async fn language_post(
     state_ext: AppStateExt,
     CurrentUser(user_id): CurrentUser,
     jar: CookieJar,
+    crate::handlers::RequestLocale(req_locale): crate::handlers::RequestLocale,
     Form(form): Form<LanguageForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     enforce_csrf(&jar, Some(&form.csrf))?;
-    let lang = resolve_me_locale(&app, user_id).await;
+    let lang = req_locale;
     let new_lang = if form.locale.trim().is_empty() {
         None
     } else {
@@ -649,9 +632,10 @@ pub async fn mfa_get(
     state_ext: AppStateExt,
     CurrentUser(user_id): CurrentUser,
     jar: CookieJar,
+    crate::handlers::RequestLocale(req_locale): crate::handlers::RequestLocale,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let lang = resolve_me_locale(&app, user_id).await;
+    let lang = req_locale;
     let user = sui_id_store::repos::users::get(&app.db, user_id)
         .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
     let shell = MeShellData {
@@ -687,9 +671,10 @@ pub async fn sessions_tab_get(
     state_ext: AppStateExt,
     CurrentUser(user_id): CurrentUser,
     jar: CookieJar,
+    crate::handlers::RequestLocale(req_locale): crate::handlers::RequestLocale,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
-    let lang = resolve_me_locale(&app, user_id).await;
+    let lang = req_locale;
     let user = sui_id_store::repos::users::get(&app.db, user_id)
         .await.map_err(|e| HttpError::html(CoreError::from(e)).with_lang(lang))?;
     let shell = MeShellData {

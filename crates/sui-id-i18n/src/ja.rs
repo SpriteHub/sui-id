@@ -33,6 +33,24 @@ pub static STRINGS_JA: Strings = Strings {
     nav_settings: "設定",
     nav_profile: "プロフィール",
     nav_logout: "サインアウト",
+    nav_aria_main: "メインナビゲーション",
+    nav_aria_signout: "サインアウト",
+
+    // Footer (RFC 050)
+    footer_tagline: "🌱 sui-id · 静かで、凛として、やさしい ID 基盤を。",
+    footer_a11y_group_label: "アクセシビリティ対応",
+    a11y_keyboard: "キーボード対応",
+    a11y_screen_reader: "スクリーンリーダー対応",
+    a11y_contrast: "コントラスト対応",
+
+    // Theme toggle (RFC 050)
+    theme_toggle_group: "テーマ",
+    theme_toggle_light: "ライト",
+    theme_toggle_auto: "自動",
+    theme_toggle_dark: "ダーク",
+    theme_toggle_light_title: "ライトテーマ",
+    theme_toggle_auto_title: "OS の設定に従う",
+    theme_toggle_dark_title: "ダークテーマ",
 
     // Login
     signed_out_flash: "サインアウトしました。",

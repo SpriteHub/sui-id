@@ -34,7 +34,7 @@ async fn login_page_html_lang_defaults_to_ja() {
     let bytes = read_body(resp.into_body()).await;
     let body = std::str::from_utf8(&bytes).expect("utf8");
     assert!(
-        body.contains("<html lang=\"ja\">"),
+        body.contains("<html lang=\"ja\""),
         "expected lang=ja, body starts: {}",
         &body[..body.len().min(200)]
     );
@@ -58,7 +58,7 @@ async fn login_page_html_lang_follows_accept_language() {
     let bytes = read_body(resp.into_body()).await;
     let body = std::str::from_utf8(&bytes).expect("utf8");
     assert!(
-        body.contains("<html lang=\"en\">"),
+        body.contains("<html lang=\"en\""),
         "expected lang=en, head starts: {}",
         &body[..body.len().min(200)]
     );
@@ -83,7 +83,7 @@ async fn lang_cookie_overrides_accept_language() {
     let bytes = read_body(resp.into_body()).await;
     let body = std::str::from_utf8(&bytes).expect("utf8");
     assert!(
-        body.contains("<html lang=\"ja\">"),
+        body.contains("<html lang=\"ja\""),
         "cookie should override Accept-Language; body: {}",
         &body[..body.len().min(200)]
     );

@@ -33,35 +33,63 @@ folders.
 
 | ID  | Title                                                          | Priority |
 |-----|----------------------------------------------------------------|----------|
-| 019 | [Auth flow data integrity hardening](./proposed/019-auth-flow-data-integrity.md) | High |
-| 020 | [User identity invariants and OIDC claim consistency](./proposed/020-user-identity-invariants.md) | High |
-| 021 | [Schema invariant CHECKs and migration safety](./proposed/021-schema-invariant-checks.md) | Medium |
-| 022 | [Single-realm scope statement](./proposed/022-single-realm-scope-statement.md) | Medium |
-| 023 | [Visual design system: tokens, components, motion](./proposed/023-visual-design-system.md) | Medium |
-| 024 | [Documentation file consolidation](./proposed/024-doc-file-consolidation.md) | Low-medium |
-| 013 | [Reduce SQLite blocking on async handlers](./proposed/013-db-blocking-mitigation.md) | Medium |
-| 014 | [Hot-path caches and benchmark harness](./proposed/014-hot-path-caches-and-benchmarks.md) | Medium |
-| 017 | [UI/UX design contracts](./proposed/017-ui-ux-design-contracts.md) | Medium — recommended ahead of further admin-UI work |
-| 001 | [Persistent email outbox + retry worker](./proposed/001-email-outbox.md) | Medium |
-| 002 | [i18n scope expansion (post-v0.23.0)](./proposed/002-i18n-expansion.md) | Medium |
-| 025 | [Multi-tenant expansion path: detailed design](./proposed/025-multi-tenant-expansion.md) | Low — longer-term, no schedule |
-| 004 | [Federation as upstream OIDC client](./proposed/004-federation.md) | Low — longer-term |
-| 005 | [Pluggable user backends (LDAP)](./proposed/005-pluggable-user-backends.md) | Low — longer-term |
-| 006 | [Prometheus metrics endpoint](./proposed/006-metrics.md) | Low — longer-term |
-| 008 | [Third-party-posture bundle](./proposed/008-third-party-posture.md) | Low — longer-term |
-| 009 | [Pluggable SQL backends (PostgreSQL, MariaDB)](./proposed/009-sql-backends.md) | Low — longer-term |
+| 051 | [Per-screen i18n completeness audit](./proposed/051-per-screen-i18n-completeness.md) | P0 — Phase B (v0.43.0) |
+| 052 | [Status word vocabulary unification](./proposed/052-status-word-vocabulary.md) | P1 — Phase B |
+| 053 | [Copy-button i18n contract](./proposed/053-copy-button-i18n.md) | P1 — Phase B |
+| 054 | [Aria-label / title attribute i18n audit](./proposed/054-aria-title-attribute-audit.md) | P1 — Phase B |
+| 008 | [Third-party-posture bundle](./proposed/008-third-party-posture.md) | Low-medium — post-1.0 |
+| 025 | [Multi-tenant expansion path: detailed design](./proposed/025-multi-tenant-expansion.md) | Low — post-1.0, no schedule |
+| 004 | [Federation as upstream OIDC client](./proposed/004-federation.md) | Low — post-1.0 |
+| 005 | [Pluggable user backends (LDAP)](./proposed/005-pluggable-user-backends.md) | Low — post-1.0 |
+| 006 | [Prometheus metrics endpoint](./proposed/006-metrics.md) | Low — post-1.0 |
+| 009 | [Pluggable SQL backends (PostgreSQL, MariaDB)](./proposed/009-sql-backends.md) | Low — post-1.0 |
 
 ### Implemented
 
 | ID  | Title                                                          | Shipped in |
 |-----|----------------------------------------------------------------|------------|
-| 010 | [Revoke sessions on forgot-password](./done/010-forgot-password-revoke.md) | v0.29.4 |
-| 011 | [Enforce WebAuthn transport at the server](./done/011-webauthn-transport-enforcement.md) | v0.29.4 |
-| 012 | [Setup wizard scope reconciliation](./done/012-setup-wizard-reconciliation.md) | v0.29.4 (Position C) |
-| 015 | [Documentation consistency pass](./done/015-doc-consistency-pass.md) | v0.29.4 |
-| 016 | [Server logging completeness](./done/016-server-logging-completeness.md) | v0.29.4 |
-| 003 | [HIBP scope expansion (post-v0.24.0)](./done/003-hibp-expansion.md) | v0.29.4 |
+| 050 | [Admin chrome i18n (Nav, Footer, ThemeToggle)](./done/050-admin-chrome-i18n.md) | v0.42.0 |
+| 049 | [CSS token vocabulary freeze](./done/049-css-token-vocabulary-freeze.md) | v0.42.0 |
+| 048 | [Fix `t.xxx` brace-missing literals in `pages.rs`](./done/048-fix-i18n-brace-missing.md) | v0.42.0 |
+| 047 | [Dev mode summary + client secret rotation audit](./done/047-dev-summary-and-secret-rotation.md) | v0.41.0 |
+| 046 | [Audit log per-row copy ID](./done/046-audit-row-copy-id.md) | v0.41.0 |
+| 045 | [User disable reason input](./done/045-user-disable-reason.md) | v0.41.0 |
+| 044 | [UI state word contract](./done/044-state-word-contract.md) | v0.40.0 |
+| 043 | [Dashboard recent important events](./done/043-dashboard-recent-events.md) | v0.40.0 |
+| 042 | [Error / rate-limited page i18n](./done/042-error-pages-i18n.md) | v0.40.0 |
+| 041 | [HIBP consistency in admin::create_user](./done/041-hibp-consistency.md) | v0.40.0 |
+| 040 | [`/me/security` tabbed structure](./done/040-me-security-tabs.md) | v0.40.0–v0.41.0 |
+| 039 | [Settings i18n completion](./done/039-settings-i18n-completion.md) | v0.39.0 |
+| 038 | [OIDC consent screen](./done/038-consent-screen.md) | v0.39.0 |
+| 036 | [Distribution readiness (docs Phase 5)](./done/036-distribution-readiness.md) | v0.37.0 |
+| 035 | [User detail page](./done/035-user-detail-page.md) | v0.37.0 |
+| 034 | [Login + passkey empty states](./done/034-login-passkey-empty-states.md) | v0.36.0 |
+| 033 | [Audit log enhancements](./done/033-audit-log-enhancements.md) | v0.36.0 |
+| 032 | [Dev mode browser banner](./done/032-dev-mode-browser-banner.md) | v0.35.0 |
+| 031 | [Dashboard operator prompts](./done/031-dashboard-operator-prompts.md) | v0.36.0 |
+| 030 | [Dangerous-operation confirmation screens](./done/030-dangerous-ops-confirmation.md) | v0.36.0 |
+| 029 | [Admin i18n completion](./done/029-admin-i18n-completion.md) | v0.35.0 / v0.37.0 |
+| 028 | [Copy-to-clipboard UX](./done/028-copy-to-clipboard-ux.md) | v0.31.0 |
+| 027 | [Client scope configuration UX](./done/027-client-scope-configuration-ux.md) | v0.29.13 |
+| 026 | [Admin logout + session self-management](./done/026-admin-logout-session-self-management.md) | v0.29.13 |
+| 024 | [Documentation file consolidation](./done/024-doc-file-consolidation.md) | v0.32.0 |
+| 023 | [Visual design system: tokens, components, motion](./done/023-visual-design-system.md) | v0.32.0 |
+| 022 | [Single-realm scope statement](./done/022-single-realm-scope-statement.md) | (doc-only; folded into v0.30+ docs) |
+| 021 | [Schema invariant CHECKs and migration safety](./done/021-schema-invariant-checks.md) | v0.29.10–11 |
+| 020 | [User identity invariants and OIDC claim consistency](./done/020-user-identity-invariants.md) | v0.29.x |
+| 019 | [Auth flow data integrity hardening](./done/019-auth-flow-data-integrity.md) | v0.29.x |
 | 018 | [RFC lifecycle policy](./done/018-rfc-lifecycle-policy.md) | v0.29.5 |
+| 017 | [UI/UX design contracts](./done/017-ui-ux-design-contracts.md) | v0.32.0 |
+| 016 | [Server logging completeness](./done/016-server-logging-completeness.md) | v0.29.4 |
+| 015 | [Documentation consistency pass](./done/015-doc-consistency-pass.md) | v0.29.4 |
+| 014 | [Hot-path caches and benchmark harness](./done/014-hot-path-caches-and-benchmarks.md) | v0.31.0 |
+| 013 | [Reduce SQLite blocking on async handlers](./done/013-db-blocking-mitigation.md) | v0.30.0 |
+| 012 | [Setup wizard scope reconciliation](./done/012-setup-wizard-reconciliation.md) | v0.29.4 |
+| 011 | [Enforce WebAuthn transport at the server](./done/011-webauthn-transport-enforcement.md) | v0.29.4 |
+| 010 | [Revoke sessions on forgot-password](./done/010-forgot-password-revoke.md) | v0.29.4 |
+| 003 | [HIBP scope expansion](./done/003-hibp-expansion.md) | v0.29.4 |
+| 002 | [i18n scope expansion: zh, formatters, audit labels](./done/002-i18n-expansion.md) | v0.34.0 |
+| 001 | [Persistent email outbox + retry worker](./done/001-email-outbox.md) | v0.33.0 |
 
 ### Archive
 
@@ -71,41 +99,26 @@ folders.
 
 ## Implementation order
 
-Within `proposed/`, RFCs are listed by intended work sequence,
-not by RFC number. The numbering reflects the order RFCs were
-written; the order above reflects the priority an implementer
-should pick them up.
+The current near-term direction is the v0.42 → v1.0-rc UI/UX
+hardening plan, six phases (A through F) one per release:
 
-The current top of the queue is the high-priority data-model
-hardening from the v0.29.5 review: **019** (auth flow data
-integrity) and **020** (user identity invariants and OIDC
-claim consistency). Both close real correctness gaps and
-should ship before any new feature work.
+- **Phase A (v0.42.0, shipped):** RFCs 048, 049, 050 — stop the
+  bleeding (rendered `t.xxx` literals, undefined CSS variables,
+  non-i18n chrome).
+- **Phase B (v0.43.0, in `proposed/`):** RFCs 051, 052, 053, 054 —
+  i18n completeness sweep across every page body, status words,
+  copy buttons, and ARIA attributes.
+- **Phase C (v0.44.0):** Self-service unification onto `/me/security/*`.
+- **Phase D (v0.45.0):** Dangerous-operations contract enforcement.
+- **Phase E (v0.46.0):** Visual hierarchy + palette extension.
+- **Phase F (v0.47.0):** Code structure (split `pages.rs` and
+  `handlers/admin.rs`).
+- **Buffer (v0.48.0):** RFC index reconciliation and per-screen
+  verification doc.
 
-Next is the medium-priority cohort: **021** (schema invariant
-CHECKs and migration safety; depends on its own transactional
-migration runner), **022** (single-realm scope statement;
-documentation-only, can ship in any release), and **023**
-(visual design system; recommended ahead of further admin-UI
-implementation work alongside RFC 017's behavioural contract).
-The pre-existing medium items **013** (DB blocking),
-**014** (hot-path caches and benchmarks), and **017**
-(UI/UX design contracts) sit in the same tier.
-
-After that, **024** (documentation file consolidation)
-addresses growing-pains in the root layout. It is internal-
-only and can ship at the maintainer's convenience.
-
-The longer-term tier (**001**, **002**, **004–009**, **025**)
-is sequenced however the maintainer prefers once the higher
-tiers are settled. Among these, **025** (multi-tenant
-expansion path) has detailed design but explicitly no
-delivery schedule; it informs other RFCs as a documented
-end state.
-
-The high-priority backlog (010, 011, 012, 015, 016, 003) cleared
-in v0.29.4. The lifecycle reorganisation itself (this directory's
-folder structure plus RFC 018) shipped in v0.29.5.
+After Phase F, v1.0-rc opens. The post-1.0 backlog (RFCs 004, 005,
+006, 008, 009, 025) targets longer-term work and is intentionally
+out of the v1.0 critical path.
 
 ## Template
 

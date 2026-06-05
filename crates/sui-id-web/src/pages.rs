@@ -936,7 +936,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
             <Shell title=t.dashboard_title.to_string() show_nav=true current=Some("dashboard".to_string()) dev_mode=dev_mode lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.dashboard_title</h1>
+                        <h1 class="page-header__title">{t.dashboard_title}</h1>
                         <p class="page-header__lede">
                             {format!("Hello, {}. {}", admin_username, t.dashboard_lede)}
                         </p>
@@ -945,7 +945,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
                 {flash_banner(flash)}
 
                 {(warn_smtp_not_configured || warn_hibp_off || warn_cookie_insecure).then(|| view! {
-                    <section class="card" style="border-left:4px solid var(--colour-warn);margin-bottom:var(--space-4)" aria-label="Operator action required">
+                    <section class="card" style="border-left:4px solid var(--warning-default);margin-bottom:var(--space-4)" aria-label="Operator action required">
                         <h2 style="font-size:var(--font-size-body);margin:0 0 var(--space-2)">
                             "⚠ Action required"
                         </h2>
@@ -973,22 +973,22 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
                     <div class="card">
                         <div class="stat">
                             <span class="stat__value">{active_session_count.to_string()}</span>
-                            <span class="stat__label">t.dashboard_stat_sessions</span>
+                            <span class="stat__label">{t.dashboard_stat_sessions}</span>
                         </div>
                     </div>
                     <div class="card">
                         <div class="stat">
                             <span class="stat__value">
-                                <span class="badge badge--ok">t.dashboard_stat_service_ok</span>
+                                <span class="badge badge--ok">{t.dashboard_stat_service_ok}</span>
                             </span>
-                            <span class="stat__label">t.dashboard_stat_service_status</span>
+                            <span class="stat__label">{t.dashboard_stat_service_status}</span>
                         </div>
                     </div>
                 </section>
 
                 <section>
                     <div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:var(--space-3)">
-                        <h2 style="margin:0">t.dashboard_activity_title</h2>
+                        <h2 style="margin:0">{t.dashboard_activity_title}</h2>
                         <nav class="app-nav" aria-label=t.dashboard_activity_period style="flex:0 0 auto">
                             {range_tabs}
                         </nav>
@@ -1180,7 +1180,7 @@ pub fn render_users(
             <Shell title=t.users_title.to_string() show_nav=true current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.users_title</h1>
+                        <h1 class="page-header__title">{t.users_title}</h1>
                         <p class="page-header__lede">
                             t.users_lede
                             {format!(" 現在 {user_count} 名。")}
@@ -1217,7 +1217,7 @@ pub fn render_users(
                                 <span>t.users_is_admin_label</span>
                             </label>
                             <div>
-                                <button type="submit">t.users_create_button</button>
+                                <button type="submit">{t.users_create_button}</button>
                             </div>
                         </form>
                     </div>
@@ -1356,7 +1356,7 @@ pub fn render_clients(
             <Shell title=t.clients_title.to_string() show_nav=true current=Some("clients".to_string()) dev_mode=dev_mode lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.clients_title</h1>
+                        <h1 class="page-header__title">{t.clients_title}</h1>
                         <p class="page-header__lede">
                             "OIDC クライアントの登録と管理。"
                             {format!(" 現在 {client_count} 件。")}
@@ -1495,7 +1495,7 @@ pub fn render_client_edit(
         };
 
         view! {
-            <Shell title="Edit client".to_string() show_nav=true current=Some("clients".to_string())>
+            <Shell title="Edit client".to_string() show_nav=true current=Some("clients".to_string()) lang=lang>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">"クライアントを編集"</h1>
@@ -1532,7 +1532,7 @@ pub fn render_client_edit(
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_title</h3>
+                    <h3 class="card__title">{t.settings_title}</h3>
                     <form method="post" action=post_url class="stack">
                         <input type="hidden" name="_csrf" value=csrf_token />
                         <div class="field">
@@ -1665,7 +1665,7 @@ pub fn render_audit(
             <Shell title=t.audit_title.to_string() show_nav=true current=Some("audit".to_string()) dev_mode=dev_mode lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.audit_title</h1>
+                        <h1 class="page-header__title">{t.audit_title}</h1>
                         <p class="page-header__lede">
                             t.audit_lede
                             {format!(" ({entry_count})")}
@@ -1739,7 +1739,7 @@ fn signing_key_row_view(
         .unwrap_or_else(|| "-".to_string());
     let delete_url = format!("/admin/signing-keys/{id_for_url}/delete");
     let actions = if k.is_active {
-        view! { <td><span class="muted">t.signing_keys_in_use_badge</span></td> }.into_any()
+        view! { <td><span class="muted">{t.signing_keys_in_use_badge}</span></td> }.into_any()
     } else {
         view! {
             <td>
@@ -1780,7 +1780,7 @@ pub fn render_signing_keys(
             <Shell
                 title="Signing keys".to_string()
                 show_nav=true
-                current=Some("signing-keys".to_string())
+                current=Some("signing-keys".to_string()) lang=lang
             >
                 <header class="page-header">
                     <div>
@@ -1794,7 +1794,7 @@ pub fn render_signing_keys(
                 {flash_banner(flash)}
 
                 <div class="card">
-                    <h3 class="card__title">t.signing_keys_rotate_section</h3>
+                    <h3 class="card__title">{t.signing_keys_rotate_section}</h3>
                     <p class="muted">
                         "ローテーションを実行すると、新しい署名キーが発行され、現行キーは「退役」状態に遷移します。"
                         "退役キーは JWKS に残るため、有効期限内の既発行トークンは検証可能です。"
@@ -1803,7 +1803,7 @@ pub fn render_signing_keys(
                     <div class="card__footer">
                         <form method="post" action="/admin/signing-keys/rotate">
                             <input type="hidden" name="_csrf" value=csrf_for_form />
-                            <button type="submit">t.signing_keys_rotate_button</button>
+                            <button type="submit">{t.signing_keys_rotate_button}</button>
                         </form>
                     </div>
                 </div>
@@ -2445,7 +2445,7 @@ pub fn render_me_mfa(
                     <section class="card">
                         <h2 class="card__title">{t.profile_mfa_totp_card_title}</h2>
                         <dl class="kv-list">
-                            {kv_bool_badge(t.me_security_mfa_status_label, totp_enabled)}
+                            {kv_bool_badge(t, t.me_security_mfa_status_label, totp_enabled)}
                             {if totp_enabled {
                                 view! {
                                     <div>
@@ -2613,7 +2613,7 @@ pub fn render_me_overview(
                     <section class="card">
                         <h2 class="card__title">{t.me_overview_section_status}</h2>
                         <dl class="kv-list">
-                            {kv_bool_badge("MFA (TOTP)", totp_enabled)}
+                            {kv_bool_badge(t, "MFA (TOTP)", totp_enabled)}
                             {kv_row("Passkeys", passkey_count.to_string())}
                             {kv_row(t.me_security_sessions_section,
                                     active_session_count.to_string())}
@@ -3211,11 +3211,11 @@ fn kv_code(k: &str, v: String) -> impl IntoView {
     kv_row(k, view! { <span class="code">{v}</span> })
 }
 
-fn kv_bool_badge(k: &str, on: bool) -> impl IntoView {
+fn kv_bool_badge(t: &'static sui_id_i18n::Strings, k: &str, on: bool) -> impl IntoView {
     let badge = if on {
-        view! { <span class="badge badge--ok">t.badge_enabled</span> }.into_any()
+        view! { <span class="badge badge--ok">{t.badge_enabled}</span> }.into_any()
     } else {
-        view! { <span class="badge">t.badge_disabled</span> }.into_any()
+        view! { <span class="badge">{t.badge_disabled}</span> }.into_any()
     };
     kv_row(k, badge)
 }
@@ -3255,7 +3255,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
         let csrf_for_lang = csrf_token.clone();
         let lang_form = view! {
             <section class="section">
-                <h2 class="section__title">t.settings_basic_default_lang</h2>
+                <h2 class="section__title">{t.settings_basic_default_lang}</h2>
                 <p class="muted">
                     "ユーザーの言語設定とブラウザの Accept-Language が一致しない場合の "
                     "フォールバックとして使用されます。 / Used as a fallback when no per-user "
@@ -3280,7 +3280,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                             </select>
                         </div>
                         <div>
-                            <button type="submit">t.button_save</button>
+                            <button type="submit">{t.button_save}</button>
                         </div>
                     </form>
                 </div>
@@ -3292,10 +3292,10 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
             trusted_proxies.join(", ")
         };
         view! {
-            <Shell title=t.settings_title_basic.to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_basic.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.settings_title</h1>
+                        <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
                             t.settings_basic_description
                         </p>
@@ -3305,13 +3305,13 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                 {settings_tabs(SettingsTab::Basic, lang)}
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_tab_basic</h3>
+                    <h3 class="card__title">{t.settings_tab_basic}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
                                 {kv_code("Issuer", issuer)}
                                 {kv_code("Listen address", listen_addr)}
-                                {kv_bool_badge("Cookie Secure フラグ", cookie_secure)}
+                                {kv_bool_badge(t, "Cookie Secure フラグ", cookie_secure)}
                                 {kv_text("Trusted proxies", proxies_display)}
                             </tbody>
                         </table>
@@ -3319,7 +3319,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_basic_oidc_section</h3>
+                    <h3 class="card__title">{t.settings_basic_oidc_section}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -3398,7 +3398,7 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
         let csrf_for_cap = csrf_token.clone();
         let session_forms = view! {
             <section class="section">
-                <h2 class="section__title">t.settings_security_session_section</h2>
+                <h2 class="section__title">{t.settings_security_session_section}</h2>
                 <p class="muted">
                     "アイドルタイムアウトと同時セッション数の上限。 "
                     "いずれも 0 で無効。デフォルトは 0 (無効) で、運用ポリシーに応じて opt-in。 "
@@ -3420,7 +3420,7 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                             </span>
                         </div>
                         <div>
-                            <button type="submit">t.button_save</button>
+                            <button type="submit">{t.button_save}</button>
                         </div>
                     </form>
                 </div>
@@ -3440,17 +3440,17 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                             </span>
                         </div>
                         <div>
-                            <button type="submit">t.button_save</button>
+                            <button type="submit">{t.button_save}</button>
                         </div>
                     </form>
                 </div>
             </section>
         };
         view! {
-            <Shell title=t.settings_title_security.to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_security.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.settings_title</h1>
+                        <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
                             t.settings_basic_description
                         </p>
@@ -3460,7 +3460,7 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                 {settings_tabs(SettingsTab::Security, lang)}
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_security_lockout_section</h3>
+                    <h3 class="card__title">{t.settings_security_lockout_section}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -3475,14 +3475,14 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_security_headers_section</h3>
+                    <h3 class="card__title">{t.settings_security_headers_section}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_bool_badge("HSTS (Strict-Transport-Security)", hsts_enabled)}
-                                {kv_bool_badge("Content-Security-Policy", csp_enabled)}
-                                {kv_bool_badge("X-Frame-Options: DENY", x_frame_deny)}
-                                {kv_bool_badge("Permissions-Policy(最小)", permissions_policy_minimal)}
+                                {kv_bool_badge(t, "HSTS (Strict-Transport-Security)", hsts_enabled)}
+                                {kv_bool_badge(t, "Content-Security-Policy", csp_enabled)}
+                                {kv_bool_badge(t, "X-Frame-Options: DENY", x_frame_deny)}
+                                {kv_bool_badge(t, "Permissions-Policy(最小)", permissions_policy_minimal)}
                             </tbody>
                         </table>
                     </div>
@@ -3497,8 +3497,8 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_bool_badge("Token endpoint の動的許可(登録 redirect_uris の origin)", cors_token_dynamic_from_clients)}
-                                {kv_bool_badge("Discovery / JWKS / userinfo の公開許可(*)", cors_public_endpoints_open)}
+                                {kv_bool_badge(t, "Token endpoint の動的許可(登録 redirect_uris の origin)", cors_token_dynamic_from_clients)}
+                                {kv_bool_badge(t, "Discovery / JWKS / userinfo の公開許可(*)", cors_public_endpoints_open)}
                             </tbody>
                         </table>
                     </div>
@@ -3558,10 +3558,10 @@ pub fn render_settings_authentication(
             refresh_theft_detection,
         } = data;
         view! {
-            <Shell title=t.settings_title_authentication.to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_authentication.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.settings_title</h1>
+                        <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
                             t.settings_basic_description
                         </p>
@@ -3571,7 +3571,7 @@ pub fn render_settings_authentication(
                 {settings_tabs(SettingsTab::Authentication, lang)}
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_auth_password_section</h3>
+                    <h3 class="card__title">{t.settings_auth_password_section}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -3583,12 +3583,12 @@ pub fn render_settings_authentication(
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_auth_mfa_section</h3>
+                    <h3 class="card__title">{t.settings_auth_mfa_section}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_bool_badge(t.settings_auth_mfa_totp, totp_enabled_per_user)}
-                                {kv_bool_badge(t.settings_auth_mfa_passkey, webauthn_enabled_per_user)}
+                                {kv_bool_badge(t, t.settings_auth_mfa_totp, totp_enabled_per_user)}
+                                {kv_bool_badge(t, t.settings_auth_mfa_passkey, webauthn_enabled_per_user)}
                                 {kv_text("リカバリーコード(登録ごと)", format!("{recovery_codes_per_enrollment} 件"))}
                             </tbody>
                         </table>
@@ -3605,12 +3605,12 @@ pub fn render_settings_authentication(
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_bool_badge(t.settings_auth_pkce_required, pkce_required)}
+                                {kv_bool_badge(t, t.settings_auth_pkce_required, pkce_required)}
                                 {kv_text(t.settings_auth_access_token_ttl, fmt_lifetime(access_token_lifetime_secs))}
                                 {kv_text(t.settings_auth_id_token_ttl, fmt_lifetime(id_token_lifetime_secs))}
                                 {kv_text(t.settings_auth_refresh_token_ttl, fmt_lifetime(refresh_token_lifetime_secs))}
-                                {kv_bool_badge(t.settings_auth_refresh_rotate, refresh_rotation)}
-                                {kv_bool_badge(t.settings_auth_refresh_theft, refresh_theft_detection)}
+                                {kv_bool_badge(t, t.settings_auth_refresh_rotate, refresh_rotation)}
+                                {kv_bool_badge(t, t.settings_auth_refresh_theft, refresh_theft_detection)}
                             </tbody>
                         </table>
                     </div>
@@ -3665,10 +3665,10 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
         };
 
         view! {
-            <Shell title=t.settings_title_logs.to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_logs.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.settings_title</h1>
+                        <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
                             "ログ出力設定と監査ログの状態。"
                         </p>
@@ -3678,7 +3678,7 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
                 {settings_tabs(SettingsTab::Logs, lang)}
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_logs_output_section</h3>
+                    <h3 class="card__title">{t.settings_logs_output_section}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -3707,7 +3707,7 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_logs_audit_section</h3>
+                    <h3 class="card__title">{t.settings_logs_audit_section}</h3>
                     <div class="row" style="gap:var(--space-3);align-items:center">
                         <span>"状態:"</span>
                         {chain_badge}
@@ -3747,10 +3747,10 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
         } = data;
         let now_str = clock_now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
         view! {
-            <Shell title=t.settings_title_advanced.to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_advanced.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.settings_title</h1>
+                        <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
                             "ビルド情報・スキーマ・ストレージ。"
                         </p>
@@ -3760,7 +3760,7 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                 {settings_tabs(SettingsTab::Other, lang)}
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_advanced_build_section</h3>
+                    <h3 class="card__title">{t.settings_advanced_build_section}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -3773,7 +3773,7 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_advanced_storage_section</h3>
+                    <h3 class="card__title">{t.settings_advanced_storage_section}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -3790,7 +3790,7 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_advanced_record_counts</h3>
+                    <h3 class="card__title">{t.settings_advanced_record_counts}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -4037,10 +4037,10 @@ pub fn render_settings_email(
         let tls_starttls = if tls_mode == "starttls" { Some("selected") } else { None };
 
         view! {
-            <Shell title=t.settings_email_page_title.to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_email_page_title.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">t.settings_title</h1>
+                        <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
                             t.settings_email_lede
                         </p>
@@ -4050,7 +4050,7 @@ pub fn render_settings_email(
                 {settings_tabs(SettingsTab::Email, lang)}
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_email_smtp_section</h3>
+                    <h3 class="card__title">{t.settings_email_smtp_section}</h3>
                     <form method="post" action="/admin/settings/email" class="stack">
                         <input type="hidden" name="_csrf" value=csrf_save />
                         <div class="field">
@@ -4063,29 +4063,29 @@ pub fn render_settings_email(
                             </span>
                         </div>
                         <div class="field">
-                            <label for="host" class="field__label">t.settings_email_host_label</label>
+                            <label for="host" class="field__label">{t.settings_email_host_label}</label>
                             <input id="host" name="host" type="text" required=true value=host />
                         </div>
                         <div class="field">
-                            <label for="port" class="field__label">t.settings_email_port_label</label>
+                            <label for="port" class="field__label">{t.settings_email_port_label}</label>
                             <input id="port" name="port" type="number" min="1" max="65535"
                                    required=true value=port_str />
-                            <span class="field__hint">t.settings_email_port_hint</span>
+                            <span class="field__hint">{t.settings_email_port_hint}</span>
                         </div>
                         <div class="field">
-                            <label for="tls_mode" class="field__label">t.settings_email_tls_label</label>
+                            <label for="tls_mode" class="field__label">{t.settings_email_tls_label}</label>
                             <select id="tls_mode" name="tls_mode">
                                 <option value="starttls" selected=tls_starttls>"STARTTLS (587)"</option>
                                 <option value="implicit" selected=tls_implicit>t.settings_email_tls_implicit</option>
                             </select>
                         </div>
                         <div class="field">
-                            <label for="username" class="field__label">t.settings_email_username_label</label>
+                            <label for="username" class="field__label">{t.settings_email_username_label}</label>
                             <input id="username" name="username" type="text"
                                    autocomplete="off" value=username />
                         </div>
                         <div class="field">
-                            <label for="password" class="field__label">t.settings_auth_password_section</label>
+                            <label for="password" class="field__label">{t.settings_auth_password_section}</label>
                             <input id="password" name="password" type="password"
                                    autocomplete="off" placeholder=pw_placeholder />
                             <span class="field__hint">
@@ -4094,16 +4094,16 @@ pub fn render_settings_email(
                         </div>
                         <hr class="divider" />
                         <div class="field">
-                            <label for="from_address" class="field__label">t.settings_email_from_addr_label</label>
+                            <label for="from_address" class="field__label">{t.settings_email_from_addr_label}</label>
                             <input id="from_address" name="from_address" type="email"
                                    required=true value=from_address />
                         </div>
                         <div class="field">
-                            <label for="from_name" class="field__label">t.settings_email_from_name_label</label>
+                            <label for="from_name" class="field__label">{t.settings_email_from_name_label}</label>
                             <input id="from_name" name="from_name" type="text" value=from_name />
                         </div>
                         <div class="field">
-                            <label for="base_url" class="field__label">t.settings_email_base_url_label</label>
+                            <label for="base_url" class="field__label">{t.settings_email_base_url_label}</label>
                             <input id="base_url" name="base_url" type="url"
                                    required=true value=base_url
                                    placeholder="https://idp.example.com" />
@@ -4123,7 +4123,7 @@ pub fn render_settings_email(
                     </p>
                     <form method="post" action="/admin/settings/email/test" class="stack">
                         <input type="hidden" name="_csrf" value=csrf_test />
-                        <button type="submit" class="secondary">t.settings_email_test_button</button>
+                        <button type="submit" class="secondary">{t.settings_email_test_button}</button>
                     </form>
                 </div>
             </Shell>

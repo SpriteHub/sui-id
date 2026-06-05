@@ -33,6 +33,24 @@ pub static STRINGS_EN: Strings = Strings {
     nav_settings: "Settings",
     nav_profile: "Profile",
     nav_logout: "Sign out",
+    nav_aria_main: "Main navigation",
+    nav_aria_signout: "Sign out",
+
+    // Footer (RFC 050)
+    footer_tagline: "🌱 sui-id · A quiet, dependable identity foundation.",
+    footer_a11y_group_label: "Accessibility features",
+    a11y_keyboard: "Keyboard accessible",
+    a11y_screen_reader: "Screen reader friendly",
+    a11y_contrast: "High contrast support",
+
+    // Theme toggle (RFC 050)
+    theme_toggle_group: "Theme",
+    theme_toggle_light: "Light",
+    theme_toggle_auto: "Auto",
+    theme_toggle_dark: "Dark",
+    theme_toggle_light_title: "Light theme",
+    theme_toggle_auto_title: "Follow system",
+    theme_toggle_dark_title: "Dark theme",
 
     // Login
     signed_out_flash: "Signed out.",

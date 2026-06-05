@@ -15,24 +15,35 @@ Completed work is tracked in [CHANGELOG.md](CHANGELOG.md) and the
 | [RFC 006](rfcs/proposed/006-metrics.md) | Metrics and observability | Low | Prometheus / OpenTelemetry |
 | [RFC 008](rfcs/proposed/008-third-party-posture.md) | Third-party posture / consent screen | Low-Medium | Explicit consent for external RPs |
 | [RFC 009](rfcs/proposed/009-sql-backends.md) | Alternative SQL backends | Low | PostgreSQL / MySQL support |
-| [RFC 017](rfcs/proposed/017-ui-ux-design-contracts.md) | UI/UX design contracts | Medium | Cross-cutting admin UI contract; see [docs/ui-ux-contracts.md](docs/ui-ux-contracts.md) |
-| [RFC 023](rfcs/proposed/023-visual-design-system.md) | Visual design system (CSS tokens) | Medium | CSS variable tokens, component primitives, dark mode |
 | [RFC 025](rfcs/proposed/025-multi-tenant-expansion.md) | Multi-tenant expansion | Low | Per-tenant namespaces (post-1.0) |
 
 ---
 
-## Near-term (next 1–2 releases)
+## Near-term (next 5–6 releases)
 
-**RFC 023 — Visual design system** is the next planned work. It turns the
-colour palette and component sketches from the UI/UX deliverables into
-shipped CSS that every `sui-id-web` component inherits. Without it, new
-admin-domain screens (RFC 002, RFC 008) each re-derive their own visual
-choices.
+**The v0.42 → v1.0-rc UI/UX hardening plan** is the main near-term
+direction. Six phases (A–F), each shipping in one release. The plan
+addresses correctness gaps surfaced during a v0.41.0 implementation
+review: the rendered UI was not matching the design contract the v0.40
+HANDOFF claimed had been met.
 
-**RFC 002 — i18n expansion** follows RFC 023 and RFC 017. The typed
-`Strings` framework is already in place; this RFC fills in the missing
-admin-panel translations and enforces the per-screen completeness rule
-from RFC 017 § 4.
+| Phase | Version  | Theme                                              | RFCs (planned)       |
+|-------|----------|----------------------------------------------------|----------------------|
+| **A** | v0.42.0  | Stop the bleeding (this release)                   | 048, 049, 050        |
+| **B** | v0.43.0  | i18n completeness sweep                            | 051, 052, 053, 054   |
+| **C** | v0.44.0  | Self-service unification (`/me/security/*`)        | 055, 056, 057        |
+| **D** | v0.45.0  | Dangerous operations contract                      | 058, 059, 060        |
+| **E** | v0.46.0  | Visual hierarchy + palette extension               | 061, 062, 063, 064   |
+| **F** | v0.47.0  | Code structure (split `pages.rs` and admin.rs)     | 065, 066, 067        |
+| —     | v0.48.0  | Buffer + RFC index / docs reconciliation           | 068, 069             |
+
+v1.0-rc follows once Phases A–F are clean.
+
+The plan is intentionally correctness-first: visible polish (Phase E)
+lands fifth, only after the underlying i18n, navigation, and
+dangerous-operation contracts are honest. See
+[`docs/src/contributing/`](docs/src/contributing/) and the individual
+proposed RFCs once they enter the repository at each phase start.
 
 ---
 
@@ -40,6 +51,9 @@ from RFC 017 § 4.
 
 | Version | What shipped |
 |---|---|
+| v0.42.0 | **Phase A** of the UI/UX hardening plan — RFC 048 (48 `t.xxx` literal-leak fixes), RFC 049 (CSS token freeze + 7 typo fixes), RFC 050 (admin chrome i18n: Nav, Footer, ThemeToggle). Plus the `/me/security/*` locale-resolution fix. Three new CI invariants. |
+| v0.41.0 | RFC 040 completion (`/me/security/mfa`+`/sessions`), RFC 045 (user disable reason), RFC 046 (audit copy-ID), RFC 047 (dev summary + secret rotation) |
+| v0.40.0 | RFC 040 (`/me/security` tabs initial), RFC 041 (HIBP consistency), RFC 042 (error i18n), RFC 043 (dashboard events), RFC 044 (state-word contract) |
 | v0.39.0 | RFC 038 (consent screen), RFC 039 (settings i18n complete) |
 | v0.38.0 | e2e coverage (RFC 030/033/035), audit-events doc, settings i18n section headers |
 | v0.37.0 | RFC 029 pass 2 (dynamic locale), RFC 035 (user detail), RFC 036 (docs/Phase 5) |
@@ -60,60 +74,18 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-v0.39.0 closes RFCs 038 (OIDC consent screen) and 039 (settings i18n
-complete). The project is approaching v1.0 readiness, with v0.40 work
-underway to close the last PDF-spec compliance gaps before the 1.0
-release candidate.
+v0.42.0 ships Phase A of the v0.42 → v1.0-rc UI/UX hardening plan.
+A v0.41.0 implementation review found that the rendered admin panel
+did not match the design contract the HANDOFF claimed had been
+delivered: 48 `t.xxx` literal leaks on page titles and buttons, 7
+undefined CSS variables breaking visual styling, an entirely non-i18n
+admin navigation chrome, and a `/me/security/*` locale-resolution
+helper that ignored Accept-Language and the user-preference cookie.
+Phase A addresses these correctness gaps so the rest of the hardening
+plan rests on screens that at least render their own headings.
 
-### v0.40.0 — planned scope
-
-PDF-spec compliance pass. After re-reviewing the two UI/UX design PDFs
-(`suiiduiuxonepageoverviewv0.29x.pdf`,
-`suiiduiuxdevelopmentsupportv0.29x.pdf`), we identified 14 gaps and
-grouped them into 8 RFCs.
-
-### v0.40.0 — released (this version)
-
-- **RFC 040** `/me/security` tabbed structure (Overview/Passkeys/Language routes, new migration 0026)
-- **RFC 041** HIBP consistency: `admin::create_user` now enforces hibp_mode
-- **RFC 042** Error / rate-limited page i18n completion
-- **RFC 043** Dashboard "Recent important events" card
-- **RFC 044** UI state word contract documentation
-
-### v0.41.0 — released
-
-- RFC 040 complete: `/me/security/mfa` and `/me/security/sessions` tabs
-- RFC 045 — User disable reason input (audit note)
-- RFC 046 — Audit log per-row copy ID
-- RFC 047 — Dev mode tab-separated summary + client secret rotation
-
-### Post-1.0 proposed (Low priority)
-
-All remaining proposed RFCs are marked Low and target post-1.0 milestones.
-The core feature set is complete.
-
-**P0 (must, included in v0.40.0):**
-- RFC 040 — `/me/security` tabbed structure (Overview / MFA / Passkey
-  / Sessions / Language). Largest scope: new migration 0026, 8 new routes,
-  5 new render structs, user-facing language preference.
-- RFC 041 — HIBP enforcement consistency. Closes the `admin::create_user`
-  gap; adds HIBP mode edit UI to `/admin/settings/authentication`.
-- RFC 042 — Error / rate-limited page i18n completion. The last
-  i18n gap from the design doc's a11y + i18n contract.
-
-**P1 (recommended, included in v0.40.0):**
-- RFC 043 — Dashboard "Recent important events" card. Surfaces the last
-  5 admin-relevant audit events.
-- RFC 044 — State word contract documentation. Process-only RFC
-  codifying the empty/error/success/loading/disabled patterns.
-
-**P2 (deferred to v0.40.1 or v0.41):**
-- RFC 045 — User disable reason input.
-- RFC 046 — Audit log per-row copy ID button.
-- RFC 047 — Dev mode summary copy-friendliness + client secret rotation
-  audit.
-
-Estimated total effort for v0.40.0: ~28–32 hours of focused work.
+The project is **on hold for v1.0** until Phases B–F land. Phase B
+(per-screen i18n completeness sweep) is the next milestone.
 
 ---
 
