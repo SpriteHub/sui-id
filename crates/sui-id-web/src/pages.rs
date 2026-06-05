@@ -1410,14 +1410,18 @@ pub struct ClientEditData {
     pub post_logout_redirect_uris: Vec<String>,
     pub confidential: bool,
     pub is_disabled: bool,
+    /// RFC 038: "none", "first_time", or "always"
+    pub consent_policy: String,
 }
 
 pub fn render_client_edit(
     data: ClientEditData,
     flash: Option<Flash>,
     csrf_token: String,
+    lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
+        let t = lang.strings();
         let ClientEditData {
             id,
             name,
@@ -1426,6 +1430,7 @@ pub fn render_client_edit(
             post_logout_redirect_uris,
             confidential,
             is_disabled,
+            consent_policy,
         } = data;
         let post_url = format!("/admin/clients/{id}/edit");
         let kind = if confidential { "confidential" } else { "public" };
@@ -1466,7 +1471,7 @@ pub fn render_client_edit(
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">"設定"</h3>
+                    <h3 class="card__title">t.settings_title</h3>
                     <form method="post" action=post_url class="stack">
                         <input type="hidden" name="_csrf" value=csrf_token />
                         <div class="field">
@@ -1498,9 +1503,32 @@ pub fn render_client_edit(
                             </textarea>
                             <span class="field__hint">"1 行に 1 つ。空欄=Redirect URIs を流用。"</span>
                         </div>
+                        <div class="field">
+                            <label for="e-consent" class="field__label">{t.consent_policy_label}</label>
+                            <select id="e-consent" name="consent_policy">
+                                {
+                                    let cp = consent_policy.clone();
+                                    let cp2 = consent_policy.clone();
+                                    let cp3 = consent_policy.clone();
+                                    view! {
+                                        <>
+                                        <option value="none"     selected=move || cp  == "none">
+                                            {t.consent_policy_none}
+                                        </option>
+                                        <option value="first_time" selected=move || cp2 == "first_time">
+                                            {t.consent_policy_first_time}
+                                        </option>
+                                        <option value="always"   selected=move || cp3 == "always">
+                                            {t.consent_policy_always}
+                                        </option>
+                                        </>
+                                    }
+                                }
+                            </select>
+                        </div>
                         <div class="row">
-                            <button type="submit">"保存"</button>
-                            <a href="/admin/clients" class="button secondary">"キャンセル"</a>
+                            <button type="submit">{t.button_save}</button>
+                            <a href="/admin/clients" class="button secondary">{t.button_cancel}</a>
                         </div>
                     </form>
                 </div>
@@ -2138,6 +2166,66 @@ pub fn render_user_detail(data: UserDetailData, lang: sui_id_i18n::Locale) -> St
     })
 }
 
+
+// ---------- OIDC consent screen (RFC 038) ----------
+
+pub struct ConsentData {
+    pub client_name: String,
+    pub requested_scopes: Vec<String>,
+    pub csrf_token: String,
+}
+
+pub fn render_consent(data: ConsentData, lang: sui_id_i18n::Locale) -> String {
+    render(move || {
+        let t = lang.strings();
+        let client_name = data.client_name.clone();
+        let scope_labels: Vec<_> = data.requested_scopes.iter().map(|s| {
+            let label: &'static str = match s.as_str() {
+                "openid"         => t.consent_scope_openid,
+                "profile"        => t.consent_scope_profile,
+                "email"          => t.consent_scope_email,
+                "offline_access" => t.consent_scope_offline_access,
+                _                => "—",
+            };
+            let scope_str = s.clone();
+            view! {
+                <li style="margin:var(--space-1) 0">
+                    <span class="badge">{scope_str}</span>
+                    " — " {label}
+                </li>
+            }
+        }).collect();
+
+        let csrf = data.csrf_token.clone();
+        view! {
+            <crate::layout::AuthShell title=t.consent_title.to_string() lang=lang>
+                <div class="auth-card" style="max-width:32rem">
+                    <h1>{t.consent_title}</h1>
+                    <p style="margin:var(--space-3) 0">
+                        <strong>{client_name}</strong>
+                        " " {t.consent_app_wants_access}
+                    </p>
+                    <ul style="list-style:none;padding:0;margin-bottom:var(--space-4)">
+                        {scope_labels}
+                    </ul>
+                    <div class="row" style="gap:var(--space-2)">
+                        <form method="post" action="/oauth2/consent">
+                            <input type="hidden" name="_csrf" value=csrf.clone() />
+                            <input type="hidden" name="decision" value="approve" />
+                            <button type="submit">{t.consent_approve}</button>
+                        </form>
+                        <form method="post" action="/oauth2/consent">
+                            <input type="hidden" name="_csrf" value=csrf />
+                            <input type="hidden" name="decision" value="deny" />
+                            <button type="submit" class="secondary">{t.consent_deny}</button>
+                        </form>
+                    </div>
+                </div>
+            </crate::layout::AuthShell>
+        }
+    })
+}
+
 // ---------- error ----------
 
 pub fn render_error(title: String, message: String, request_id: String) -> String {
@@ -2593,9 +2681,9 @@ fn kv_code(k: &str, v: String) -> impl IntoView {
 
 fn kv_bool_badge(k: &str, on: bool) -> impl IntoView {
     let badge = if on {
-        view! { <span class="badge badge--ok">"有効"</span> }.into_any()
+        view! { <span class="badge badge--ok">t.badge_enabled</span> }.into_any()
     } else {
-        view! { <span class="badge">"無効"</span> }.into_any()
+        view! { <span class="badge">t.badge_disabled</span> }.into_any()
     };
     kv_row(k, badge)
 }
@@ -2621,6 +2709,7 @@ pub struct SettingsBasicData {
 
 pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         let SettingsBasicData {
             issuer,
             listen_addr,
@@ -2634,7 +2723,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
         let csrf_for_lang = csrf_token.clone();
         let lang_form = view! {
             <section class="section">
-                <h2 class="section__title">"サーバーデフォルト言語 / Server default language"</h2>
+                <h2 class="section__title">t.settings_basic_default_lang</h2>
                 <p class="muted">
                     "ユーザーの言語設定とブラウザの Accept-Language が一致しない場合の "
                     "フォールバックとして使用されます。 / Used as a fallback when no per-user "
@@ -2645,7 +2734,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                         <input type="hidden" name="_csrf" value=csrf_for_lang />
                         <div class="field">
                             <label for="default-lang-select" class="field__label">
-                                "言語 / Language"
+                                t.profile_lang_label
                             </label>
                             <select id="default-lang-select" name="default_lang">
                                 {sui_id_i18n::Locale::ALL.iter().map(|loc| {
@@ -2659,22 +2748,22 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                             </select>
                         </div>
                         <div>
-                            <button type="submit">"保存 / Save"</button>
+                            <button type="submit">t.button_save</button>
                         </div>
                     </form>
                 </div>
             </section>
         };
         let proxies_display = if trusted_proxies.is_empty() {
-            "(なし — peer の IP を直接信頼)".to_owned()
+            t.settings_basic_trusted_proxies_none.to_owned()
         } else {
             trusted_proxies.join(", ")
         };
         view! {
-            <Shell title="設定 — 基本".to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_basic.to_string() show_nav=true current=Some("settings".to_string())>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"設定"</h1>
+                        <h1 class="page-header__title">t.settings_title</h1>
                         <p class="page-header__lede">
                             t.settings_basic_description
                         </p>
@@ -2684,7 +2773,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                 {settings_tabs(SettingsTab::Basic, lang)}
 
                 <div class="card">
-                    <h3 class="card__title">"基本"</h3>
+                    <h3 class="card__title">t.settings_tab_basic</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -2698,7 +2787,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">"OIDC 公開エンドポイント"</h3>
+                    <h3 class="card__title">t.settings_basic_oidc_section</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -2760,6 +2849,7 @@ pub struct SettingsSecurityData {
 
 pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         let SettingsSecurityData {
             max_lockout_label,
             hsts_enabled,
@@ -2798,7 +2888,7 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                             </span>
                         </div>
                         <div>
-                            <button type="submit">"保存 / Save"</button>
+                            <button type="submit">t.button_save</button>
                         </div>
                     </form>
                 </div>
@@ -2818,17 +2908,17 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                             </span>
                         </div>
                         <div>
-                            <button type="submit">"保存 / Save"</button>
+                            <button type="submit">t.button_save</button>
                         </div>
                     </form>
                 </div>
             </section>
         };
         view! {
-            <Shell title="設定 — セキュリティ".to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_security.to_string() show_nav=true current=Some("settings".to_string())>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"設定"</h1>
+                        <h1 class="page-header__title">t.settings_title</h1>
                         <p class="page-header__lede">
                             t.settings_basic_description
                         </p>
@@ -2842,7 +2932,7 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_code("最大ロックアウト時間", max_lockout_label)}
+                                {kv_code(t.settings_security_lockout_section, max_lockout_label)}
                             </tbody>
                         </table>
                     </div>
@@ -2921,6 +3011,7 @@ pub fn render_settings_authentication(
     lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
+        let t = lang.strings();
         let SettingsAuthenticationData {
             password_min_length,
             password_argon2id,
@@ -2935,10 +3026,10 @@ pub fn render_settings_authentication(
             refresh_theft_detection,
         } = data;
         view! {
-            <Shell title="設定 — 認証".to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_authentication.to_string() show_nav=true current=Some("settings".to_string())>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"設定"</h1>
+                        <h1 class="page-header__title">t.settings_title</h1>
                         <p class="page-header__lede">
                             t.settings_basic_description
                         </p>
@@ -2952,8 +3043,8 @@ pub fn render_settings_authentication(
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_text("最小文字数", format!("{password_min_length} 文字"))}
-                                {kv_text("ハッシュアルゴリズム", password_argon2id)}
+                                {kv_text(t.settings_auth_min_length_label, format!("{password_min_length} 文字"))}
+                                {kv_text(t.settings_auth_hash_algorithm_label, password_argon2id)}
                             </tbody>
                         </table>
                     </div>
@@ -2964,8 +3055,8 @@ pub fn render_settings_authentication(
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_bool_badge("TOTP(認証アプリ)", totp_enabled_per_user)}
-                                {kv_bool_badge("WebAuthn(パスキー)", webauthn_enabled_per_user)}
+                                {kv_bool_badge(t.settings_auth_mfa_totp, totp_enabled_per_user)}
+                                {kv_bool_badge(t.settings_auth_mfa_passkey, webauthn_enabled_per_user)}
                                 {kv_text("リカバリーコード(登録ごと)", format!("{recovery_codes_per_enrollment} 件"))}
                             </tbody>
                         </table>
@@ -2982,12 +3073,12 @@ pub fn render_settings_authentication(
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_bool_badge("PKCE 必須(全 client、全 flow)", pkce_required)}
-                                {kv_text("Access token 有効期限", fmt_lifetime(access_token_lifetime_secs))}
-                                {kv_text("ID token 有効期限", fmt_lifetime(id_token_lifetime_secs))}
-                                {kv_text("Refresh token 有効期限", fmt_lifetime(refresh_token_lifetime_secs))}
-                                {kv_bool_badge("Refresh ローテーション", refresh_rotation)}
-                                {kv_bool_badge("Refresh 盗難検知(family revoke)", refresh_theft_detection)}
+                                {kv_bool_badge(t.settings_auth_pkce_required, pkce_required)}
+                                {kv_text(t.settings_auth_access_token_ttl, fmt_lifetime(access_token_lifetime_secs))}
+                                {kv_text(t.settings_auth_id_token_ttl, fmt_lifetime(id_token_lifetime_secs))}
+                                {kv_text(t.settings_auth_refresh_token_ttl, fmt_lifetime(refresh_token_lifetime_secs))}
+                                {kv_bool_badge(t.settings_auth_refresh_rotate, refresh_rotation)}
+                                {kv_bool_badge(t.settings_auth_refresh_theft, refresh_theft_detection)}
                             </tbody>
                         </table>
                     </div>
@@ -3017,6 +3108,7 @@ pub struct SettingsChainStatus {
 
 pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         let SettingsLogsData {
             log_format,
             log_filter,
@@ -3041,10 +3133,10 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
         };
 
         view! {
-            <Shell title="設定 — ログ".to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_logs.to_string() show_nav=true current=Some("settings".to_string())>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"設定"</h1>
+                        <h1 class="page-header__title">t.settings_title</h1>
                         <p class="page-header__lede">
                             "ログ出力設定と監査ログの状態。"
                         </p>
@@ -3066,7 +3158,7 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">"直近 24 時間のイベント"</h3>
+                    <h3 class="card__title">t.settings_logs_recent_24h</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -3111,6 +3203,7 @@ pub struct SettingsOtherData {
 
 pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
+        let t = lang.strings();
         let SettingsOtherData {
             binary_version,
             schema_version,
@@ -3122,10 +3215,10 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
         } = data;
         let now_str = clock_now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
         view! {
-            <Shell title="設定 — その他".to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_title_advanced.to_string() show_nav=true current=Some("settings".to_string())>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"設定"</h1>
+                        <h1 class="page-header__title">t.settings_title</h1>
                         <p class="page-header__lede">
                             "ビルド情報・スキーマ・ストレージ。"
                         </p>
@@ -3139,9 +3232,9 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_code("sui-id バージョン", binary_version)}
-                                {kv_text("対応スキーマバージョン", schema_version.to_string())}
-                                {kv_code("サーバ時刻", now_str)}
+                                {kv_code(t.settings_advanced_version_label, binary_version)}
+                                {kv_text(t.settings_advanced_schema_label, schema_version.to_string())}
+                                {kv_code(t.settings_advanced_server_time_label, now_str)}
                             </tbody>
                         </table>
                     </div>
@@ -3152,8 +3245,8 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_code("DB ファイル", db_path)}
-                                {kv_code("マスターキーファイル", master_key_file)}
+                                {kv_code(t.settings_advanced_db_file_label, db_path)}
+                                {kv_code(t.settings_advanced_key_file_label, master_key_file)}
                             </tbody>
                         </table>
                     </div>
@@ -3174,7 +3267,7 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                                     <td>
                                         {user_count.to_string()}" 名 "
                                         <a href="/admin/users" class="muted" style="margin-left:var(--space-2)">
-                                            "管理 →"
+                                            t.settings_advanced_manage_link
                                         </a>
                                     </td>
                                 </tr>
@@ -3183,7 +3276,7 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                                     <td>
                                         {client_count.to_string()}" 件 "
                                         <a href="/admin/clients" class="muted" style="margin-left:var(--space-2)">
-                                            "管理 →"
+                                            t.settings_advanced_manage_link
                                         </a>
                                     </td>
                                 </tr>
@@ -3386,6 +3479,7 @@ pub fn render_settings_email(
     lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
+        let t = lang.strings();
         let SettingsEmailData {
             configured: _,
             enabled,
@@ -3411,12 +3505,12 @@ pub fn render_settings_email(
         let tls_starttls = if tls_mode == "starttls" { Some("selected") } else { None };
 
         view! {
-            <Shell title="設定 — メール".to_string() show_nav=true current=Some("settings".to_string())>
+            <Shell title=t.settings_email_page_title.to_string() show_nav=true current=Some("settings".to_string())>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"設定"</h1>
+                        <h1 class="page-header__title">t.settings_title</h1>
                         <p class="page-header__lede">
-                            "メール送信(SMTP)設定。パスワードリセットや変更通知の送信に使用します。"
+                            t.settings_email_lede
                         </p>
                     </div>
                 </header>
@@ -3424,7 +3518,7 @@ pub fn render_settings_email(
                 {settings_tabs(SettingsTab::Email, lang)}
 
                 <div class="card">
-                    <h3 class="card__title">"SMTP 接続"</h3>
+                    <h3 class="card__title">t.settings_email_smtp_section</h3>
                     <form method="post" action="/admin/settings/email" class="stack">
                         <input type="hidden" name="_csrf" value=csrf_save />
                         <div class="field">
@@ -3437,24 +3531,24 @@ pub fn render_settings_email(
                             </span>
                         </div>
                         <div class="field">
-                            <label for="host" class="field__label">"SMTP ホスト"</label>
+                            <label for="host" class="field__label">t.settings_email_host_label</label>
                             <input id="host" name="host" type="text" required=true value=host />
                         </div>
                         <div class="field">
-                            <label for="port" class="field__label">"ポート"</label>
+                            <label for="port" class="field__label">t.settings_email_port_label</label>
                             <input id="port" name="port" type="number" min="1" max="65535"
                                    required=true value=port_str />
-                            <span class="field__hint">"587(STARTTLS)または 465(暗黙 TLS)が一般的です。"</span>
+                            <span class="field__hint">t.settings_email_port_hint</span>
                         </div>
                         <div class="field">
-                            <label for="tls_mode" class="field__label">"TLS モード"</label>
+                            <label for="tls_mode" class="field__label">t.settings_email_tls_label</label>
                             <select id="tls_mode" name="tls_mode">
                                 <option value="starttls" selected=tls_starttls>"STARTTLS (587)"</option>
-                                <option value="implicit" selected=tls_implicit>"暗黙 TLS (465)"</option>
+                                <option value="implicit" selected=tls_implicit>t.settings_email_tls_implicit</option>
                             </select>
                         </div>
                         <div class="field">
-                            <label for="username" class="field__label">"ユーザー名(任意)"</label>
+                            <label for="username" class="field__label">t.settings_email_username_label</label>
                             <input id="username" name="username" type="text"
                                    autocomplete="off" value=username />
                         </div>
@@ -3468,16 +3562,16 @@ pub fn render_settings_email(
                         </div>
                         <hr class="divider" />
                         <div class="field">
-                            <label for="from_address" class="field__label">"送信元アドレス"</label>
+                            <label for="from_address" class="field__label">t.settings_email_from_addr_label</label>
                             <input id="from_address" name="from_address" type="email"
                                    required=true value=from_address />
                         </div>
                         <div class="field">
-                            <label for="from_name" class="field__label">"送信元表示名(任意)"</label>
+                            <label for="from_name" class="field__label">t.settings_email_from_name_label</label>
                             <input id="from_name" name="from_name" type="text" value=from_name />
                         </div>
                         <div class="field">
-                            <label for="base_url" class="field__label">"公開 Base URL"</label>
+                            <label for="base_url" class="field__label">t.settings_email_base_url_label</label>
                             <input id="base_url" name="base_url" type="url"
                                    required=true value=base_url
                                    placeholder="https://idp.example.com" />
@@ -3497,7 +3591,7 @@ pub fn render_settings_email(
                     </p>
                     <form method="post" action="/admin/settings/email/test" class="stack">
                         <input type="hidden" name="_csrf" value=csrf_test />
-                        <button type="submit" class="secondary">"接続をテスト"</button>
+                        <button type="submit" class="secondary">t.settings_email_test_button</button>
                     </form>
                 </div>
             </Shell>

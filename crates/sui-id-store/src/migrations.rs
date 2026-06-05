@@ -110,6 +110,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 24,
         sql: include_str!("./migrations/0024_email_outbox_locale.sql"),
     },
+    Migration {
+        version: 25,
+        sql: include_str!("./migrations/0025_consent.sql"),
+    },
 ];
 
 /// The highest schema version this build of sui-id-store knows how to

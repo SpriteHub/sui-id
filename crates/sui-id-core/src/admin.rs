@@ -381,6 +381,7 @@ pub async fn create_client(
         post_logout_redirect_uris: spec.post_logout_redirect_uris.to_vec(),
         is_disabled: false,
         is_deleted: false,
+        consent_policy: sui_id_store::models::ConsentPolicy::default(),
         created_at: now,
         updated_at: now,
     };

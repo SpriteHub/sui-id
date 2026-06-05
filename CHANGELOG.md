@@ -5,7 +5,76 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.38.0] — Unreleased
+## [0.39.0] — Unreleased
+
+**Minor version bump.** RFC 038 adds a new migration, new routes, and new
+screens. RFC 039 completes the settings UI translation. Together these
+close the last two proposed RFCs before v1.0 readiness.
+
+### RFC 038 — OIDC consent screen
+
+Implements a per-client consent screen for the OIDC authorization flow.
+
+#### Schema (migration 0025)
+
+- `clients.consent_policy TEXT NOT NULL DEFAULT 'none'` — controls when the
+  consent screen appears.
+- `user_consent (user_id, client_id, granted_scopes, granted_at)` — stores
+  per-user approval decisions.
+
+#### Consent policy values
+
+| Policy | Behaviour |
+|---|---|
+| `none` | No consent screen (first-party default, backwards-compatible). |
+| `first_time` | Show once; skip if stored grant covers the requested scopes. |
+| `always` | Always prompt regardless of stored grants. |
+
+#### New routes
+
+- `GET  /oauth2/consent` — renders the consent screen (from `sui_id_consent` cookie).
+- `POST /oauth2/consent` — approve (stores grant, issues code) or deny
+  (redirects with `error=access_denied`).
+
+#### UI changes
+
+- Consent screen: lists the client name, requested scopes with human-readable
+  labels, and Approve / Deny buttons. Translated in Ja / En / Zh.
+- Client edit form: new "Consent policy" select (none / first_time / always).
+
+#### New `user_consent` repository
+
+`get`, `upsert`, `revoke`, `covers` — `covers` checks whether stored
+`granted_scopes` is a superset of `requested_scopes`.
+
+New i18n keys: `consent_title`, `consent_app_wants_access`,
+`consent_scope_*`, `consent_approve`, `consent_deny`,
+`consent_policy_label`, `consent_policy_*`.
+
+### RFC 039 — Settings UI i18n completion
+
+Approximately 60 hardcoded Japanese strings across all six settings tabs
+converted to `t.` references. All six settings render functions now bind
+`let t = lang.strings()` and use the translation system throughout.
+
+New translation keys (×3 locales):
+
+- `settings_title_*` — per-tab page titles (Basic, Security, Auth, Logs, Email, Advanced)
+- `settings_auth_*` — authentication tab: password, MFA, OIDC/token labels
+- `settings_logs_recent_24h`, `settings_logs_chain_*`
+- `settings_advanced_*` — version, schema, server time, DB/key file paths, counts
+- `settings_email_*` — all SMTP form labels, hints, and buttons (25 keys)
+
+### Test results
+
+- `sui-id-i18n`: **12 tests pass**
+- `sui-id-store`: **36 tests pass** (3 new `user_consent::covers` tests)
+- `sui-id-core`: **114 tests pass**
+- `cargo check --workspace` + `cargo check --tests`: clean
+
+---
+
+## [0.38.0] — Previous release
 
 **Patch-level quality pass.** No schema changes, no new routes beyond the
 e2e test additions. Targets coverage, docs accuracy, and i18n completeness.

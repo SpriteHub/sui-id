@@ -60,6 +60,38 @@ pub struct CredentialRow {
     pub updated_at: DateTime<Utc>,
 }
 
+
+/// Per-client consent screen policy (RFC 038).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ConsentPolicy {
+    /// No consent screen — first-party default. Existing behaviour.
+    #[default]
+    None,
+    /// Show consent on first authorization; skip if prior grant covers
+    /// the requested scopes.
+    FirstTime,
+    /// Always show the consent screen regardless of stored grants.
+    Always,
+}
+
+impl ConsentPolicy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::None      => "none",
+            Self::FirstTime => "first_time",
+            Self::Always    => "always",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "first_time" => Self::FirstTime,
+            "always"     => Self::Always,
+            _            => Self::None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ClientRow {
     pub id: ClientId,
@@ -78,8 +110,21 @@ pub struct ClientRow {
     pub post_logout_redirect_uris: Vec<String>,
     pub is_disabled: bool,
     pub is_deleted: bool,
+    /// Per-client consent policy (RFC 038).
+    pub consent_policy: ConsentPolicy,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+
+/// A stored user consent record (RFC 038).
+#[derive(Debug, Clone)]
+pub struct UserConsentRow {
+    pub user_id:        UserId,
+    pub client_id:      ClientId,
+    /// Space-separated granted scope tokens.
+    pub granted_scopes: String,
+    pub granted_at:     DateTime<Utc>,
 }
 
 #[derive(Debug, Clone)]

@@ -18,6 +18,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClientRow> {
     let post_logout_redirect_uris: Vec<String> = serde_json::from_str(&post_logout_json).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e))
     })?;
+    let consent_policy_str: String = row.get(11).unwrap_or_else(|_| "none".to_string());
     Ok(ClientRow {
         id: row
             .get::<_, String>(0)?
@@ -31,6 +32,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClientRow> {
         post_logout_redirect_uris,
         is_disabled: row.get::<_, i64>(5)? != 0,
         is_deleted: row.get::<_, i64>(6)? != 0,
+        consent_policy: crate::models::ConsentPolicy::parse(&consent_policy_str),
         created_at: row.get::<_, DateTime<Utc>>(9)?,
         updated_at: row.get::<_, DateTime<Utc>>(10)?,
     })
@@ -41,7 +43,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClientRow> {
 //                         post_logout_redirect_uris, created_at, updated_at.
 const SELECT: &str = "SELECT id, name, confidential, secret_hash, redirect_uris, \
                       is_disabled, is_deleted, allowed_scopes, \
-                      post_logout_redirect_uris, created_at, updated_at FROM clients";
+                      post_logout_redirect_uris, created_at, updated_at, consent_policy FROM clients";
 
 pub async fn create(db: &Database, c: &ClientRow) -> StoreResult<()> {
     let uris = serde_json::to_string(&c.redirect_uris)?;
@@ -208,6 +210,22 @@ pub async fn set_dev_secret_hash(
         if n == 0 {
             return Err(StoreError::NotFound);
         }
+        Ok(())
+    }).await
+}
+
+/// Update the consent policy for a client (RFC 038).
+pub async fn update_consent_policy(
+    db: &Database,
+    id: ClientId,
+    policy: crate::models::ConsentPolicy,
+    now: chrono::DateTime<chrono::Utc>,
+) -> StoreResult<()> {
+    db.with_conn(move |conn| {
+        conn.execute(
+            "UPDATE clients SET consent_policy = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![policy.as_str(), now, id.to_string()],
+        )?;
         Ok(())
     }).await
 }

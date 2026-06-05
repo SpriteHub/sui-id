@@ -124,6 +124,9 @@ pub struct ClientSummary {
     pub confidential: bool,
     pub is_disabled: bool,
     pub is_deleted: bool,
+    /// Consent policy as a string tag (RFC 038): "none", "first_time", "always".
+    #[serde(default)]
+    pub consent_policy: String,
     pub created_at: DateTime<Utc>,
 }
 

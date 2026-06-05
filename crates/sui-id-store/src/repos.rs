@@ -8,6 +8,7 @@ pub mod audit;
 pub mod email_outbox;
 pub mod auth_codes;
 pub mod clients;
+pub mod user_consent;
 pub mod credentials;
 pub mod json_util;
 pub mod login_pending_mfa;

@@ -832,6 +832,7 @@ pub async fn clients_get(
             confidential: r.confidential,
             is_disabled: r.is_disabled,
             is_deleted: r.is_deleted,
+            consent_policy: r.consent_policy.as_str().to_string(),
             created_at: r.created_at,
         })
         .collect();
@@ -923,6 +924,7 @@ pub async fn clients_create(
             confidential: r.confidential,
             is_disabled: r.is_disabled,
             is_deleted: r.is_deleted,
+            consent_policy: r.consent_policy.as_str().to_string(),
             created_at: r.created_at,
         })
         .collect();
@@ -992,9 +994,11 @@ pub async fn clients_edit_get(
             post_logout_redirect_uris: row.post_logout_redirect_uris,
             confidential: row.confidential,
             is_disabled: row.is_disabled,
+            consent_policy: row.consent_policy.as_str().to_string(),
         },
         None,
         token.clone(),
+        crate::handlers::resolve_admin_locale(&app, admin_id).await,
     ))
     .into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
@@ -1006,6 +1010,8 @@ pub struct EditClientForm {
     pub redirect_uris: String,
     #[serde(default)]
     pub allowed_scopes: String,
+    #[serde(default)]
+    pub consent_policy: String,
     #[serde(default)]
     pub post_logout_redirect_uris: String,
     #[serde(rename = "_csrf", default)]
@@ -1055,6 +1061,11 @@ pub async fn clients_edit_post(
         &post_logout_uris,
     ).await
     .map_err(HttpError::html)?;
+    // Update consent policy (RFC 038)
+    let policy = sui_id_store::models::ConsentPolicy::parse(form.consent_policy.trim());
+    sui_id_store::repos::clients::update_consent_policy(
+        &app.db, target, policy, app.clock.now()
+    ).await.map_err(|e| HttpError::html(sui_id_core::errors::CoreError::from(e)))?;
     Ok(Redirect::to("/admin/clients").into_response())
 }
 

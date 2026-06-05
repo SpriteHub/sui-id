@@ -19,6 +19,9 @@ use sui_id_core::errors::{CoreError, ProtocolError};
 use sui_id_core::jwks;
 use sui_id_shared::ids::ClientId;
 use sui_id_store::repos::users;
+use sui_id_store::models::ConsentPolicy;
+use sui_id_shared::ids::UserId;
+use sui_id_web::{pages::ConsentData, render_consent};
 
 // ---------- discovery & JWKS ----------
 
@@ -94,6 +97,87 @@ pub async fn authorize(
     };
 
     let accepted = authorize::begin_authorization(&app.db, params).await.map_err(HttpError::html)?;
+
+    // Consent gate (RFC 038) — look up client to check consent_policy.
+    let client_for_consent = sui_id_store::repos::clients::get(
+        &app.db, accepted.params.client_id
+    ).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let scope = accepted.params.scope.clone();
+    let needs_consent = match client_for_consent.consent_policy {
+        ConsentPolicy::None => false,
+        ConsentPolicy::Always => true,
+        ConsentPolicy::FirstTime => {
+            let stored = sui_id_store::repos::user_consent::get(
+                &app.db, session_user, client_for_consent.id
+            ).await.unwrap_or(None);
+            match stored {
+                Some(row) if sui_id_store::repos::user_consent::covers(
+                    &row.granted_scopes, &scope
+                ) => false,
+                _ => true,
+            }
+        }
+    };
+
+    if needs_consent {
+        let lang = sui_id_store::repos::server_settings::get(&app.db)
+            .await
+            .ok()
+            .and_then(|s| sui_id_i18n::Locale::parse(&s.default_lang))
+            .unwrap_or_default();
+
+        // Serialise the accepted params into a short-lived cookie so the
+        // consent POST can complete the flow without replaying /authorize.
+        let cs = serde_json::json!({
+            "user_id": session_user.to_string(),
+            "client_id": accepted.params.client_id.to_string(),
+            "redirect_uri": accepted.params.redirect_uri,
+            "scope": scope,
+            "state": accepted.params.state,
+            "nonce": accepted.params.nonce,
+            "code_challenge": accepted.params.code_challenge,
+            "code_challenge_method": accepted.params.code_challenge_method,
+            "auth_methods": serde_json::to_value(&session_auth_methods).unwrap_or_default(),
+        });
+        let cs_json = serde_json::to_string(&cs)
+            .map_err(|_| HttpError::html(CoreError::Internal))?;
+
+        let scopes: Vec<String> = scope.split_whitespace()
+            .map(|s| s.to_string()).collect();
+        let csrf_tok = crate::csrf::new_token();
+        let consent_html = render_consent(ConsentData {
+            client_name: client_for_consent.name.clone(),
+            requested_scopes: scopes,
+            csrf_token: csrf_tok.clone(),
+        }, lang);
+
+        let cookie_val = format!(
+            "sui_id_consent={cs_json}; HttpOnly; SameSite=Lax; Max-Age=300; Path=/"
+        );
+        let csrf_cookie_val = format!(
+            "sui_id_csrf={csrf_tok}; SameSite=Lax; Max-Age=300; Path=/"
+        );
+        let mut resp = axum::response::Response::new(
+            axum::body::Body::from(consent_html)
+        );
+        *resp.status_mut() = axum::http::StatusCode::OK;
+        resp.headers_mut().append(
+            axum::http::header::SET_COOKIE,
+            axum::http::HeaderValue::from_str(&cookie_val)
+                .map_err(|_| HttpError::html(CoreError::Internal))?,
+        );
+        resp.headers_mut().append(
+            axum::http::header::SET_COOKIE,
+            axum::http::HeaderValue::from_str(&csrf_cookie_val)
+                .map_err(|_| HttpError::html(CoreError::Internal))?,
+        );
+        resp.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("text/html; charset=utf-8"),
+        );
+        return Ok(resp);
+    }
+
     let redirect = authorize::complete_authorization(
         &app.db,
         &app.clock,
@@ -547,3 +631,111 @@ pub async fn logout(
     }
     Ok(resp)
 }
+
+// ---------- /oauth2/consent (RFC 038) ----------
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ConsentForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    /// "approve" or "deny"
+    pub decision: String,
+}
+
+pub async fn consent_get(
+    state_ext: AppStateExt,
+    jar: axum_extra::extract::cookie::CookieJar,
+) -> Result<Response, HttpError> {
+    // The GET just re-renders the consent page if the cookie is present.
+    // Usually users arrive here via POST-redirect, not direct GET.
+    let _ = state_ext;
+    let _ = jar;
+    Ok(axum::response::Redirect::to("/").into_response())
+}
+
+pub async fn consent_post(
+    state_ext: AppStateExt,
+    jar: axum_extra::extract::cookie::CookieJar,
+    axum::Form(form): axum::Form<ConsentForm>,
+) -> Result<Response, HttpError> {
+    let axum::extract::State(app) = state_ext;
+
+    // Read the consent session cookie
+    let cs_json = jar.get("sui_id_consent")
+        .map(|c| c.value().to_string())
+        .ok_or_else(|| HttpError::html(CoreError::BadRequest(
+            "consent session expired or missing; restart the login flow".into()
+        )))?;
+
+    // Validate CSRF
+    crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+
+    let cs: serde_json::Value = serde_json::from_str(&cs_json)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid consent session".into())))?;
+
+    let get_str = |key: &str| cs[key].as_str().unwrap_or("").to_string();
+
+    // Handle deny
+    if form.decision != "approve" {
+        let redirect_uri = get_str("redirect_uri");
+        let state = cs["state"].as_str().map(|s| s.to_string());
+        let sep = if redirect_uri.contains('?') { '&' } else { '?' };
+        let mut url = format!("{redirect_uri}{sep}error=access_denied");
+        if let Some(s) = state {
+            url.push_str("&state=");
+            url.push_str(&s);
+        }
+        return Ok(axum::response::Redirect::to(&url).into_response());
+    }
+
+    // Parse the session params and re-run complete_authorization
+    let user_id = get_str("user_id").parse::<UserId>()
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user_id in consent session".into())))?;
+    let client_id = get_str("client_id").parse::<ClientId>()
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client_id in consent session".into())))?;
+    let scope = get_str("scope");
+
+    // Store the consent grant
+    sui_id_store::repos::user_consent::upsert(
+        &app.db, user_id, client_id, scope.clone()
+    ).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+
+    // Reconstruct auth_methods from cookie
+    let auth_methods: Vec<sui_id_shared::AuthMethod> =
+        serde_json::from_value(cs["auth_methods"].clone()).unwrap_or_default();
+
+    let params = sui_id_core::authorize::AuthorizeParams {
+        client_id,
+        redirect_uri: get_str("redirect_uri"),
+        response_type: "code".into(),
+        scope: scope.clone(),
+        state: cs["state"].as_str().map(|s| s.to_string()),
+        nonce: cs["nonce"].as_str().map(|s| s.to_string()),
+        code_challenge: get_str("code_challenge"),
+        code_challenge_method: get_str("code_challenge_method"),
+    };
+
+    let accepted = sui_id_core::authorize::begin_authorization(&app.db, params)
+        .await.map_err(HttpError::html)?;
+
+    let redirect = sui_id_core::authorize::complete_authorization(
+        &app.db, &app.clock, user_id, &auth_methods, accepted,
+    ).await.map_err(HttpError::html)?;
+
+    let mut url = redirect.redirect_uri;
+    let sep = if url.contains('?') { '&' } else { '?' };
+    url.push(sep);
+    url.push_str("code=");
+    url.push_str(&url_encode(&redirect.code));
+    if let Some(s) = redirect.state {
+        url.push_str("&state=");
+        url.push_str(&url_encode(&s));
+    }
+
+    Ok(axum::response::Redirect::to(&url).into_response())
+}
+
+fn url_encode(s: &str) -> String {
+    percent_encoding::utf8_percent_encode(s, percent_encoding::NON_ALPHANUMERIC).to_string()
+}
+

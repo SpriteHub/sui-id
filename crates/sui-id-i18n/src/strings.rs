@@ -408,6 +408,76 @@ pub struct Strings {
     pub settings_advanced_build_section: &'static str,
     pub settings_advanced_storage_section: &'static str,
     pub settings_advanced_record_counts: &'static str,
+    // ---- Settings: page titles (RFC 039) ----
+    pub settings_title_basic: &'static str,
+    pub settings_title_security: &'static str,
+    pub settings_title_authentication: &'static str,
+    pub settings_title_logs: &'static str,
+    pub settings_title_email: &'static str,
+    pub settings_title_advanced: &'static str,
+
+    // ---- Settings: auth tab body (RFC 039) ----
+    pub settings_auth_min_length_label: &'static str,
+    pub settings_auth_hash_algorithm_label: &'static str,
+    pub settings_auth_mfa_totp: &'static str,
+    pub settings_auth_mfa_passkey: &'static str,
+    pub settings_auth_mfa_recovery_label: &'static str,
+    pub settings_auth_access_token_ttl: &'static str,
+    pub settings_auth_id_token_ttl: &'static str,
+    pub settings_auth_refresh_token_ttl: &'static str,
+    pub settings_auth_refresh_rotate: &'static str,
+    pub settings_auth_refresh_theft: &'static str,
+    pub settings_auth_pkce_required: &'static str,
+
+    // ---- Settings: logs tab body (RFC 039) ----
+    pub settings_logs_recent_24h: &'static str,
+    pub settings_logs_chain_broken_note: &'static str,
+    pub settings_logs_chain_ok_note: &'static str,
+
+    // ---- Settings: advanced tab body (RFC 039) ----
+    pub settings_advanced_version_label: &'static str,
+    pub settings_advanced_schema_label: &'static str,
+    pub settings_advanced_server_time_label: &'static str,
+    pub settings_advanced_db_file_label: &'static str,
+    pub settings_advanced_key_file_label: &'static str,
+    pub settings_advanced_users_count: &'static str,
+    pub settings_advanced_clients_count: &'static str,
+    pub settings_advanced_manage_link: &'static str,
+
+    // ---- Settings: email tab body (RFC 039) ----
+    pub settings_email_page_title: &'static str,
+    pub settings_email_lede: &'static str,
+    pub settings_email_smtp_section: &'static str,
+    pub settings_email_enable_label: &'static str,
+    pub settings_email_enable_hint: &'static str,
+    pub settings_email_host_label: &'static str,
+    pub settings_email_port_label: &'static str,
+    pub settings_email_port_hint: &'static str,
+    pub settings_email_tls_label: &'static str,
+    pub settings_email_tls_implicit: &'static str,
+    pub settings_email_username_label: &'static str,
+    pub settings_email_password_hint: &'static str,
+    pub settings_email_from_addr_label: &'static str,
+    pub settings_email_from_name_label: &'static str,
+    pub settings_email_base_url_label: &'static str,
+    pub settings_email_base_url_hint: &'static str,
+    pub settings_email_test_button: &'static str,
+    pub settings_email_test_hint: &'static str,
+
+    // ---- OIDC consent screen (RFC 038) ----
+    pub consent_title: &'static str,
+    pub consent_app_wants_access: &'static str,
+    pub consent_scope_openid: &'static str,
+    pub consent_scope_profile: &'static str,
+    pub consent_scope_email: &'static str,
+    pub consent_scope_offline_access: &'static str,
+    pub consent_approve: &'static str,
+    pub consent_deny: &'static str,
+    pub consent_policy_label: &'static str,
+    pub consent_policy_none: &'static str,
+    pub consent_policy_first_time: &'static str,
+    pub consent_policy_always: &'static str,
+
 
 
 
