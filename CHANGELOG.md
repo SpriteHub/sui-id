@@ -5,6 +5,160 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.47.0] — Unreleased
+
+**Phase F (partial) of the v0.42 → v1.0-rc UI/UX hardening plan:
+code structure cleanup.** This is the only Phase F release in v0.47.x;
+RFC 066 (admin.rs handler split) lands in v0.47.1, RFC 067 (inline-
+style discipline) plus `me_security.rs` split land in v0.48.0.
+
+The visible signal of Phase F partial landing: nothing. The split
+is purely structural. The visible signal of the *next* release
+will be that contributors stop scrolling past 4170 lines to find
+one screen renderer.
+
+A latent issue is also fixed: `user_row_view`, `client_row_view`,
+and `signing_key_row_view` carried dead `let csrf_disable`,
+`let delete_url`, `let action_target` etc. variables left over from
+the pre-Phase-D days when row buttons posted directly to dangerous
+endpoints. Phase D rerouted users + signing-keys through confirm
+screens, but the variable declarations weren't cleaned up. The
+RFC 065 sweep removed them. `client_row_view` keeps its
+`csrf_disable` / `disabled_url` / `action_target` because clients
+still use the row-level form for enable/disable (the `_confirmed=1`
+gate is server-side on `clients_set_disabled` — the form simply
+includes `_confirmed=1` as a hidden field — and the confirm-screen
+treatment is only on delete).
+
+---
+
+### RFC 065 — `pages.rs` split per screen domain
+
+The 4170-line `pages.rs` is split into 22 child modules under
+`crates/sui-id-web/src/pages/`, mirroring the screen architecture
+in the PDF (setup / auth / dashboard / users / clients / audit /
+signing keys / confirm / settings / me_security / oidc / error /
+common). Rust 2018+ module style is used throughout — no `mod.rs`
+files; each module is either an umbrella `.rs` file or a sibling
+directory.
+
+**New module tree:**
+
+```
+crates/sui-id-web/src/
+├── pages.rs                          # umbrella: pub mod {audit, auth, …}
+└── pages/
+    ├── common.rs        (~150 LOC)   # private pub(super) helpers
+    │                                 #   (flash_banner, fmt_time, render,
+    │                                 #    copy_btn, kv_row, kv_text, kv_code,
+    │                                 #    kv_bool_badge)
+    │                                 # public types (Flash, FlashKind,
+    │                                 #   EmptyStateData, EmptyStateAction,
+    │                                 #   empty_state, table_empty_row)
+    ├── audit.rs         (~140 LOC)   # render_audit + audit_row_view + url_encode
+    ├── auth.rs          (~440 LOC)   # 9 screens: login, mfa_challenge,
+    │                                 #   mfa_setup, step_up, forgot_password,
+    │                                 #   forgot_password_sent, reset_password,
+    │                                 #   reset_password_invalid, password_change
+    ├── clients.rs       (~350 LOC)   # render_clients + render_client_edit +
+    │                                 #   client_row_view + ClientEditData
+    ├── confirm.rs       (~350 LOC)   # 5 render_confirm_* + ConfirmScreenData +
+    │                                 #   confirm_screen + reversibility_badge +
+    │                                 #   ReversibilityKind
+    ├── dashboard.rs     (~360 LOC)   # render_dashboard + DashboardData
+    ├── error.rs         (~35 LOC)    # render_error
+    ├── me_security.rs                # umbrella for me_security/
+    ├── me_security/
+    │   ├── overview.rs   (~70 LOC)
+    │   ├── mfa.rs        (~120 LOC)
+    │   ├── sessions.rs   (~105 LOC)
+    │   ├── passkey.rs    (~120 LOC)
+    │   ├── language.rs   (~85 LOC)
+    │   └── security.rs   (~260 LOC)
+    ├── oidc.rs          (~60 LOC)    # render_consent
+    ├── settings.rs                   # umbrella for settings/
+    ├── settings/
+    │   ├── basic.rs           (~140 LOC)
+    │   ├── security.rs        (~150 LOC)
+    │   ├── authentication.rs  (~115 LOC)
+    │   ├── logs.rs            (~100 LOC)
+    │   ├── email.rs           (~140 LOC)
+    │   └── other.rs           (~105 LOC)
+    ├── setup.rs         (~260 LOC)   # 5 render_setup_* + setup_step_indicator
+    ├── signing_keys.rs  (~125 LOC)
+    └── users.rs         (~355 LOC)   # render_users + render_user_detail +
+                                      # user_row_view + UserDetailData
+```
+
+**Every file under 500 LOC.** The two oversize candidates (settings
+at ~970 LOC and me_security at ~700 LOC) get sub-split into
+6+6 files. No exceptions to the 500-LOC spec ceiling remain in
+`sui-id-web`.
+
+**Public API unchanged.** External callers (handlers crate)
+reference `sui_id_web::render_dashboard`, `sui_id_web::Flash`, etc.
+The `lib.rs` re-export list still resolves because `pages.rs`
+re-exports each submodule via `pub use {screen}::*;`. The
+ambiguous-glob collision between `me_security::security` and
+`settings::security` is avoided by making the submodules `mod`
+(private) instead of `pub mod` while keeping the `pub use *;` that
+flattens their items.
+
+**Cross-module references handled:**
+
+- `audit_row_view` is `pub(super)` because `users.rs::render_user_detail`
+  renders an audit excerpt and reuses the helper.
+- `PasskeyDescriptor` lives in `auth.rs` (it's used by the MFA setup
+  step) but is imported by `me_security/passkey.rs` (it's also the
+  shape of the user's enrolled-passkeys list).
+- `MeTab`, `MeShellData`, `me_security_tabs` stay at the umbrella
+  level (`me_security.rs`) so each tab module can refer to them
+  through `use super::*;`.
+- `SettingsTab`, `settings_tabs`, `fmt_lifetime` stay at the
+  umbrella level (`settings.rs`) for the same reason.
+
+**Build hygiene cleanup along the way:**
+
+- 6 files had `use crate::layout::Shell` but didn't use it (the
+  Shell was used by render functions that moved elsewhere) —
+  removed.
+- 22 unused-variable warnings tracked down: 7 were genuine dead
+  code (the `let *_url`/`let csrf_*` removed; see paragraph above);
+  the remainder were destructure-pattern fields renamed to `: _`
+  or function parameters prefixed with `_` (`_csrf`, `_dev_mode`).
+- A `pub fn url_encode` ended up duplicated in both `common.rs` and
+  `audit.rs` during the extraction; the common.rs copy was removed
+  since `audit.rs` is the only caller.
+
+### CI invariants verified
+
+All three existing `crates/`-wide grep CI jobs (text-leaks,
+css-tokens, semantic-palette-parity) automatically follow the new
+file structure because they scope by `crates/ --include='*.rs'`,
+not by individual filename. Manual verification on v0.47.0
+post-split passed all three. No CI workflow file changes needed.
+
+### Tests pass count
+
+Unit-test count after Phase F partial: i18n 12 · shared 13 · store 36
+· core 114 · sui-id 53 = **228/228** (unchanged from v0.46.0 —
+this is a structural release).
+
+### Breaking changes
+
+None. Public API surface (`sui_id_web::*`) unchanged.
+
+### Deferred
+
+- **RFC 066** (`handlers/admin.rs` split per screen domain, 1531
+  LOC → 8 sub-modules) → **v0.47.1**, planned for next release.
+- **RFC 067** (inline-style discipline, 119 inline `style=""` →
+  ~30 with `.mt-*`/`.gap-*` utility classes + CI bound at 40) +
+  **`handlers/me_security.rs` split** (1099 LOC, also over spec
+  ceiling) → **v0.48.0**, the final buffer release before v1.0-rc.
+
+---
+
 ## [0.46.0] — Unreleased
 
 **Phase E of the v0.42 → v1.0-rc UI/UX hardening plan: honest visual
