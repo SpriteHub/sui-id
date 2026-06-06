@@ -309,6 +309,9 @@ pub async fn exchange_code(
         &row.scope,
         row.nonce.as_deref(),
         &row.auth_methods,
+        // v0.48.3: include email claim in the ID token when the granted
+        // scope includes "email". The user row is already fetched above.
+        user.email.as_deref().map(|addr| (addr, user.email_verified_at.is_some())),
     ).await
 }
 
@@ -402,6 +405,26 @@ pub async fn exchange_refresh(
     // crash-mid-flow can never leave both valid simultaneously.
     refresh_tokens::revoke(db, &row.id).await?;
 
+    // v0.48.3: fetch the user row to populate email claims in the ID
+    // token when the refresh token's scope includes "email". Refresh
+    // token exchanges may include an ID token (OIDC Core §12.2) and
+    // should carry the same set of claims as the original issue.
+    // We only bother if the scope actually includes "email"; otherwise
+    // the extra DB round-trip is skipped.
+    let email_for_token: Option<(String, bool)> =
+        if row.scope.split_whitespace().any(|s| s == "email") {
+            match users::get(db, row.user_id).await {
+                Ok(u) if !u.is_disabled && !u.is_deleted => {
+                    u.email.map(|addr| (addr, u.email_verified_at.is_some()))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+    let email_arg: Option<(&str, bool)> =
+        email_for_token.as_ref().map(|(addr, v)| (addr.as_str(), *v));
+
     issue_for_with_family(
         db,
         clock,
@@ -412,6 +435,7 @@ pub async fn exchange_refresh(
         None,
         &row.auth_methods,
         Some(row.family_id.clone()),
+        email_arg,
     ).await
 }
 
@@ -446,6 +470,7 @@ async fn issue_for(
     scope: &str,
     nonce: Option<&str>,
     auth_methods: &[sui_id_shared::AuthMethod],
+    user_email: Option<(&str, bool)>,
 ) -> CoreResult<TokenSet> {
     // Initial issuance (authorization-code grant): no parent family,
     // so we let `issue_for_with_family` create a new family rooted
@@ -460,6 +485,7 @@ async fn issue_for(
         nonce,
         auth_methods,
         None,
+        user_email,
     ).await
 }
 
@@ -478,6 +504,7 @@ async fn issue_for_with_family(
     nonce: Option<&str>,
     auth_methods: &[sui_id_shared::AuthMethod],
     family_id: Option<String>,
+    user_email: Option<(&str, bool)>,
 ) -> CoreResult<TokenSet> {
     let key_row = signing_keys::active(db).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::Internal,
@@ -500,6 +527,7 @@ async fn issue_for_with_family(
         ctx.lifetimes,
         clock,
         auth_methods,
+        user_email,
     ).await?;
 
     let now = clock.now();

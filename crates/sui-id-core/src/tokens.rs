@@ -63,6 +63,22 @@ pub struct IdTokenClaims {
     /// when two or more distinct factors were used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub amr: Option<Vec<String>>,
+    /// Email address of the user (OIDC Core §5.1).
+    ///
+    /// Included in the ID token when **all** of the following hold:
+    /// 1. The granted scope contains `"email"`.
+    /// 2. The user has an email address on record.
+    ///
+    /// Omitted (not serialised) when absent so that `email` is never
+    /// `null` in the JWT payload — some RP parsers treat an explicit
+    /// `null` as a deserialization error for a `String` field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// Whether the `email` address has been confirmed (OIDC Core §5.1).
+    /// Always `false` until an email-verification flow is implemented;
+    /// only present when `email` is present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_verified: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -90,14 +106,6 @@ pub struct TokenSet {
     pub access_expires_in: i64,
 }
 
-/// Generate one issuance of access + id + refresh tokens for `(user, client)`.
-///
-/// `nonce` is the original OIDC `nonce` from the authorization request, if
-/// present. `include_id_token` is true when `openid` is among the requested
-/// scopes. `auth_methods` is the list of factors that established the
-/// originating session — used to populate the ID token's `acr` and `amr`
-/// claims. Pass `&[]` for grant types that don't have a session
-/// underneath them; the ID token will then carry no `acr` / `amr`.
 #[allow(clippy::too_many_arguments)]
 pub async fn issue_token_set(
     issuer: &str,
@@ -111,6 +119,13 @@ pub async fn issue_token_set(
     lifetimes: TokenLifetimes,
     clock: &SharedClock,
     auth_methods: &[sui_id_shared::AuthMethod],
+    // user_email: The user's email address and verified status. Only embedded in
+    // the ID token when (a) this is `Some` **and** (b) the granted
+    // `scope` contains `"email"`. Callers that don't have the user
+    // row available (or that know the scope cannot include `email`)
+    // may pass `None` safely — the claims struct still omits the
+    // field due to `#[serde(skip_serializing_if = "Option::is_none")]`.
+    user_email: Option<(&str, bool)>,
 ) -> CoreResult<TokenSet> {
     let now = clock.now();
     let iat = now.timestamp();
@@ -135,6 +150,18 @@ pub async fn issue_token_set(
                 Some(sui_id_shared::amr_from_methods(auth_methods)),
             )
         };
+        // Include email claims in the ID token when the granted scope
+        // includes "email" AND the caller supplied the user's email.
+        // OIDC Core §5.1: the email scope maps to email + email_verified.
+        let scope_has_email = scope.split_whitespace().any(|s| s == "email");
+        let (email_claim, email_verified_claim) = if scope_has_email {
+            match user_email {
+                Some((addr, verified)) => (Some(addr.to_owned()), Some(verified)),
+                None => (None, None),
+            }
+        } else {
+            (None, None)
+        };
         let claims = IdTokenClaims {
             iss: issuer.to_owned(),
             sub: user.to_string(),
@@ -145,6 +172,8 @@ pub async fn issue_token_set(
             jti: random_token(16),
             acr,
             amr,
+            email: email_claim,
+            email_verified: email_verified_claim,
         };
         Some(jwt::sign(kid, signing_key, &claims)?)
     } else {

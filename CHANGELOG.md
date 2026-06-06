@@ -5,6 +5,87 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.48.3] — Unreleased
+
+**Verification-phase bug fix: `email` claim missing from ID token.**
+
+An external OIDC relying party reported:
+
+```
+OIDC callback failed: JSON error: missing field `email` at line 1 column 264
+```
+
+The RP was decoding the ID token JWT (not calling the UserInfo
+endpoint) and requiring `email` to be present. The ID token did
+not contain an `email` field at all — only the UserInfo endpoint
+(`/userinfo`) returned email claims, and only when the access
+token's scope included `"email"`.
+
+---
+
+### Root cause
+
+`IdTokenClaims` in `crates/sui-id-core/src/tokens.rs` contained
+only: `iss`, `sub`, `aud`, `iat`, `exp`, `nonce`, `jti`, `acr`,
+`amr`. No `email` or `email_verified`.
+
+OIDC Core §5.1 states that the `email` scope maps to the `email`
+and `email_verified` claims, which SHOULD appear in the ID token
+(not exclusively in the UserInfo response). Many OIDC clients
+parse the ID token at callback time and expect the scoped claims
+to be present there.
+
+### Fix
+
+`IdTokenClaims` gains two new optional fields, both with
+`#[serde(skip_serializing_if = "Option::is_none")]`:
+
+```rust
+pub email: Option<String>,
+pub email_verified: Option<bool>,
+```
+
+`issue_token_set` gains a new parameter
+`user_email: Option<(&str, bool)>` (address + verified status).
+When `scope` contains `"email"` **and** `user_email` is `Some`,
+the claims are populated; otherwise both fields are absent from
+the serialised JWT. The `Option::is_none` skip ensures `email`
+is never `null` in the payload — some client libraries treat an
+explicit `null` as a type error when expecting `String`.
+
+Both code-exchange and refresh-token-exchange paths now supply
+the user's email to `issue_token_set`:
+
+- **`exchange_code`**: the user row was already fetched for the
+  disabled/deleted check; `user.email` + `user.email_verified_at`
+  are passed directly.
+- **`exchange_refresh`**: adds a conditional `users::get` call
+  when `row.scope` contains `"email"`, avoiding the extra DB
+  round-trip on token refreshes that never requested the email
+  scope.
+
+### Unchanged
+
+- UserInfo endpoint still returns `email` / `email_verified` via
+  `/userinfo` as before — the two paths are now consistent.
+- Accounts without an email address return no `email` claim in
+  either path (omitted, not `null`).
+- `email_verified` is always `false` until a verification flow
+  is implemented; the field faithfully represents the current
+  DB state (`email_verified_at IS NULL`).
+- The `oauth_token` handler and router are unchanged.
+
+### Tests pass count
+
+**228/228** unchanged.
+
+### CI invariants
+
+All 4 PASS (text-leaks / css-tokens / semantic-palette-parity /
+inline-style-bound 16/20).
+
+---
+
 ## [0.48.2] — Unreleased
 
 **Verification-pass buffer.** Six issues surfaced in the same
