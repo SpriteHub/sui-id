@@ -65,9 +65,23 @@ use sui_id_web::{
 
 // ---------- 画面 1 — welcome ----------
 
+/// Optional `?lang=xx` query: an explicit language choice from the
+/// setup wizard's welcome screen language picker (v0.48.2). When
+/// present we set `LANG_COOKIE` and redirect to a clean `/setup`
+/// URL so the chosen language persists through subsequent steps
+/// (admin form, lang confirmation, HIBP, done) and survives a
+/// browser refresh.
+#[derive(Debug, serde::Deserialize, Default)]
+pub struct WelcomeQuery {
+    #[serde(default)]
+    pub lang: Option<String>,
+}
+
 pub async fn welcome_get(
     state_ext: AppStateExt,
     crate::handlers::RequestLocale(lang): crate::handlers::RequestLocale,
+    jar: axum_extra::extract::cookie::CookieJar,
+    axum::extract::Query(query): axum::extract::Query<WelcomeQuery>,
 ) -> Result<axum::response::Response, HttpError> {
     let axum::extract::State(app) = state_ext;
     let initialized =
@@ -78,6 +92,33 @@ pub async fn welcome_get(
         // mistake or via an old link.
         return Ok(Redirect::to("/admin/login").into_response());
     }
+
+    // v0.48.2: explicit language picker support. If the welcome
+    // page was hit with `?lang=ja|en|zh`, persist that choice in
+    // LANG_COOKIE and redirect to the bare /setup URL (PRG
+    // pattern). The redirect carries the cookie via Set-Cookie
+    // and from there RequestLocale picks it up for every
+    // subsequent setup step.
+    if let Some(raw) = query.lang.as_deref().map(str::trim) {
+        if let Some(loc) = sui_id_i18n::Locale::parse(raw) {
+            let secure = app.config.server.cookie_secure;
+            let mut c = axum_extra::extract::cookie::Cookie::new(
+                crate::handlers::LANG_COOKIE,
+                loc.tag().to_string(),
+            );
+            c.set_path("/");
+            c.set_http_only(false);
+            c.set_same_site(axum_extra::extract::cookie::SameSite::Lax);
+            c.set_secure(secure);
+            // Long-lived: the choice should outlast a typical
+            // wizard run plus a few browser restarts.
+            c.set_max_age(time::Duration::days(365));
+            let jar = jar.add(c);
+            return Ok((jar, Redirect::to("/setup")).into_response());
+        }
+        // Unrecognised lang code: ignore (fall through to render).
+    }
+
     Ok(Html(render_setup_welcome(None, lang)).into_response())
 }
 

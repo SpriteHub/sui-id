@@ -5,6 +5,175 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.48.2] — Unreleased
+
+**Verification-pass buffer.** Six issues surfaced in the same
+real-environment verification round that produced v0.48.1. None
+of them locked operators out (those were fixed in v0.48.1); all
+six are visual or UX regressions worth fixing before the project
+moves further into the verification cycle.
+
+This is the **second verification-phase release**. No v1.0-*
+tag is scheduled.
+
+---
+
+### Bug 1 — `::selection` color invisible in light mode
+
+`::selection` used `--accent-subtle` as the background colour. In
+light mode that is a pale lavender (`#E6E1F5`) sitting on an
+off-white page (`#FAFAFA`); the selection *technically* had a 13:1
+contrast ratio for its text, but the highlight shape itself was
+almost indistinguishable from the surrounding page — the background
+contrast was near-zero.
+
+Fix: `background-color: var(--accent-default)` + `color:
+var(--fg-on-accent)` (white). Light mode: `#7C6BCF` on white
+text — selection shape strongly visible against page. Dark mode:
+`#A89BFF` on white text — similarly strong. The updated comment
+correctly attributes WCAG SC 1.4.3 to text-vs-selection, not
+selection-vs-page.
+
+### Bug 5 — `/me/security/overview` i18n broken
+
+Two labels and one empty-state message were left in hardcoded
+English after the `pages.rs` split in v0.47.0:
+
+- `kv_bool_badge(t, "MFA (TOTP)", …)` — `"MFA (TOTP)"` hardcoded
+- `kv_row("Passkeys", …)` — `"Passkeys"` hardcoded
+- Empty recent-activity panel used `t.me_security_sessions_lede`
+  (which reads "you have N other active sessions") — completely
+  wrong context
+
+Fix: added three i18n keys in all three locales (en/ja/zh):
+
+| Key | en | ja | zh |
+|-----|----|----|-----|
+| `me_overview_label_mfa_totp` | "MFA (TOTP)" | "MFA（TOTP）" | "MFA（TOTP）" |
+| `me_overview_label_passkeys` | "Passkeys" | "パスキー" | "通行密钥" |
+| `me_overview_no_recent_events` | "No recent activity to display." | "最近の操作はまだ記録されていません。" | "暂无最近活动记录。" |
+
+`overview.rs` updated to use the new keys.
+
+### Issue 4 — Setup wizard explicit language picker
+
+The wizard showed in whatever language the browser's
+`Accept-Language` header indicated — correct by design, but
+surprising when an operator's OS is English but the target
+installation is intended to be Japanese-locale (or vice versa).
+Prior to the wizard there is no user record and no stored
+preference, so the only control point was the browser.
+
+Fix: an explicit three-button language picker (`日本語 / English /
+中文`) appears at the top of the welcome screen. Clicking a language
+button issues a `GET /setup?lang=xx`, which the handler validates
+with `Locale::parse`, sets `LANG_COOKIE` (365-day, Same-Site Lax,
+not HttpOnly, same as the post-setup language cookie), and issues a
+`303 → /setup` (PRG pattern). Every subsequent wizard step
+(`/setup/admin`, `/setup/lang`, `/setup/hibp`, `/setup/done`) reads
+`LANG_COOKIE` via the existing three-tier `RequestLocale` extractor
+and renders in the chosen language without any per-step changes.
+
+CSS: `.setup-lang-picker` (horizontal flex, caption-size, muted
+border) with `.setup-lang-picker__opt--active` (accent colour +
+subtle fill). On `@media (max-width: 768px)` the picker wraps.
+
+### Issue 6 — Footer a11y label design intent
+
+The three footer spans — "⌨ Keyboard support", "⊙ Screen reader
+support", "◐ Contrast support" — looked interactive (body-weight
+text, tooltip-on-hover) but had no click action and no href. The
+design-spec intent is **passive informational claims**: the app
+asserts that it respects these accessibility affordances.
+
+Redesign: converted from bare `<span>` to `<ul role="note">` /
+`<li class="app-footer__a11y-item">`. Each item has
+`cursor: default` (removes pointer affordance), `font-size:
+var(--font-size-caption)` and `color: var(--fg-muted)` to read
+as ancillary rather than primary navigation, and the icon is
+wrapped in `<span aria-hidden="true">` so screen readers announce
+the text only once.
+
+The `title=` tooltips remain for mouse users who want a longer
+description. Future work (post-v1.0): when `docs/src/a11y.md`
+exists, convert to `<a href="/docs/a11y#...">` links.
+
+### Issue 7 — Title tagline restrained
+
+The footer tagline `sui-id · 静かで、凛として、やさしい ID 基盤を。`
+rendered at full body weight and colour, competing visually with
+the theme toggle (which operators use). Restyled to
+`font-size: var(--font-size-caption)`, `color: var(--fg-muted)`,
+`opacity: 0.75` — still present as "a whisper of intent", now
+clearly recessive.
+
+### Bug 8 — Mobile responsive: nav and table vertical squish
+
+The entire CSS had no `@media` queries (0 instances in v0.48.1).
+On viewports narrower than ~600px, two classes of rendering
+failure occurred:
+
+1. **Admin nav**: each nav link had no `white-space: nowrap`. The
+   flexbox would shrink items to fit, causing text to wrap *inside*
+   each link, making `Dashboard` a two-line tall block, etc.
+2. **Tables**: all `td` and `th` had no `white-space` control.
+   Same shrink-and-wrap behaviour made every cell grow vertically.
+   The `.table-wrap { overflow-x: auto }` was already in place but
+   `table { width: 100% }` prevented it from triggering.
+
+Fixes applied:
+
+- `.app-nav__link { white-space: nowrap }` — items never wrap; the
+  nav row scrolls horizontally instead.
+- `thead th, tbody td { white-space: nowrap }` default — cells
+  stay single-line. Added `.cell-wrap` class for opt-out on free-
+  form-text columns (audit log notes, descriptions, display names).
+  Column `.cell-wrap` annotation is a per-table follow-up; the rule
+  prevents the worst failure mode today.
+- `@media (max-width: 768px)` breakpoint (first `@media` rule in
+  the codebase):
+  - `.app-main { padding: var(--space-3) }` (was `var(--space-5)`;
+    two `32px` margins ate ~17% of a 375px viewport)
+  - `.app-nav { overflow-x: auto; flex-wrap: nowrap }`
+  - `.app-nav__signout { margin-left: var(--space-1) }` (no longer
+    pushed to unreachable far-right in scroll context)
+  - `.app-header__brand` shrinks one step (`font-size: h3`)
+  - `.app-footer { flex-direction: column }` — stacks at narrow
+    widths
+  - `.card { padding: var(--space-3) }`
+
+### Tests pass count
+
+Unchanged: **228/228**.
+
+### CI invariants
+
+All 4 PASS:
+
+- text-leaks (RFC 048): 0
+- css-tokens (RFC 049): all `var(--name)` resolve
+- semantic-palette-parity (RFC 061): 12 tokens × 3 modes
+- inline-style-bound (RFC 067): 16 ≤ 20
+
+### Breaking changes
+
+None.
+
+### Known follow-up (v0.48.3+)
+
+- **`.cell-wrap` per table**: audit, users, clients, sessions,
+  signing-keys tables should annotate their free-text columns
+  (note, email, name) with `.cell-wrap` so those columns can
+  still word-wrap while others remain single-line.
+- **`?return=` on login redirect**: `html_error_response`
+  redirects to `/admin/login` without a return URL; implementing
+  it requires same-origin path-only validation (v0.48.1 rationale).
+- **CSRF server-render**: the `logout-csrf.js` workaround
+  (`csrf_token` in Shell) is the proper fix; it requires threading
+  csrf_token through every `render_*` call site.
+
+---
+
 ## [0.48.1] — Unreleased
 
 **Verification-phase hotfix.** Three serious bugs surfaced in

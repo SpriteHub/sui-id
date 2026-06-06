@@ -51,6 +51,7 @@ proposed RFCs once they enter the repository at each phase start.
 
 | Version | What shipped |
 |---|---|
+| v0.48.2 | **Second verification-phase release (verification-pass buffer).** Six issues from the same real-environment round that produced v0.48.1. **Bug 1** (`::selection` invisible): `--accent-default` + `--fg-on-accent` replaces `--accent-subtle`. **Bug 5** (`/me/security/overview` i18n): 3 hardcoded/miskeyed strings replaced with 3 new keys (`me_overview_label_mfa_totp`, `me_overview_label_passkeys`, `me_overview_no_recent_events`) × en/ja/zh. **Issue 4** (setup wizard language): explicit 3-button picker on welcome screen, `?lang=xx` → LANG_COOKIE set (PRG) → all subsequent wizard steps auto-locale via existing RequestLocale. **Issue 6** (footer a11y labels): `<ul role="note">` / `<li class="app-footer__a11y-item">` with `cursor: default` and caption sizing — passive informational badges, not interactive. **Issue 7** (tagline prominence): caption-size + muted + opacity 0.75. **Bug 8** (mobile responsive): first `@media (max-width: 768px)` in codebase; `.app-nav__link { white-space: nowrap }` + `td/th { white-space: nowrap }` + `.cell-wrap` opt-out class; nav horizontal-scroll, main padding shrink, footer column stack. Tests stable at 228/228; 0 warnings; CI invariants PASS. |
 | v0.48.1 | **First verification-phase hotfix.** Three lock-out / main-feature bugs surfaced during actual-environment testing of v0.48.0 at localhost:8801 — all CSP-related. **Bug 2** (CSP `script-src 'self'` blocking 3 inline `<script>` blocks + 3 inline `onclick=` handlers → theme toggle, clipboard copy, sign-out all silently failed): externalised the inline JS into `/static/theme-init.js`, `/static/copy.js`, `/static/logout-csrf.js`; theme buttons keep only `data-theme-value` attributes and `theme-init.js` attaches listeners on DOM-ready. **Bug 3** (sign-out → /admin redirect loop): subsumed by Bug 2 fix — CSRF token injection script now runs. **Bug 9** (401 lock-out after restart, "Back home" loops to /admin): `html_error_response` now redirects `CoreError::Unauthenticated`+HTML to `/admin/login` instead of rendering a 401 page; `pages/error.rs` "Back home" is context-aware (401 → /admin/login, else → /). Tests stable at 228/228; 0 workspace warnings; CI invariants all PASS. No new RFC consumed (hotfix scope). Six other v0.48.0 issues (`::selection` color, /me/security/overview i18n, mobile responsive on nav + tables, setup wizard language picker, footer a11y label intent, title tagline restraint) deferred to v0.48.2 — none of them lock operators out. |
 | v0.48.0 | **Phase F (final buffer)** — RFC 068 (`handlers/me_security.rs` 1099 LOC → 7 sub-modules, Rust 2018+ style; all under 500 LOC) + RFC 067 (inline-style discipline: 119 → 16 with 40+ utility classes in `components.rs`; new CI bound `inline-style-bound` at 20). Pre-existing warning cleanup: 5 issues cleared (dead `mailer`/`title`, `_caches`/`_clock` rename for API symmetry, `decrypt_field` allow(dead_code)). 0 workspace warnings. Phase F closes; project enters verification phase. **No v1.0-rc/pre tag is scheduled from this release** — sufficient soak, external review, and integration verification precede any v1 designation. |
 | v0.47.1 | **Phase F (continued)** of the UI/UX hardening plan — RFC 066 (`handlers/admin.rs` 1531 LOC → 8 sub-modules under `admin/`, Rust 2018+ module style; every file under spec's 500-LOC ceiling, umbrella 55 LOC; public route paths unchanged through `pub use {submodule}::*;` re-exports). Hygiene: 14 `#[derive(...)]` attributes lost during extraction were re-attached from the original; 85 unused-import warnings auto-pruned by `cargo fix`; `_silence_state*` dead-code suppressors removed (the split made them unnecessary). RFC 067 (inline-style discipline) + `handlers/me_security.rs` split deferred to v0.48.0, the final Phase F buffer release. |
@@ -82,35 +83,25 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-v0.48.1 ships the **first verification-phase hotfix**. Three CSP-
-related bugs (theme toggle / clipboard / sign-out all silently
-broken from inline JS being blocked, plus a 401 lock-out + redirect
-loop after server restart) surfaced during actual-environment
-testing at localhost:8801 within hours of v0.48.0 being archived.
+v0.48.2 ships the **second verification-phase release**: six
+non-lock-out issues from the same real-environment round that
+produced the v0.48.1 hotfix. Text-selection colour, i18n
+hardcoding on the security overview, the setup wizard language
+picker, footer accessibility badge design intent, tagline
+restraint, and the first `@media` breakpoint for mobile
+responsive layout.
 
-All three are fixed by externalising the inline scripts and by
-redirecting unauthenticated GETs to `/admin/login` instead of
-rendering a 401 page that has no escape route. The fixes are
-defensive — minimal scope, no API changes, all dozen existing
-handlers and tests untouched.
+All are UX regressions or latent bugs that real testing surfaced.
+None required changes to data structures, auth flows, or the
+OIDC stack; all are CSS, i18n, and light handler/page code.
 
-Six other issues surfaced in the same verification round (selection
-color, /me/security/overview i18n hardcoding, mobile-responsive
-nav + tables, setup-wizard language picker, footer a11y label
-intent, title tagline restraint) but none of them lock operators
-out. They are scheduled for v0.48.2 (verification-pass buffer) so
-the v0.48.1 hotfix can ship immediately.
-
-The project remains in **verification phase**. A v1.0 candidate
-designation (rc, pre, beta, anything) is not on the immediate
-horizon — verification cycles like this one are exactly what the
-phase is for. The next planned release is v0.48.2 (verification-
-pass buffer); its tag **will not start with v1**.
-
-The v0.42 → v0.48 hardening arc is complete: 21 RFCs (048–068)
-landed across 7 releases, addressing every gap surfaced by the PDF
-review. v0.48.1 onward addresses gaps surfaced by actual operator
-testing.
+The project remains in **verification phase**. Three known
+follow-up items are tracked in the v0.48.2 CHANGELOG (`.cell-wrap`
+per-table annotations, `?return=` on login redirect, CSRF
+server-render); they are not blocking and will land in v0.48.3+.
+A v1.0 designation continues to be deferred until sufficient
+soak and external review. **No release will start with v1
+until that bar is met.**
 
 ---
 

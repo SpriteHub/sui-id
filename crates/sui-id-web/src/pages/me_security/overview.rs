@@ -46,8 +46,8 @@ pub fn render_me_overview(
                     <section class="card">
                         <h2 class="card__title">{t.me_overview_section_status}</h2>
                         <dl class="kv-list">
-                            {kv_bool_badge(t, "MFA (TOTP)", totp_enabled)}
-                            {kv_row("Passkeys", passkey_count.to_string())}
+                            {kv_bool_badge(t, t.me_overview_label_mfa_totp, totp_enabled)}
+                            {kv_row(t.me_overview_label_passkeys, passkey_count.to_string())}
                             {kv_row(t.me_security_sessions_section,
                                     active_session_count.to_string())}
                         </dl>
@@ -55,7 +55,7 @@ pub fn render_me_overview(
                     <section class="card">
                         <h2 class="card__title">{t.me_overview_section_activity}</h2>
                         {if event_rows.is_empty() {
-                            view! { <p class="muted">{t.me_security_sessions_lede}</p> }.into_any()
+                            view! { <p class="muted">{t.me_overview_no_recent_events}</p> }.into_any()
                         } else {
                             view! {
                                 <div class="table-wrap">

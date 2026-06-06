@@ -593,6 +593,20 @@ pub struct Strings {
     // Overview tab
     pub me_overview_section_status: &'static str,
     pub me_overview_section_activity: &'static str,
+    /// v0.48.2: status row label for "MFA (TOTP)" — was a hardcoded
+    /// English literal in pages/me_security/overview.rs.
+    pub me_overview_label_mfa_totp: &'static str,
+    /// v0.48.2: status row label for "Passkeys" — was a hardcoded
+    /// English literal in the same place.
+    pub me_overview_label_passkeys: &'static str,
+    /// v0.48.2: empty-state copy for the "Recent activity" panel.
+    /// Pre-v0.48.2 this slot mistakenly used
+    /// `me_security_sessions_lede` (which describes "other active
+    /// sessions"), reading as nonsense in context.
+    pub me_overview_no_recent_events: &'static str,
+    /// v0.48.2: aria-label for the setup-wizard welcome screen's
+    /// language picker (`<nav>` containing 3 language links).
+    pub setup_welcome_lang_picker_label: &'static str,
     // Passkey tab
     pub me_passkey_origin_warning: &'static str,
     pub me_passkey_section_title: &'static str,

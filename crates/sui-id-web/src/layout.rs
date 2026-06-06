@@ -159,11 +159,34 @@ fn Footer(lang: sui_id_i18n::Locale) -> impl IntoView {
             <span class="app-footer__tagline">
                 {t.footer_tagline}
             </span>
-            <span class="app-footer__a11y" aria-label=t.footer_a11y_group_label>
-                <span title=t.a11y_keyboard>"⌨ " {t.a11y_keyboard}</span>
-                <span title=t.a11y_screen_reader>"⊙ " {t.a11y_screen_reader}</span>
-                <span title=t.a11y_contrast>"◐ " {t.a11y_contrast}</span>
-            </span>
+            // v0.48.2: the a11y "badges" are informational claims that
+            // the app respects keyboard / screen-reader / contrast
+            // affordances. They are NOT links or buttons — the previous
+            // styling (default body text + tooltip-on-hover) read as
+            // "interactive but broken" to operators. Restyled as
+            // recessive informational chips with a small leading icon
+            // and a `role="note"` so assistive technology treats them
+            // as ancillary content. Tooltips remain via `title=`.
+            //
+            // Future work (post-v1.0): when the docs site adds an
+            // a11y chapter, these could grow `href`s and become real
+            // links to the corresponding section. Until then, passive
+            // badges are the honest representation.
+            <ul class="app-footer__a11y" role="note"
+                aria-label=t.footer_a11y_group_label>
+                <li class="app-footer__a11y-item" title=t.a11y_keyboard>
+                    <span class="app-footer__a11y-icon" aria-hidden="true">"⌨"</span>
+                    {t.a11y_keyboard}
+                </li>
+                <li class="app-footer__a11y-item" title=t.a11y_screen_reader>
+                    <span class="app-footer__a11y-icon" aria-hidden="true">"⊙"</span>
+                    {t.a11y_screen_reader}
+                </li>
+                <li class="app-footer__a11y-item" title=t.a11y_contrast>
+                    <span class="app-footer__a11y-icon" aria-hidden="true">"◐"</span>
+                    {t.a11y_contrast}
+                </li>
+            </ul>
             <ThemeToggle lang=lang />
             <span class="app-footer__version">{format!("v{}", env!("CARGO_PKG_VERSION"))}</span>
         </footer>

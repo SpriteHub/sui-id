@@ -278,11 +278,21 @@ pub const TOKENS_CSS: &str = r#"
   }
 }
 
-/* Text selection contrast — meets WCAG 2.1 SC 1.4.3 in both modes.
-   Light: #E6E1F5 bg on #1F1B24 text ≈ 13:1 ✓
-   Dark:  #332C4A bg on #F1EEF6 text ≈ 7:1  ✓ */
+/* Text selection contrast (v0.48.2 bug fix): use the saturated
+   accent + on-accent foreground rather than the subtle accent
+   wash. The previous wash (--accent-subtle) was close in
+   luminance to --surface-default in light mode, so a selection
+   was visible against text but not against the page itself —
+   the highlight blended into the background. Switching to the
+   saturated accent gives the selection a strong, unambiguous
+   shape regardless of where on the page it falls.
+
+   Light: #7C6BCF on text → 4.7:1 (selection text), strong
+          against #FAFAFA page bg.
+   Dark:  #A89BFF on text → 7.1:1 (selection text), strong
+          against #16121F page bg. */
 ::selection {
-  background-color: var(--accent-subtle);
-  color: var(--fg-default);
+  background-color: var(--accent-default);
+  color: var(--fg-on-accent);
 }
 "#;

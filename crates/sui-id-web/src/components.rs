@@ -126,6 +126,10 @@ code, .code {
   font-size: var(--font-size-body);
   text-decoration: none;
   transition: background 0.12s, color 0.12s;
+  /* v0.48.2 (Bug 8): keep each nav label on one line. Without
+   * this, narrow viewports cause text to wrap inside an item,
+   * turning the nav into a vertical stack rather than a row. */
+  white-space: nowrap;
 }
 .app-nav__link:hover {
   background: var(--state-hover);
@@ -180,11 +184,43 @@ code, .code {
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
 }
-.app-footer__tagline { flex: 1; }
+/* Tagline — restrained per v0.48.2 user feedback: the previous
+ * default body-size weight competed with the more functional
+ * footer content (theme toggle, a11y badges). Smaller and muted
+ * keeps it a recessive whisper of intent rather than a banner. */
+.app-footer__tagline {
+  flex: 1;
+  font-size: var(--font-size-caption);
+  color: var(--fg-muted);
+  opacity: 0.75;
+}
 .app-footer__a11y {
   display: flex;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+/* v0.48.2: passive informational badges, not interactive.
+ * Reset <ul>/<li> defaults, render as small muted chips that
+ * read as "facts about the app" rather than "things you can
+ * click". No hover state, no border, no underline. */
+.app-footer__a11y {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.app-footer__a11y-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-caption);
+  color: var(--fg-muted);
+  cursor: default;
+}
+.app-footer__a11y-icon {
+  font-size: 1em;
+  line-height: 1;
+  opacity: 0.85;
 }
 .app-footer__version {
   color: var(--fg-subtle);
@@ -541,11 +577,24 @@ thead th {
   padding: var(--space-2) var(--space-3);
   background: var(--surface-subtle);
   border-bottom: var(--border-width-default) solid var(--border-muted);
+  /* v0.48.2 (Bug 8): header cells never wrap. */
+  white-space: nowrap;
 }
 tbody td {
   padding: var(--space-3);
   border-bottom: var(--border-width-default) solid var(--border-muted);
   vertical-align: middle;
+  /* v0.48.2 (Bug 8): body cells default to no-wrap. On narrow
+   * viewports a wider table now scrolls horizontally inside its
+   * .table-wrap rather than collapsing cells vertically. Columns
+   * that legitimately carry free-form text (notes, descriptions,
+   * names) opt out via the .cell-wrap class. */
+  white-space: nowrap;
+}
+tbody td.cell-wrap,
+thead th.cell-wrap {
+  white-space: normal;
+  word-break: break-word;
 }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--state-hover); }
@@ -900,6 +949,84 @@ textarea {
 .flex-0-auto { flex: 0 0 auto; }
 .gap1-center { gap: var(--space-1); align-items: center; }
 
+/* v0.48.2 — setup wizard language picker.
+ * Recessive horizontal toggle group shown at the top of the
+ * welcome screen. The "active" link gets a subtle outline so
+ * it reads as the current state without competing visually
+ * with the primary "Begin" button below. */
+.setup-lang-picker {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
+  margin-bottom: var(--space-4);
+}
+.setup-lang-picker__opt {
+  font-size: var(--font-size-caption);
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width-default) solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.setup-lang-picker__opt:hover {
+  background: var(--state-hover);
+  color: var(--fg-default);
+  text-decoration: none;
+}
+.setup-lang-picker__opt--active {
+  color: var(--accent-default);
+  border-color: var(--accent-default);
+  background: var(--accent-subtle);
+}
+
+/* ------------------------------------------------------------------ */
+/* Responsive breakpoints (v0.48.2 — Bug 8)                            */
+/* ------------------------------------------------------------------ */
+/* Single breakpoint at the tablet boundary (768px). The desktop CSS
+ * above is the canonical layout; adjustments below override only what
+ * needs to shrink/scroll/wrap on narrower viewports. The screen-reader
+ * + keyboard-navigation experience is unchanged across breakpoints.   */
+
+@media (max-width: 768px) {
+  /* Tighter padding around the main content area so 32px*2 isn't
+   * eating ~17% of a 375-wide viewport. */
+  .app-main {
+    padding: var(--space-3) var(--space-3);
+  }
+  /* Nav: horizontal scroll instead of squish. Items keep their
+   * desktop padding/typography; the row just slides under your
+   * finger when there's not enough space for everything. */
+  .app-nav {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  /* Sign-out button stops being pushed to the far right (which
+   * is unreachable in an overflow-scroll context) and joins the
+   * row in order. */
+  .app-nav__signout { margin-left: var(--space-1); }
+  /* The header brand text shrinks slightly so the nav has more
+   * room before the scroll kicks in. */
+  .app-header__brand {
+    font-size: var(--font-size-h3);
+  }
+  /* Footer collapses to a single column. Tagline + a11y badges +
+   * theme toggle + version each get their own line, in that
+   * order. Cleaner than trying to flow them at narrow widths. */
+  .app-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+  /* Cards still fit one per row but use less internal padding. */
+  .card { padding: var(--space-3); }
+  /* Setup wizard's lang picker centres the row even when items
+   * fit in one line, but on narrow viewports the three options
+   * stack vertically with comfortable touch targets. */
+  .setup-lang-picker {
+    flex-wrap: wrap;
+  }
+}
 "#;
 
 // ────────────────────────────────────────────────────────────────────

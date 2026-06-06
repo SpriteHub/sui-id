@@ -58,9 +58,41 @@ fn setup_step_indicator(active: usize, lang: sui_id_i18n::Locale) -> impl IntoVi
 pub fn render_setup_welcome(flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let t = lang.strings();
+        let current_tag = lang.tag();
+        // v0.48.2: explicit language picker at the top of the
+        // welcome screen. The setup wizard pre-dates any user (no
+        // stored preference) and runs before LANG_COOKIE is set,
+        // so without this picker the wizard locks to whatever the
+        // browser's Accept-Language hints at, which surprises
+        // operators whose OS is in English but who want to set
+        // up a Japanese-locale install (or vice versa).
+        //
+        // Each link is a GET to /setup?lang=xx — the handler
+        // validates, persists LANG_COOKIE, and PRGs to /setup so
+        // every subsequent wizard step sees the chosen locale.
         view! {
             <crate::layout::AuthShell title=t.setup_welcome_title.to_string() lang=lang>
                 {setup_step_indicator(0, lang)}
+                <nav class="setup-lang-picker" aria-label=t.setup_welcome_lang_picker_label>
+                    <a href="/setup?lang=ja"
+                       class={if current_tag == "ja" { "setup-lang-picker__opt setup-lang-picker__opt--active" }
+                              else { "setup-lang-picker__opt" }}
+                       aria-current={if current_tag == "ja" { "true" } else { "false" }}>
+                        "日本語"
+                    </a>
+                    <a href="/setup?lang=en"
+                       class={if current_tag == "en" { "setup-lang-picker__opt setup-lang-picker__opt--active" }
+                              else { "setup-lang-picker__opt" }}
+                       aria-current={if current_tag == "en" { "true" } else { "false" }}>
+                        "English"
+                    </a>
+                    <a href="/setup?lang=zh"
+                       class={if current_tag == "zh" { "setup-lang-picker__opt setup-lang-picker__opt--active" }
+                              else { "setup-lang-picker__opt" }}
+                       aria-current={if current_tag == "zh" { "true" } else { "false" }}>
+                        "中文"
+                    </a>
+                </nav>
                 <h1>{t.setup_welcome_title}</h1>
                 <p class="muted">{t.setup_welcome_lede}</p>
                 <p class="muted">{t.setup_welcome_lede2}</p>
