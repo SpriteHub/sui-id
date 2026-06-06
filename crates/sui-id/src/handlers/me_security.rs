@@ -854,11 +854,20 @@ pub async fn mfa_enroll_confirm(
 pub async fn mfa_disable(
     state_ext: AppStateExt,
     CurrentUser(user_id): CurrentUser,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Form(form): Form<crate::handlers::admin::CsrfOnlyForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     enforce_csrf(&jar, Some(&form.csrf))?;
+    // RFC 058: dangerous self-service action — disabling MFA reduces
+    // the user's own account security and is one of the canonical
+    // post-compromise attacker moves. Step-up is required.
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/me/security/mfa").await
+    {
+        return Ok(redirect);
+    }
     sui_id_core::mfa::disable(&app.db, user_id).await.map_err(HttpError::html)?;
     let _ = sui_id_store::repos::audit::append(
         &app.db,
@@ -868,7 +877,7 @@ pub async fn mfa_disable(
             action: "mfa.disable".into(),
             target: Some(user_id.to_string()),
             result: "ok".into(),
-            note: None,
+            note: Some("self".into()),
         },
     ).await;
     Ok(Redirect::to("/me/security/mfa").into_response())
@@ -1056,12 +1065,21 @@ pub struct PasskeyDeleteForm {
 pub async fn passkey_delete(
     state_ext: AppStateExt,
     CurrentUser(user_id): CurrentUser,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(cred_id): Path<String>,
     Form(form): Form<PasskeyDeleteForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     enforce_csrf(&jar, Some(&form.csrf))?;
+    // RFC 058: dangerous self-service action — deleting a passkey
+    // removes one factor; pre-phishing-the-survivor is a known
+    // attacker pattern. Step-up gates the action.
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/me/security/passkeys").await
+    {
+        return Ok(redirect);
+    }
     let id = cred_id.parse::<sui_id_shared::ids::WebauthnCredentialId>().map_err(|_| {
         HttpError::html(CoreError::BadRequest("invalid credential id".into()))
     })?;
@@ -1074,7 +1092,7 @@ pub async fn passkey_delete(
             action: "webauthn.credential.delete".into(),
             target: Some(user_id.to_string()),
             result: "ok".into(),
-            note: None,
+            note: Some("self".into()),
         },
     ).await;
     Ok(Redirect::to("/me/security/passkeys").into_response())

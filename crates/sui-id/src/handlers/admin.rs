@@ -545,6 +545,11 @@ pub struct DisableForm {
     pub disabled: String,
     #[serde(rename = "_csrf", default)]
     pub csrf: String,
+    /// Confirmation token from the dangerous-action confirm screen
+    /// (RFC 030; RFC 060 bug fix). Empty / missing → 400 from
+    /// `require_confirmed`.
+    #[serde(rename = "_confirmed", default)]
+    pub confirmed: String,
     /// Optional reason for disabling the user (RFC 045). Stored in audit note.
     #[serde(default)]
     pub reason: String,
@@ -553,12 +558,24 @@ pub struct DisableForm {
 pub async fn users_set_disabled(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
     Form(form): Form<DisableForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    // RFC 060 bug fix: this handler previously accepted POSTs that
+    // skipped the confirm screen. The confirm screen at
+    // `users_disable_confirm_get` emits `_confirmed=1`; we now reject
+    // direct POSTs without it.
+    crate::handlers::require_confirmed(&form.confirmed)?;
+    // RFC 058: step-up immediately after CSRF + confirm gate.
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/users").await
+    {
+        return Ok(redirect);
+    }
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
     let value = matches!(form.disabled.as_str(), "true" | "on" | "1");
@@ -590,13 +607,35 @@ pub struct ConfirmedForm {
     pub confirmed: String,
 }
 
+/// Body for dangerous-operation POSTs that also carry an operator-supplied
+/// reason for the audit log (RFC 060 + RFC 045 pattern). Empty / missing
+/// `reason` is OK; the value is stored verbatim (trimmed) in the audit row's
+/// `note` column.
+#[derive(Debug, Deserialize, Default)]
+pub struct ConfirmedReasonForm {
+    #[serde(rename = "_csrf", default)]
+    pub csrf: String,
+    #[serde(rename = "_confirmed", default)]
+    pub confirmed: String,
+    #[serde(default)]
+    pub reason: String,
+}
+
+impl ConfirmedReasonForm {
+    /// Trimmed reason, `None` if empty after trim.
+    pub fn reason_opt(&self) -> Option<String> {
+        let t = self.reason.trim();
+        if t.is_empty() { None } else { Some(t.to_owned()) }
+    }
+}
+
 pub async fn users_delete(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
-    Form(form): Form<ConfirmedForm>,
+    Form(form): Form<ConfirmedReasonForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
@@ -608,7 +647,8 @@ pub async fn users_delete(
     }
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
-    admin_uc::delete_user(&app.db, admin_id, target).await.map_err(HttpError::html)?;
+    admin_uc::delete_user(&app.db, admin_id, target, form.reason_opt())
+        .await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/users").into_response())
 }
 
@@ -620,7 +660,7 @@ pub async fn users_mfa_reset(
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
-    Form(form): Form<ConfirmedForm>,
+    Form(form): Form<ConfirmedReasonForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
@@ -632,7 +672,8 @@ pub async fn users_mfa_reset(
     }
     let target = UserId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
-    admin_uc::admin_reset_mfa(&app.db, admin_id, target).await.map_err(HttpError::html)?;
+    admin_uc::admin_reset_mfa(&app.db, admin_id, target, form.reason_opt())
+        .await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/users").into_response())
 }
 
@@ -979,16 +1020,31 @@ pub async fn clients_create(
 pub async fn clients_set_disabled(
     state_ext: AppStateExt,
     CurrentAdmin(admin_id): CurrentAdmin,
+    ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
     Form(form): Form<DisableForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    // RFC 060 bug fix: also gate on `_confirmed=1`.
+    crate::handlers::require_confirmed(&form.confirmed)?;
+    // RFC 058: step-up immediately after CSRF + confirm gate.
+    if let Err(redirect) =
+        crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/clients").await
+    {
+        return Ok(redirect);
+    }
     let target = ClientId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
     let value = matches!(form.disabled.as_str(), "true" | "on" | "1");
-    admin_uc::set_client_disabled(&app.db, &app.clock, admin_id, target, value, &app.caches).await.map_err(HttpError::html)?;
+    let reason_opt = if form.reason.trim().is_empty() {
+        None
+    } else {
+        Some(form.reason.trim().to_string())
+    };
+    admin_uc::set_client_disabled(&app.db, &app.clock, admin_id, target, value,
+        reason_opt, &app.caches).await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/clients").into_response())
 }
 
@@ -998,10 +1054,12 @@ pub async fn clients_delete(
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
-    Form(form): Form<CsrfOnlyForm>,
+    Form(form): Form<ConfirmedReasonForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    // RFC 060: enforce the confirm screen's `_confirmed=1` token.
+    crate::handlers::require_confirmed(&form.confirmed)?;
     if let Err(redirect) =
         crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/clients").await
     {
@@ -1009,7 +1067,8 @@ pub async fn clients_delete(
     }
     let target = ClientId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
-    admin_uc::delete_client(&app.db, admin_id, target, &app.caches).await.map_err(HttpError::html)?;
+    admin_uc::delete_client(&app.db, admin_id, target, form.reason_opt(), &app.caches)
+        .await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/clients").into_response())
 }
 
@@ -1224,16 +1283,20 @@ pub async fn signing_keys_rotate(
     CurrentAdmin(admin_id): CurrentAdmin,
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
-    Form(form): Form<CsrfOnlyForm>,
+    Form(form): Form<ConfirmedReasonForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    crate::handlers::require_confirmed(&form.confirmed)?;
     if let Err(redirect) =
         crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/signing-keys").await
     {
         return Ok(redirect);
     }
-    admin_uc::rotate_signing_key(&app.db, &app.clock, app.config.storage.key_file.to_str().unwrap_or_default(), admin_id, &app.caches).await.map_err(HttpError::html)?;
+    admin_uc::rotate_signing_key(&app.db, &app.clock,
+        app.config.storage.key_file.to_str().unwrap_or_default(),
+        admin_id, form.reason_opt(), &app.caches)
+        .await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/signing-keys").into_response())
 }
 
@@ -1243,10 +1306,11 @@ pub async fn signing_keys_delete(
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
-    Form(form): Form<CsrfOnlyForm>,
+    Form(form): Form<ConfirmedReasonForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    crate::handlers::require_confirmed(&form.confirmed)?;
     if let Err(redirect) =
         crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/signing-keys").await
     {
@@ -1254,7 +1318,9 @@ pub async fn signing_keys_delete(
     }
     let target = sui_id_shared::ids::SigningKeyId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid signing key id".into())))?;
-    admin_uc::delete_signing_key(&app.db, &app.clock, admin_id, target, &app.caches).await.map_err(HttpError::html)?;
+    admin_uc::delete_signing_key(&app.db, &app.clock, admin_id, target,
+        form.reason_opt(), &app.caches)
+        .await.map_err(HttpError::html)?;
     Ok(Redirect::to("/admin/signing-keys").into_response())
 }
 
@@ -1440,10 +1506,11 @@ pub async fn clients_rotate_secret_post(
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
-    Form(form): Form<CsrfOnlyForm>,
+    Form(form): Form<ConfirmedReasonForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
+    crate::handlers::require_confirmed(&form.confirmed)?;
     if let Err(redirect) =
         crate::handlers::require_fresh_step_up(&app, &ctx, "/admin/clients").await
     {
@@ -1452,7 +1519,7 @@ pub async fn clients_rotate_secret_post(
     let target = ClientId::from_str(&id)
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
     let new_secret = admin_uc::rotate_client_secret(
-        &app.db, &app.clock, admin_id, target
+        &app.db, &app.clock, admin_id, target, form.reason_opt()
     ).await.map_err(HttpError::html)?;
     // Redirect to edit page with the new secret in the query string.
     // The secret is URL-encoded; the edit page displays it once and the

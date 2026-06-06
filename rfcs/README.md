@@ -44,6 +44,9 @@ folders.
 
 | ID  | Title                                                          | Shipped in |
 |-----|----------------------------------------------------------------|------------|
+| 060 | [Audit-note rollout](./done/060-audit-note-rollout.md) | v0.45.0 |
+| 059 | [Confirm-screen template component](./done/059-confirm-screen-template-component.md) | v0.45.0 |
+| 058 | [Dangerous-action step-up enforcement](./done/058-dangerous-action-step-up-enforcement.md) | v0.45.0 |
 | 057 | [Language save confirmation](./done/057-language-save-confirmation.md) | v0.44.0 |
 | 056 | [Recovery codes remaining count](./done/056-recovery-codes-remaining-count.md) | v0.44.0 |
 | 055 | [Consolidate self-service onto `/me/security/*`](./done/055-self-service-unification.md) | v0.44.0 |

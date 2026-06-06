@@ -42,4 +42,6 @@ pub use pages::{
     MeSessionDescriptor, MfaSetupData, PasskeyDescriptor, PasswordChangeData,
     SettingsAuthenticationData, SettingsBasicData, SettingsChainStatus, SettingsEmailData,
     SettingsLogsData, SettingsOtherData, SettingsSecurityData, SettingsTab,
+    // RFC 059 — shared confirm-screen template
+    ConfirmScreenData, ReversibilityKind, confirm_screen,
 };

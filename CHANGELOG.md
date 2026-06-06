@@ -5,6 +5,172 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.0] — Unreleased
+
+**Phase D of the v0.42 → v1.0-rc UI/UX hardening plan: dangerous
+operations make themselves visible.** The PDF defines this as one of
+the headline UI/UX gaps — dangerous operations had most of the
+pieces (confirm screens, step-up cookie, audit `note` column) but
+didn't bring them together consistently. v0.45.0 closes the gaps
+and introduces a single template for all dangerous-action confirm
+screens.
+
+The user-visible signal of Phase D landing: clicking any dangerous
+button in the admin UI now goes through (1) a confirm screen with a
+typed reason textarea, (2) a step-up re-authentication if your
+session is older than 5 minutes, and (3) writes a populated `note`
+to the audit log. The five confirm screens are now structurally
+identical because they delegate to the same component.
+
+A latent bypass is closed: four routes (`users_set_disabled`,
+`clients_set_disabled`, `clients_delete`, `signing_keys_rotate`,
+`signing_keys_delete`) accepted POSTs without the `_confirmed=1`
+token that the confirm screen emits. The handlers always called
+through to the confirm-screen path before; nothing prevented a
+direct-POST attack from skipping it. v0.45.0 enforces
+`_confirmed=1` server-side on every dangerous action.
+
+---
+
+### RFC 058 — Dangerous-action step-up enforcement
+
+The v0.41.0 audit identified four dangerous routes that lacked
+`require_fresh_step_up`:
+
+| Route | Risk before v0.45.0 |
+|-------|---------------------|
+| `POST /admin/users/{id}/disabled` | Stale cookie could lock out arbitrary users including admins. |
+| `POST /admin/clients/{id}/disabled` | Stale cookie could disable production OIDC clients. |
+| `POST /me/security/mfa/disable` | Stale cookie could downgrade the target's own account security. |
+| `POST /me/security/passkeys/{id}/delete` | Same pattern: remove a legitimate factor pre-phishing. |
+
+All four now follow the same shape used by `users_delete`,
+`clients_delete`, etc.: CSRF → `require_confirmed` → `require_fresh_step_up`
+→ action. Return-to URLs land the user back on the relevant list:
+`/admin/users`, `/admin/clients`, `/me/security/mfa`,
+`/me/security/passkeys`.
+
+### RFC 059 — `<ConfirmScreen>` template component
+
+The five `render_confirm_*` functions in `pages.rs` were re-implementing
+the same Shell + auth-card + identity + impact + badge + form
+structure. Each was ~32–54 LOC; drift between them was silent.
+
+v0.45.0 introduces one shared component in `pages.rs`:
+
+```rust
+pub fn confirm_screen(data: ConfirmScreenData, lang: Locale) -> impl IntoView;
+
+pub struct ConfirmScreenData {
+    pub title: String,
+    pub identity: String,
+    pub impact: Option<String>,
+    pub badge: Option<ReversibilityKind>,
+    pub reversibility_text: Option<String>,
+    pub action_url: String,
+    pub csrf_token: String,
+    pub extra_hidden: Vec<(String, String)>,
+    pub include_reason_field: bool,
+    pub button_label: String,
+    pub button_danger: bool,
+    pub cancel_url: String,
+}
+
+pub enum ReversibilityKind { Recoverable, Irreversible }
+```
+
+The component emits `<input type="hidden" name="_confirmed" value="1">`
+unconditionally — callers cannot accidentally forget it. The Shell
+wrap stays at the caller because `current=<nav-key>` differs per
+route. Net: each `render_confirm_*` function shrinks to ~25 LOC of
+data-struct construction, and a future copy-edit to the confirm
+scaffold (button styling, badge layout, cancel position) touches one
+function instead of five.
+
+### RFC 060 — Audit-note rollout
+
+The audit log's `note` column (added at v0.40.0, RFC 045) was only
+populated by one action (`user.disable`). The other seven dangerous
+actions wrote `note=NULL`, leaving the audit row as "what happened"
+with no "why." v0.45.0 rolls the operator-supplied reason out to
+every dangerous action.
+
+**Use-case signatures** (in `sui_id_core::admin`):
+
+| Function | Was | Now |
+|----------|-----|-----|
+| `delete_user` | `(db, actor, target)` | `(db, actor, target, reason)` |
+| `admin_reset_mfa` | `(db, actor, target)` | `(db, actor, target, reason)` |
+| `set_client_disabled` | `(db, clock, actor, target, disabled, caches)` | `(db, clock, actor, target, disabled, reason, caches)` |
+| `delete_client` | `(db, actor, target, caches)` | `(db, actor, target, reason, caches)` |
+| `rotate_client_secret` | `(db, clock, actor, target)` | `(db, clock, actor, target, reason)` |
+| `rotate_signing_key` | `(db, clock, keyring, actor, caches)` | `(db, clock, keyring, actor, reason, caches)` |
+| `delete_signing_key` | `(db, clock, actor, target, caches)` | `(db, clock, actor, target, reason, caches)` |
+
+All seven switch from `audit_ok(...)` to
+`audit_with_note(..., reason)`. The `admin_reset_mfa` case combines
+the system-generated note (`"totp=removed passkeys=2"`) with the
+operator reason: `"totp=removed passkeys=2 reason=offboarding"`.
+
+**Handler-side**: new `ConfirmedReasonForm` (CSRF + `_confirmed` +
+optional `reason`) with `.reason_opt()` helper. Eight handlers
+migrate from `ConfirmedForm` / `CsrfOnlyForm` to `ConfirmedReasonForm`.
+Three of them — `clients_delete`, `signing_keys_rotate`,
+`signing_keys_delete` — were missing `require_confirmed` entirely
+(latent bypass); the migration closes it.
+
+**Self-service dangerous routes** write a canonical
+`note: "self"` to distinguish "user reduced their own MFA" from
+"admin acted on user." Affected: `mfa_disable`,
+`webauthn.credential.delete`. The third self-service dangerous route,
+`revoke_all_others`, already carried a useful note
+(`"revoked N other session(s)"`) and its action name
+(`auth.sessions.bulk_revoke_self`) is already self-discriminating;
+left as is.
+
+**Confirm screens**: every dangerous action's confirm page now shows
+a reason textarea (RFC 045's `<textarea name="reason">` pattern,
+generalised). Operators can leave it blank; non-blank values flow
+into `note`.
+
+### Bug fixes
+
+- `users_set_disabled`, `clients_set_disabled`, `clients_delete`,
+  `signing_keys_rotate`, `signing_keys_delete` previously accepted
+  POSTs without `_confirmed=1`, bypassing the confirm screen. Fixed
+  in this release.
+- `DisableForm` gains the `_confirmed` field it always needed.
+
+### New docs
+
+`docs/src/guides/dangerous-operations.md` — the operator-facing
+guide listing each dangerous operation, what it revokes alongside
+the primary effect, how to triage an unexpected audit row, and the
+four-step contract every dangerous action goes through. Linked from
+`SUMMARY.md` under Guides.
+
+### Tests pass count
+
+Unit-test count after Phase D: i18n 12 · web 0 · shared 13 · store 36
+· core 114 · sui-id 53 = **228/228** (+13 from v0.44.0 thanks to two
+new e2e cases on the `_confirmed` bypass closure and three on the
+self-service `note: "self"` discriminator; nothing was removed).
+
+### Breaking changes
+
+- **Use-case signatures**: seven functions in `sui_id_core::admin`
+  gain a `reason: Option<String>` parameter. Callers outside the
+  workspace need to update. The signatures are not part of the
+  semver-protected public API for v0 releases.
+- **Handler `_confirmed` enforcement**: scripts that POSTed directly
+  to `/admin/users/{id}/disabled`, `/admin/clients/{id}/disabled`,
+  `/admin/clients/{id}/delete`, `/admin/signing-keys/rotate`, or
+  `/admin/signing-keys/{id}/delete` without `_confirmed=1` will now
+  receive HTTP 400. Operators who need to script these should
+  include the form field.
+
+---
+
 ## [0.44.0] — Unreleased
 
 **Phase C of the v0.42 → v1.0-rc UI/UX hardening plan.** Two parallel

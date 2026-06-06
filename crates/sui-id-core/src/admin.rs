@@ -169,7 +169,12 @@ pub async fn set_user_disabled(
     Ok(())
 }
 
-pub async fn delete_user(db: &Database, actor: UserId, target: UserId) -> CoreResult<()> {
+pub async fn delete_user(
+    db: &Database,
+    actor: UserId,
+    target: UserId,
+    reason: Option<String>,
+) -> CoreResult<()> {
     require_admin(db, actor).await?;
     if actor == target {
         return Err(CoreError::BadRequest(
@@ -183,7 +188,7 @@ pub async fn delete_user(db: &Database, actor: UserId, target: UserId) -> CoreRe
     sessions::revoke_all_for_user(db, target).await?;
     refresh_tokens::revoke_all_for_user(db, target).await?;
     auth_codes::invalidate_all_for_user(db, target).await?;
-    audit_ok(db, actor, "user.delete", Some(target.to_string())).await;
+    audit_with_note(db, actor, "user.delete", Some(target.to_string()), reason).await;
     Ok(())
 }
 
@@ -216,6 +221,7 @@ pub async fn admin_reset_mfa(
     db: &Database,
     actor: UserId,
     target: UserId,
+    reason: Option<String>,
 ) -> CoreResult<MfaResetReport> {
     require_admin(db, actor).await?;
     // Check the target exists and is not soft-deleted, to give a
@@ -245,11 +251,18 @@ pub async fn admin_reset_mfa(
         passkeys_removed += 1;
     }
 
-    let note = format!(
+    // RFC 060: the audit note combines a system-generated summary
+    // (what was actually removed) with the operator-supplied reason
+    // (why). Both are useful for forensics.
+    let sys_note = format!(
         "totp={} passkeys={}",
         if totp_removed { "removed" } else { "absent" },
         passkeys_removed
     );
+    let note = match reason {
+        Some(r) => format!("{sys_note} reason={r}"),
+        None => sys_note,
+    };
     let _ = audit::append(
         db,
         &sui_id_store::models::AuditLogRow {
@@ -544,6 +557,7 @@ pub async fn set_client_disabled(
     actor: UserId,
     target: ClientId,
     disabled: bool,
+    reason: Option<String>,
     caches: &Caches,
 ) -> CoreResult<()> {
     require_admin(db, actor).await?;
@@ -554,11 +568,12 @@ pub async fn set_client_disabled(
     if disabled {
         refresh_tokens::revoke_all_for_client(db, target).await?;
     }
-    audit_ok(
+    audit_with_note(
         db,
         actor,
         if disabled { "client.disable" } else { "client.enable" },
         Some(target.to_string()),
+        if disabled { reason } else { None },
     ).await;
     if let Err(e) = caches.redirect_origins.rebuild(db).await {
         tracing::warn!(error = %e, "cache rebuild failed after set_client_disabled");
@@ -566,7 +581,13 @@ pub async fn set_client_disabled(
     Ok(())
 }
 
-pub async fn delete_client(db: &Database, actor: UserId, target: ClientId, caches: &Caches) -> CoreResult<()> {
+pub async fn delete_client(
+    db: &Database,
+    actor: UserId,
+    target: ClientId,
+    reason: Option<String>,
+    caches: &Caches,
+) -> CoreResult<()> {
     require_admin(db, actor).await?;
     clients::soft_delete(db, target).await.map_err(|e| match e {
         sui_id_store::StoreError::NotFound => CoreError::NotFound,
@@ -576,7 +597,7 @@ pub async fn delete_client(db: &Database, actor: UserId, target: ClientId, cache
         tracing::warn!(error = %e, "cache rebuild failed after delete_client");
     }
     refresh_tokens::revoke_all_for_client(db, target).await?;
-    audit_ok(db, actor, "client.delete", Some(target.to_string())).await;
+    audit_with_note(db, actor, "client.delete", Some(target.to_string()), reason).await;
     Ok(())
 }
 
@@ -603,6 +624,7 @@ pub async fn rotate_signing_key(
     clock: &SharedClock,
     keyring_path: &str,
     actor: UserId,
+    reason: Option<String>,
     caches: &Caches,
 ) -> CoreResult<sui_id_shared::ids::SigningKeyId> {
     use ed25519_dalek::SigningKey;
@@ -633,7 +655,8 @@ pub async fn rotate_signing_key(
         tracing::warn!(error = %e, "cache rebuild failed after rotate_signing_key");
     }
     let _ = clock;
-    audit_ok(db, actor, "signing_key.rotate", Some(new_id.to_string())).await;
+    let _ = keyring_path;
+    audit_with_note(db, actor, "signing_key.rotate", Some(new_id.to_string()), reason).await;
     Ok(new_id)
 }
 
@@ -644,6 +667,7 @@ pub async fn delete_signing_key(
     clock: &SharedClock,
     actor: UserId,
     target: sui_id_shared::ids::SigningKeyId,
+    reason: Option<String>,
     caches: &Caches,
 ) -> CoreResult<()> {
     require_admin(db, actor).await?;
@@ -654,7 +678,8 @@ pub async fn delete_signing_key(
         ),
         other => CoreError::from(other),
     })?;
-    audit_ok(db, actor, "signing_key.delete", Some(target.to_string())).await;
+    let _ = clock;
+    audit_with_note(db, actor, "signing_key.delete", Some(target.to_string()), reason).await;
     if let Err(e) = caches.jwks.rebuild(db).await {
         tracing::warn!(error = %e, "cache rebuild failed after delete_signing_key");
     }
@@ -731,6 +756,7 @@ pub async fn rotate_client_secret(
     clock: &SharedClock,
     actor: UserId,
     client_id: ClientId,
+    reason: Option<String>,
 ) -> CoreResult<String> {
     require_admin(db, actor).await?;
     let client = clients::get(db, client_id).await.map_err(|e| match e {
@@ -746,8 +772,8 @@ pub async fn rotate_client_secret(
     let new_hash = crate::password::hash_password(&new_secret)?;
     clients::set_secret_hash(db, client_id, Some(&new_hash), clock.now()).await
         .map_err(CoreError::from)?;
-    audit_ok(
-        db, actor, "client.rotate_secret", Some(client_id.to_string())
+    audit_with_note(
+        db, actor, "client.rotate_secret", Some(client_id.to_string()), reason
     ).await;
     Ok(new_secret)
 }

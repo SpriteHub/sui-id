@@ -282,7 +282,7 @@ async fn admin_can_reset_users_mfa_factors() {
     assert!(mfa::is_mfa_enabled(&state.db, bob).await.unwrap());
 
     // Admin resets it.
-    let report = admin_reset_mfa(&state.db, admin_id, bob).await.expect("reset");
+    let report = admin_reset_mfa(&state.db, admin_id, bob, None).await.expect("reset");
     assert!(report.totp_removed);
     assert_eq!(report.passkeys_removed, 0);
 

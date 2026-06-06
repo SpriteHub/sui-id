@@ -16,6 +16,7 @@
 
 - [Deployment](./guides/deployment.md)
 - [Operators reference](./guides/operators.md)
+- [Dangerous operations](./guides/dangerous-operations.md)
 - [Upgrade guide](./guides/upgrade.md)
 
 ---
