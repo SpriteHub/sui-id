@@ -27,9 +27,71 @@ there. Numbering is permanent: a file's RFC number is assigned
 at creation and never changes, even if the file moves between
 folders.
 
+## A note on namespaces
+
+Most RFCs in this directory share a single sequential numbering line
+(`001-…`, `002-…`, … `068-…` at the time of writing; the next free
+slot is `069`). One **parallel namespace** also exists:
+
+- **`RFC-MI-NNN-*`** — the **Mockup Integration epic**, introduced
+  in v0.49.0. These RFCs cross-reference each other heavily by their
+  `MI-NNN` identifiers (`RFC-MI-020` depends on `RFC-MI-010`,
+  `RFC-MI-021`, `RFC-MI-012`, etc.); they were authored together as a
+  coherent eight-phase plan and are introduced under their original
+  numbering so the cross-reference graph stays intact. The supporting
+  planning artifacts (migration plan, codebase handoff, mockup
+  handoff package) live in
+  [`../docs/mockup-integration/`](../docs/mockup-integration/).
+
+  When a new MI RFC is created, take the next slot in the MI line
+  (the existing set occupies `MI-000`, `010`–`012`, `020`–`022`,
+  `030`–`031`, `040`–`041`, `050`–`051`, `060`, `070`, `080`; gaps
+  are deliberate to leave room for siblings within each phase). When
+  a new non-MI RFC is created, take the next slot in the main line
+  (`069`, then `070`, …).
+
+  Numbers in either namespace are permanent and never re-used, per
+  RFC 018.
+
 ## Index
 
-### Proposed (open for review)
+### Proposed — Mockup Integration epic (Phase 0 → Phase 8)
+
+The mockup integration arc opens in v0.49.0 and is expected to span
+eight phases. Read the
+[migration plan](../docs/mockup-integration/migration-plan.md) and
+[codebase handoff](../docs/mockup-integration/codebase-handoff.md)
+first; then implement RFCs in dependency order (the leftmost column
+is the **implementation order**).
+
+| Order | ID | Title | Phase |
+|------:|----|-------|-------|
+| 1 | [RFC-MI-000](./proposed/RFC-MI-000-baseline-delta-inventory.md) | Baseline Delta Inventory and Integration Mapping Contract | Phase 0 |
+| 2 | [RFC-MI-010](./proposed/RFC-MI-010-component-css-sharding.md) | Component CSS Sharding and Export Discipline | Phase 1 |
+| 3 | [RFC-MI-011](./proposed/RFC-MI-011-token-mapping-visual-primitives.md) | Mockup Token Mapping and Visual Primitive Adoption | Phase 1 |
+| 4 | [RFC-MI-012](./proposed/RFC-MI-012-theme-persistence.md) | Theme Persistence Decision | Phase 1 |
+| 5 | [RFC-MI-020](./proposed/RFC-MI-020-shell-layout-integration.md) | Shell Layout Integration | Phase 2 |
+| 6 | [RFC-MI-021](./proposed/RFC-MI-021-server-rendered-csrf-shell.md) | Server-Rendered CSRF for Shell-Level Forms | Phase 2 |
+| 7 | [RFC-MI-022](./proposed/RFC-MI-022-route-based-tab-component.md) | Route-Based Tab Component | Phase 2 |
+| 8 | [RFC-MI-030](./proposed/RFC-MI-030-dashboard-summary.md) | Dashboard and Summary Surface Integration | Phase 3 |
+| 9 | [RFC-MI-031](./proposed/RFC-MI-031-audit-readonly-tables.md) | Audit Log and Read-Only Table Integration | Phase 3 |
+| 10 | [RFC-MI-040](./proposed/RFC-MI-040-setup-wizard-ux.md) | Setup Wizard UX Integration | Phase 4 |
+| 11 | [RFC-MI-041](./proposed/RFC-MI-041-authentication-surfaces.md) | Authentication Surface Integration | Phase 4 |
+| 12 | [RFC-MI-050](./proposed/RFC-MI-050-form-system-validation.md) | Form System and Validation Feedback | Phase 5 |
+| 13 | [RFC-MI-051](./proposed/RFC-MI-051-danger-confirmation.md) | Danger Zone and Confirmation Screen Integration | Phase 5 |
+| 14 | [RFC-MI-060](./proposed/RFC-MI-060-self-service-security-tabs.md) | Self-Service Security Tab Integration | Phase 6 |
+| 15 | [RFC-MI-070](./proposed/RFC-MI-070-oidc-consent-ux.md) | OIDC Consent UX Integration | Phase 7 |
+| 16 | [RFC-MI-080](./proposed/RFC-MI-080-ui-regression-a11y-hardening.md) | UI Regression and Accessibility Hardening | Phase 8 |
+
+Phase-1 blockers, restated for visibility:
+
+- **`D-01`** (RFC-MI-010) — Split `components.rs` into bounded shards.
+- **`D-02`** (RFC-MI-022) — Preserve path-based tabs; reject the
+  mockup's query-parameter tab model.
+- **`D-03`** (RFC-MI-021) — Thread CSRF through `Shell` server-side
+  before any interactive shell adoption proceeds (Phase 2 blocker).
+
+### Proposed — post-1.0 candidates (open for review)
 
 | ID  | Title                                                          | Priority |
 |-----|----------------------------------------------------------------|----------|

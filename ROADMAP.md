@@ -8,6 +8,12 @@ Completed work is tracked in [CHANGELOG.md](CHANGELOG.md) and the
 
 ## Active proposals (proposed RFCs)
 
+**Mockup Integration epic — sixteen RFCs, Phase 0 → Phase 8.**
+Introduced in v0.49.0. The full epic table and reading order live
+in [`rfcs/README.md`](rfcs/README.md) ("Proposed — Mockup
+Integration epic"); see also
+[`docs/mockup-integration/`](docs/mockup-integration/).
+
 | RFC | Title | Priority | Notes |
 |---|---|---|---|
 | [RFC 004](rfcs/proposed/004-federation.md) | OIDC/SAML federation (upstream IdP) | Low | Identity provider chaining |
@@ -47,10 +53,44 @@ proposed RFCs once they enter the repository at each phase start.
 
 ---
 
+## Mockup Integration arc (v0.49.0 → )
+
+Following Phases A–F, the project enters the **Mockup Integration
+("MI") arc**: a controlled migration that adopts the
+`sui-id-web-mockup-v0.4.8` UI/UX language into the product. Eight
+phases (0 → 8), each backed by one or more `RFC-MI-NNN` documents
+in `rfcs/proposed/`. v0.49.0 opens the arc with the Phase 0 planning
+artifacts only — **no runtime code changes** — so subsequent
+implementation work has an auditable baseline. See
+[`docs/mockup-integration/`](docs/mockup-integration/) for the
+migration plan, codebase handoff, and mockup handoff package.
+
+| Phase | Target version | Theme                                                   | RFCs (proposed)               |
+|-------|----------------|---------------------------------------------------------|-------------------------------|
+| **0** | **v0.49.0**    | **Baseline freeze + RFC + planning artifacts (this release)** | RFC-MI-000                |
+| **1** | v0.50.0        | Visual foundations: CSS sharding, token mapping, theme  | RFC-MI-010, 011, 012          |
+| **2** | v0.51.0        | Shell layout, server-rendered CSRF, route-based tabs    | RFC-MI-020, 021, 022          |
+| **3** | v0.52.0        | Read-only admin: dashboard, audit, tables               | RFC-MI-030, 031               |
+| **4** | v0.53.0        | Setup wizard + authentication surfaces                  | RFC-MI-040, 041               |
+| **5** | v0.54.0        | Form system + danger-zone / confirmation                | RFC-MI-050, 051               |
+| **6** | v0.55.0        | Self-service `/me/security/*` integration               | RFC-MI-060                    |
+| **7** | v0.56.0        | OIDC consent UX                                         | RFC-MI-070                    |
+| **8** | v0.57.0        | Responsive + a11y regression hardening                  | RFC-MI-080                    |
+
+Phase-1 blockers (`D-01` / `D-02` / `D-03` in the migration plan)
+must be resolved before any code-level visual replacement starts:
+component CSS sharding, path-based-tab preservation, and CSRF
+threaded through `Shell` server-side. Target versions above are
+indicative — not commitments. v1.0 designation continues to be
+deferred (verification phase, spec §22).
+
+---
+
 ## Completed (recent)
 
 | Version | What shipped |
 |---|---|
+| v0.49.0 | **Opens the Mockup Integration ("MI") arc.** Sixteen `RFC-MI-NNN` documents added to `rfcs/proposed/` (Phase 0 → Phase 8 plan); supporting planning artifacts placed under `docs/mockup-integration/` (migration plan, codebase handoff, mockup handoff package) and `docs/development-specification.md` (v3 spec). `rfcs/README.md` rewritten to surface the MI namespace and the eight-phase implementation order. Phase-1 blockers `D-01`/`D-02`/`D-03` restated. Workspace version → 0.49.0. **No runtime code changes**: CI invariants unchanged at their v0.48.4 values (228/228 floor unaffected; text-leaks 0; inline-style-bound 16; css-tokens green; semantic-palette-parity 12×3). |
 | v0.48.4 | **Setup UX.** (1) Setup token moved from text-input to URL parameter: startup now prints a full URL (`/setup?token=xxx`), the welcome screen forwards it to `/setup/admin?token=xxx`, and the admin form holds it as `<input type="hidden">` — operators no longer copy-paste a raw token string. Token travels through language PRG redirects and error re-renders unchanged. (2) Chinese (`中文`) removed from setup wizard language picker — core i18n covers ja and en only; showing zh would be misleading. 228/228 PASS; 0 warnings. |
 | v0.48.3 | **Verification-phase bug: `email` claim absent from ID token.** External RP reported `JSON error: missing field 'email'` at OIDC callback. `IdTokenClaims` had no `email`/`email_verified` fields; only the UserInfo endpoint returned them. OIDC Core §5.1: `email` scope SHOULD populate those claims in the ID token too. Fix: added `email: Option<String>` + `email_verified: Option<bool>` (both `skip_serializing_if = "Option::is_none"`) to `IdTokenClaims`; `issue_token_set` takes a new `user_email: Option<(&str, bool)>` param; `exchange_code` passes it from the already-fetched user row; `exchange_refresh` adds a conditional `users::get` only when scope includes `"email"`. Accounts without email → field omitted (not null). `email_verified` faithfully reflects `email_verified_at IS NULL`. 228/228 tests PASS; 0 warnings; CI PASS. |
 | v0.48.2 | **Second verification-phase release (verification-pass buffer).** Six issues from the same real-environment round that produced v0.48.1. **Bug 1** (`::selection` invisible): `--accent-default` + `--fg-on-accent` replaces `--accent-subtle`. **Bug 5** (`/me/security/overview` i18n): 3 hardcoded/miskeyed strings replaced with 3 new keys (`me_overview_label_mfa_totp`, `me_overview_label_passkeys`, `me_overview_no_recent_events`) × en/ja/zh. **Issue 4** (setup wizard language): explicit 3-button picker on welcome screen, `?lang=xx` → LANG_COOKIE set (PRG) → all subsequent wizard steps auto-locale via existing RequestLocale. **Issue 6** (footer a11y labels): `<ul role="note">` / `<li class="app-footer__a11y-item">` with `cursor: default` and caption sizing — passive informational badges, not interactive. **Issue 7** (tagline prominence): caption-size + muted + opacity 0.75. **Bug 8** (mobile responsive): first `@media (max-width: 768px)` in codebase; `.app-nav__link { white-space: nowrap }` + `td/th { white-space: nowrap }` + `.cell-wrap` opt-out class; nav horizontal-scroll, main padding shrink, footer column stack. Tests stable at 228/228; 0 warnings; CI invariants PASS. |
@@ -85,25 +125,27 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-v0.48.2 ships the **second verification-phase release**: six
-non-lock-out issues from the same real-environment round that
-produced the v0.48.1 hotfix. Text-selection colour, i18n
-hardcoding on the security overview, the setup wizard language
-picker, footer accessibility badge design intent, tagline
-restraint, and the first `@media` breakpoint for mobile
-responsive layout.
+v0.49.0 opens the **Mockup Integration ("MI") arc** — a controlled
+migration that adopts the `sui-id-web-mockup-v0.4.8` UI/UX language
+into the product across eight phases (Phase 0 → Phase 8). This
+release covers **Phase 0 only**: introducing the sixteen
+`RFC-MI-NNN` proposed documents and the supporting planning
+artifacts (migration plan, codebase handoff, mockup handoff
+package, v3 development specification). **No runtime code is
+changed**, so every CI invariant remains at its v0.48.4 value by
+construction.
 
-All are UX regressions or latent bugs that real testing surfaced.
-None required changes to data structures, auth flows, or the
-OIDC stack; all are CSS, i18n, and light handler/page code.
+The arc parallels the v0.42 → v0.48.0 hardening sequence (Phases
+A–F). Phase 1 (Visual foundations: CSS sharding, token mapping,
+theme persistence) is the next step; the three Phase-1 blockers
+identified in the migration plan — `D-01` component sharding,
+`D-02` path-based tabs, `D-03` server-rendered CSRF for `Shell` —
+must be resolved before any visual replacement at page level can
+proceed.
 
-The project remains in **verification phase**. Three known
-follow-up items are tracked in the v0.48.2 CHANGELOG (`.cell-wrap`
-per-table annotations, `?return=` on login redirect, CSRF
-server-render); they are not blocking and will land in v0.48.3+.
-A v1.0 designation continues to be deferred until sufficient
-soak and external review. **No release will start with v1
-until that bar is met.**
+The project remains in **verification phase**. A v1.0 designation
+continues to be deferred until sufficient soak and external
+review. **No release will start with v1 until that bar is met.**
 
 ---
 

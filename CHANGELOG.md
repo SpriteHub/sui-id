@@ -5,6 +5,127 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.0] — Unreleased
+
+**Opens the Mockup Integration ("MI") development arc.** Sixteen
+proposed RFCs (`RFC-MI-000` through `RFC-MI-080`) and the supporting
+planning artifacts are introduced. **No runtime code is changed in
+this release.** The MI arc adopts the `sui-id-web-mockup-v0.4.8`
+UI/UX language into the product through an eight-phase, controlled
+migration (Phase 0 → Phase 8); this release covers Phase 0 only —
+freezing the baseline and making the integration auditable before
+implementation begins.
+
+The arc parallels the v0.42 → v0.48.0 hardening sequence (Phases
+A–F). It is **not** a v1.0 candidate by itself: the verification
+phase remains open, and the project owner's "no rc / pre / beta
+tag is scheduled" stance carries through.
+
+---
+
+### Sixteen `RFC-MI-*` documents in `rfcs/proposed/`
+
+Authored as a coherent set with their own parallel numbering line
+(`MI-NNN`); the cross-reference graph between them stays intact under
+their original names. Implementation order is the canonical reading
+order:
+
+| Order | ID         | Title                                                            | Phase    |
+|------:|------------|------------------------------------------------------------------|----------|
+| 1     | RFC-MI-000 | Baseline Delta Inventory and Integration Mapping Contract        | Phase 0  |
+| 2     | RFC-MI-010 | Component CSS Sharding and Export Discipline                     | Phase 1  |
+| 3     | RFC-MI-011 | Mockup Token Mapping and Visual Primitive Adoption               | Phase 1  |
+| 4     | RFC-MI-012 | Theme Persistence Decision                                       | Phase 1  |
+| 5     | RFC-MI-020 | Shell Layout Integration                                         | Phase 2  |
+| 6     | RFC-MI-021 | Server-Rendered CSRF for Shell-Level Forms (Phase 2 blocker)     | Phase 2  |
+| 7     | RFC-MI-022 | Route-Based Tab Component                                        | Phase 2  |
+| 8     | RFC-MI-030 | Dashboard and Summary Surface Integration                        | Phase 3  |
+| 9     | RFC-MI-031 | Audit Log and Read-Only Table Integration                        | Phase 3  |
+| 10    | RFC-MI-040 | Setup Wizard UX Integration                                      | Phase 4  |
+| 11    | RFC-MI-041 | Authentication Surface Integration                               | Phase 4  |
+| 12    | RFC-MI-050 | Form System and Validation Feedback                              | Phase 5  |
+| 13    | RFC-MI-051 | Danger Zone and Confirmation Screen Integration                  | Phase 5  |
+| 14    | RFC-MI-060 | Self-Service Security Tab Integration                            | Phase 6  |
+| 15    | RFC-MI-070 | OIDC Consent UX Integration                                      | Phase 7  |
+| 16    | RFC-MI-080 | UI Regression and Accessibility Hardening                        | Phase 8  |
+
+Phase-1 blockers (`D-01` / `D-02` / `D-03` in the migration plan)
+are restated in `rfcs/README.md` and at the top of each affected
+RFC: split `components.rs` into bounded shards, preserve path-based
+tabs (reject the mockup's query-parameter tab model), and thread
+CSRF through `Shell` server-side before any interactive shell
+adoption proceeds.
+
+### Parallel namespace recorded in `rfcs/README.md`
+
+`rfcs/README.md` gains a "namespaces" preface and a dedicated
+"Mockup Integration epic" subsection in the Proposed index. The
+main sequential numbering line (`069` is the next free slot) is
+unaffected. The MI line and the main line each retain permanent,
+non-overlapping numbering per RFC 018.
+
+### Planning artifacts under `docs/`
+
+- `docs/development-specification.md` — the v3 development
+  specification, reflecting the v0.48.4 codebase. Supersedes the
+  v2 spec snapshot at v0.29.1.
+- `docs/mockup-integration/README.md` — orientation index for the
+  arc.
+- `docs/mockup-integration/migration-plan.md` — the revised
+  migration plan (v0.2), with the 12-item decision backlog
+  (`D-01` … `D-12`), eight-phase roll-out, RFC dependency graph,
+  and non-negotiable guardrails.
+- `docs/mockup-integration/codebase-handoff.md` — the
+  architect-facing tour of the v0.48.4 rendering stack, design
+  system, handler contracts, CI invariants, and open questions.
+  Generated against v0.48.4; the doc itself states it must be
+  refreshed if more than two release cycles elapse before
+  implementation starts.
+- `docs/mockup-integration/mockup-handoff/` — the mockup author's
+  handoff package (HANDOFF, SCREEN_INVENTORY, FLOW_SUMMARY,
+  OPEN_ISSUES, IMPLEMENTATION_NOTES, README).
+
+### Workspace version bumped to 0.49.0
+
+`[workspace.package].version = "0.49.0"` in the root `Cargo.toml`.
+Every crate inherits via `version.workspace = true`.
+
+### No runtime code changes
+
+This release follows RFC-MI-000 §4 (Non-Goals): *do not modify
+runtime code*. The CI invariants therefore remain at their v0.48.4
+values by construction:
+
+- `cargo build`, `cargo test` — no change (228 / 228 floor
+  unaffected; cf. spec §21).
+- `text-leaks` — 0 occurrences (unchanged).
+- `css-tokens` — every `var(--*)` reference still resolves
+  (unchanged).
+- `semantic-palette-parity` — 12 semantic tokens × 3 modes = 36
+  declarations (unchanged).
+- `inline-style-bound` — 16 inline `style="…"` occurrences in
+  `crates/sui-id-web/src/pages/**` (unchanged; ≤ 20 ceiling).
+
+### Next development action
+
+The next release implements RFC-MI-000: produce the six inventory
+files (`screen-map.md`, `dangerous-action-map.md`,
+`tab-routing-delta.md`, `token-delta-draft.md`,
+`i18n-copy-delta-draft.md`, `route-render-handler-map.md`) under
+`rfcs/proposed/mockup-integration-inventory/` and move RFC-MI-000
+to `rfcs/done/` once those artifacts are reviewed and frozen.
+RFC-MI-010 / RFC-MI-011 / RFC-MI-012 (Phase 1) become eligible to
+start once Phase 0 is closed.
+
+### Verification phase continues
+
+v0.49.0 is a planning release inside the verification phase
+(spec §22). No v1.0-prefixed tag (`rc`, `pre`, `beta`) is
+scheduled. Subsequent releases use `v0.49.x`, `v0.50.0`, … in
+sequence as the MI phases ship.
+
+---
+
 ## [0.48.4] — Unreleased
 
 **Verification-phase UX improvements: setup token via URL parameter;
