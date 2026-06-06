@@ -38,12 +38,27 @@ pub const TOKENS_CSS: &str = r#"
   --accent-emphasis: #6956C0;
   --accent-subtle:   #E6E1F5;
 
-  /* Semantic */
+  /* Semantic — full set per RFC 061 (v0.46.0).
+   * Every semantic colour has three slots:
+   *   --{name}-default — the border/foreground tint
+   *   --{name}-subtle  — the tinted background for cards/banners
+   *   --fg-on-{name}   — the foreground when text sits ON a -default fill
+   * Contrast pairs all clear WCAG AA. */
   --danger-default:  #C94A4A;
   --danger-subtle:   #F6E3E3;
+  --fg-on-danger:    #FFFFFF;
+
   --warning-default: #D49B2A;
+  --warning-subtle:  #FBF1D9;
+  --fg-on-warning:   #2A1F00;
+
   --success-default: #3FA37A;
+  --success-subtle:  #DFF3E9;
+  --fg-on-success:   #FFFFFF;
+
   --info-default:    #4A7FC9;
+  --info-subtle:     #E2ECF8;
+  --fg-on-info:      #FFFFFF;
 
   /* Interaction */
   --state-hover:    rgba(0, 0, 0, 0.05);
@@ -167,9 +182,19 @@ pub const TOKENS_CSS: &str = r#"
 
   --danger-default:  #FF6B6B;
   --danger-subtle:   #3A1F22;
+  --fg-on-danger:    #FFFFFF;
+
   --warning-default: #E6B85C;
+  --warning-subtle:  #3A2E14;
+  --fg-on-warning:   #FFE7B3;
+
   --success-default: #5FC49A;
+  --success-subtle:  #1E3A2D;
+  --fg-on-success:   #FFFFFF;
+
   --info-default:    #6FA8FF;
+  --info-subtle:     #1F2D44;
+  --fg-on-info:      #FFFFFF;
 
   --state-hover:    rgba(255, 255, 255, 0.06);
   --state-active:   rgba(255, 255, 255, 0.12);
@@ -208,9 +233,19 @@ pub const TOKENS_CSS: &str = r#"
 
     --danger-default:  #FF6B6B;
     --danger-subtle:   #3A1F22;
+    --fg-on-danger:    #FFFFFF;
+
     --warning-default: #E6B85C;
+    --warning-subtle:  #3A2E14;
+    --fg-on-warning:   #FFE7B3;
+
     --success-default: #5FC49A;
+    --success-subtle:  #1E3A2D;
+    --fg-on-success:   #FFFFFF;
+
     --info-default:    #6FA8FF;
+    --info-subtle:     #1F2D44;
+    --fg-on-info:      #FFFFFF;
 
     --state-hover:    rgba(255, 255, 255, 0.06);
     --state-active:   rgba(255, 255, 255, 0.12);

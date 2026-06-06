@@ -44,4 +44,6 @@ pub use pages::{
     SettingsLogsData, SettingsOtherData, SettingsSecurityData, SettingsTab,
     // RFC 059 — shared confirm-screen template
     ConfirmScreenData, ReversibilityKind, confirm_screen,
+    // RFC 064 — empty-state primitives
+    EmptyStateData, EmptyStateAction, empty_state, table_empty_row,
 };

@@ -218,6 +218,68 @@ code, .code {
   align-items: center;
 }
 
+/* RFC 062 (v0.46.0) — card variants.
+ * Compose with .card: <section class="card card--warn">. Each variant
+ * gives the card an asymmetric 4px left accent and a subtle tinted
+ * background, so a row of cards can read at a glance as "this one is
+ * different." Colours come from RFC 061 semantic tokens, so light/dark
+ * pairing is automatic. */
+.card--warn {
+  background: var(--warning-subtle);
+  border-color: var(--warning-default);
+  border-left-width: 4px;
+}
+.card--info {
+  background: var(--info-subtle);
+  border-color: var(--info-default);
+  border-left-width: 4px;
+}
+.card--success {
+  background: var(--success-subtle);
+  border-color: var(--success-default);
+  border-left-width: 4px;
+}
+.card--callout {
+  /* Accent (lavender) callout — e.g. "next steps" cards on setup,
+   * "what to do now" panels. Not a semantic warning; just visual
+   * emphasis to mark the next operator action. */
+  background: var(--accent-subtle);
+  border-color: var(--accent-default);
+  border-left-width: 4px;
+}
+
+/* RFC 064 (v0.46.0) — Empty-state primitive.
+ * Replaces the per-page `<p class="muted">No X yet.</p>` pattern. The
+ * dashed border + tinted background distinguishes "this section is a
+ * placeholder" from "this section has muted-coloured content."
+ * Compact variant is for use inside a table cell or other narrow
+ * context where the full padding would look ridiculous. */
+.empty-state {
+  background: var(--surface-subtle);
+  border: var(--border-width-default) dashed var(--border-muted);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  text-align: center;
+  color: var(--fg-muted);
+}
+.empty-state--compact {
+  padding: var(--space-3);
+  border-style: solid;
+  text-align: left;
+}
+.empty-state__message {
+  font-size: var(--font-size-body);
+  margin: 0 0 var(--space-2) 0;
+  color: var(--fg-default);
+}
+.empty-state__hint {
+  font-size: var(--font-size-caption);
+  margin: 0 0 var(--space-3) 0;
+}
+.empty-state__action {
+  display: inline-block;
+}
+
 .stack { display: flex; flex-direction: column; gap: var(--space-3); }
 .stack-tight { display: flex; flex-direction: column; gap: var(--space-2); }
 .row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
@@ -462,7 +524,7 @@ tbody tr:hover { background: var(--state-hover); }
   color: var(--fg-default);
 }
 .flash.warn {
-  background: rgba(212, 155, 42, 0.10);
+  background: var(--warning-subtle);
   border-color: var(--warning-default);
   color: var(--fg-default);
 }
@@ -471,9 +533,8 @@ tbody tr:hover { background: var(--state-hover); }
   border-color: var(--danger-default);
   color: var(--fg-default);
 }
-[data-theme="dark"] .flash.warn {
-  background: rgba(230, 184, 92, 0.12);
-}
+/* Dark-mode override no longer needed for .flash.warn — RFC 061 made
+ * --warning-subtle per-mode, so the same rule resolves correctly. */
 
 /* ------------------------------------------------------------------ */
 /* Banners (RFC 057, v0.44.0)                                          */
@@ -496,7 +557,7 @@ tbody tr:hover { background: var(--state-hover); }
   color: var(--fg-default);
 }
 .banner--warning {
-  background: rgba(212, 155, 42, 0.10);
+  background: var(--warning-subtle);
   border-color: var(--warning-default);
   color: var(--fg-default);
 }
@@ -505,9 +566,7 @@ tbody tr:hover { background: var(--state-hover); }
   border-color: var(--danger-default);
   color: var(--fg-default);
 }
-[data-theme="dark"] .banner--warning {
-  background: rgba(230, 184, 92, 0.12);
-}
+/* RFC 061: dark-mode override no longer needed — token is per-mode. */
 
 /* ------------------------------------------------------------------ */
 /* Page header (title + optional actions on right)                     */

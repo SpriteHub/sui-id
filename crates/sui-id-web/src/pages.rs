@@ -92,6 +92,63 @@ fn copy_btn(
     }
 }
 
+// ---------- Empty-state primitive (RFC 064, v0.46.0) ----------
+
+/// Optional call-to-action attached to an empty state.
+pub struct EmptyStateAction {
+    pub href: String,
+    pub label: String,
+}
+
+/// Data driving the shared `empty_state` helper (RFC 064).
+///
+/// Replaces ad-hoc `<p class="muted">No X yet.</p>` patterns. The
+/// component renders a dashed-bordered block (or solid + compact
+/// when inside a table) so empty sections read as "placeholder,"
+/// not as "muted content."
+pub struct EmptyStateData {
+    /// Canonical message — already resolved from `t.*_empty` by the
+    /// caller (RFC 044 vocabulary).
+    pub message: String,
+    /// Optional helper hint sub-text.
+    pub hint: Option<String>,
+    /// Optional call-to-action button.
+    pub action: Option<EmptyStateAction>,
+    /// Compact mode for table-row fallback (less padding, solid
+    /// border, left-aligned).
+    pub compact: bool,
+}
+
+pub fn empty_state(data: EmptyStateData) -> impl IntoView {
+    let cls = if data.compact { "empty-state empty-state--compact" } else { "empty-state" };
+    view! {
+        <div class=cls>
+            <p class="empty-state__message">{data.message}</p>
+            {data.hint.map(|h| view! { <p class="empty-state__hint muted">{h}</p> })}
+            {data.action.map(|a| view! {
+                <a href=a.href class="button secondary empty-state__action">{a.label}</a>
+            })}
+        </div>
+    }
+}
+
+/// Table-row variant of the empty-state primitive (RFC 064).
+///
+/// Renders `<tr><td colspan=N>{message}</td></tr>` with the same
+/// canonical styling as the block-level `empty_state`, but compatible
+/// with HTML table semantics. Use inside `<tbody>` where the page
+/// shows a no-rows message.
+pub fn table_empty_row(message: &'static str, colspan: usize) -> impl IntoView {
+    view! {
+        <tr>
+            <td colspan=colspan.to_string()
+                style="text-align:center;padding:var(--space-6) 0;color:var(--fg-muted)">
+                {message}
+            </td>
+        </tr>
+    }
+}
+
 // ---------- setup wizard (3 steps: welcome → admin → done) ----------
 //
 // The design memo describes 4 screens (1 welcome, 2 admin, 3 encryption, 4 done).
@@ -326,7 +383,7 @@ pub fn render_setup_done(initialized: bool, lang: sui_id_i18n::Locale) -> String
                     {setup_step_indicator(4, lang)}
                     <h1>{t.setup_done_title}</h1>
                     <p class="muted">{t.setup_done_lede}</p>
-                    <div class="card">
+                    <div class="card card--callout">
                         <h3 class="card__title">{t.setup_done_next_steps_title}</h3>
                         <ul class="muted" style="margin:0;padding-left:var(--space-4)">
                             <li>{t.setup_done_next_step_register_clients}</li>
@@ -731,7 +788,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
                 {flash_banner(flash)}
 
                 {(warn_smtp_not_configured || warn_hibp_off || warn_cookie_insecure).then(|| view! {
-                    <section class="card" style="border-left:4px solid var(--warning-default);margin-bottom:var(--space-4)" aria-label=t.dashboard_aria_action_required>
+                    <section class="card card--warn" style="margin-bottom:var(--space-4)" aria-label=t.dashboard_aria_action_required>
                         <h2 style="font-size:var(--font-size-body);margin:0 0 var(--space-2)">
                             "⚠ " {t.dashboard_action_required_title}
                         </h2>
@@ -742,6 +799,54 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
                         </ul>
                     </section>
                 })}
+
+                // RFC 043 (promoted by RFC 063): Recent important events.
+                // Pinned high in the visual hierarchy because operators
+                // triaging the IdP need to see "what just happened" before
+                // reference stats. `.card--info` (RFC 062) gives it a
+                // blue-tinted callout look — distinct from warn (amber)
+                // but more weighted than ordinary stat cards.
+                <section class="card card--info">
+                    <h2 class="card__title">{t.dashboard_recent_events_title}</h2>
+                    {if recent_important.is_empty() {
+                        empty_state(EmptyStateData {
+                            message: t.dashboard_recent_events_empty.into(),
+                            hint: None,
+                            action: None,
+                            compact: true,
+                        }).into_any()
+                    } else {
+                        let rows: Vec<_> = recent_important.into_iter().map(|r| {
+                            let badge_class = match r.result.as_str() {
+                                "ok"  => "badge badge--ok",
+                                "fail" | "denied" | "error" => "badge badge--danger",
+                                _ => "badge",
+                            };
+                            view! {
+                                <tr>
+                                    <td class="audit-mini__time">
+                                        <time>{r.at.format("%m/%d %H:%M").to_string()}</time>
+                                    </td>
+                                    <td><code class="audit-action">{r.action}</code></td>
+                                    <td class="muted">{r.actor_label}</td>
+                                    <td><span class=badge_class>{r.result}</span></td>
+                                </tr>
+                            }
+                        }).collect();
+                        view! {
+                            <>
+                            <div class="table-wrap">
+                                <table class="audit-mini">
+                                    <tbody>{rows}</tbody>
+                                </table>
+                            </div>
+                            <p class="card__footer" style="margin-top:var(--space-2)">
+                                <a href="/admin/audit">{t.dashboard_recent_events_view_all}</a>
+                            </p>
+                            </>
+                        }.into_any()
+                    }}
+                </section>
 
                 <section class="grid-cards" aria-label=t.dashboard_aria_stats>
                     <div class="card">
@@ -774,7 +879,12 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
 
                 <section>
                     <div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:var(--space-3)">
-                        <h2 style="margin:0">{t.dashboard_activity_title}</h2>
+                        // RFC 063: dashboard sparkline is reference, not action.
+                        // h3 (was h2) + dim opacity nudges it into the
+                        // "background trend" register.
+                        <h3 style="margin:0;font-weight:var(--font-weight-medium);opacity:0.85">
+                            {t.dashboard_activity_title}
+                        </h3>
                         <nav class="app-nav" aria-label=t.dashboard_activity_period style="flex:0 0 auto">
                             {range_tabs}
                         </nav>
@@ -824,44 +934,6 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
                             </tbody>
                         </table>
                     </div>
-                </section>
-
-                // RFC 043 — Recent important events card
-                <section class="card">
-                    <h2 class="card__title">{t.dashboard_recent_events_title}</h2>
-                    {if recent_important.is_empty() {
-                        view! { <p class="muted">{t.dashboard_recent_events_empty}</p> }.into_any()
-                    } else {
-                        let rows: Vec<_> = recent_important.into_iter().map(|r| {
-                            let badge_class = match r.result.as_str() {
-                                "ok"  => "badge badge--ok",
-                                "fail" | "denied" | "error" => "badge badge--danger",
-                                _ => "badge",
-                            };
-                            view! {
-                                <tr>
-                                    <td class="audit-mini__time">
-                                        <time>{r.at.format("%m/%d %H:%M").to_string()}</time>
-                                    </td>
-                                    <td><code class="audit-action">{r.action}</code></td>
-                                    <td class="muted">{r.actor_label}</td>
-                                    <td><span class=badge_class>{r.result}</span></td>
-                                </tr>
-                            }
-                        }).collect();
-                        view! {
-                            <>
-                            <div class="table-wrap">
-                                <table class="audit-mini">
-                                    <tbody>{rows}</tbody>
-                                </table>
-                            </div>
-                            <p class="card__footer" style="margin-top:var(--space-2)">
-                                <a href="/admin/audit">{t.dashboard_recent_events_view_all}</a>
-                            </p>
-                            </>
-                        }.into_any()
-                    }}
                 </section>
             </Shell>
         }
@@ -1031,9 +1103,7 @@ pub fn render_users(
                             </thead>
                             {if rows.is_empty() {
                                 view! {
-                                    <tbody><tr><td colspan="6" class="muted" style="text-align:center;padding:var(--space-6) 0">
-                                        {t.users_empty}
-                                    </td></tr></tbody>
+                                    <tbody>{table_empty_row(t.users_empty, 6)}</tbody>
                                 }.into_any()
                             } else {
                                 view! { <tbody>{rows}</tbody> }.into_any()
@@ -1227,9 +1297,7 @@ pub fn render_clients(
                             </thead>
                             {if rows.is_empty() {
                                 view! {
-                                    <tbody><tr><td colspan="7" class="muted" style="text-align:center;padding:var(--space-6) 0">
-                                        {t.clients_empty}
-                                    </td></tr></tbody>
+                                    <tbody>{table_empty_row(t.clients_empty, 7)}</tbody>
                                 }.into_any()
                             } else {
                                 view! { <tbody>{rows}</tbody> }.into_any()
@@ -1623,9 +1691,7 @@ pub fn render_signing_keys(
                             </thead>
                             {if rows.is_empty() {
                                 view! {
-                                    <tbody><tr><td colspan="6" class="muted" style="text-align:center;padding:var(--space-6) 0">
-                                        {t.signing_keys_empty}
-                                    </td></tr></tbody>
+                                    <tbody>{table_empty_row(t.signing_keys_empty, 6)}</tbody>
                                 }.into_any()
                             } else {
                                 view! { <tbody>{rows}</tbody> }.into_any()
@@ -2653,7 +2719,12 @@ pub fn render_me_passkey(
                 {warning}
                 <div class="stack" style="margin-top:var(--space-4)">
                     {if rows.is_empty() {
-                        view! { <p class="muted">{t.profile_passkeys_empty}</p> }.into_any()
+                        empty_state(EmptyStateData {
+                            message: t.profile_passkeys_empty.into(),
+                            hint: None,
+                            action: None,
+                            compact: false,
+                        }).into_any()
                     } else {
                         view! {
                             <div class="table-wrap">

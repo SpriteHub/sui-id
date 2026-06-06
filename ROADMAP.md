@@ -51,6 +51,7 @@ proposed RFCs once they enter the repository at each phase start.
 
 | Version | What shipped |
 |---|---|
+| v0.46.0 | **Phase E** of the UI/UX hardening plan — RFC 061 (semantic palette extension: 12 new tokens completing `--{semantic}-subtle` + `--fg-on-{semantic}` triples for danger/warning/success/info × light/dark/auto-dark; closes v0.44.0 `.banner--success` regression where `--success-subtle` was used but undeclared; new CI job `semantic-palette-parity` enforces structural completeness), RFC 062 (card variants `.card--warn`, `.card--info`, `.card--success`, `.card--callout` over `.card` base; 2 inline `border-left` migrations), RFC 063 (dashboard signal/noise reorder: recent events promoted above stats with `.card--info`, sparkline demoted to h3+opacity), RFC 064 (`empty_state()` + `table_empty_row()` primitives replacing 5 ad-hoc `<p class="muted">No X yet.</p>` sites). |
 | v0.45.0 | **Phase D** of the UI/UX hardening plan — RFC 058 (step-up enforcement on 4 dangerous routes: `users_set_disabled`, `clients_set_disabled`, `mfa_disable`, `passkey_delete`), RFC 059 (`<ConfirmScreen>` shared component; 5 `render_confirm_*` functions delegate to one template), RFC 060 (audit-note rollout: 7 use cases gain `reason` parameter, 8 handlers migrate to new `ConfirmedReasonForm`, self-service routes write canonical `"self"` note, reason textarea added to all 5 confirm screens). Latent bypass closed: 5 routes accepted POSTs without `_confirmed=1`; now enforced server-side. New docs page `guides/dangerous-operations.md`. |
 | v0.44.0 | **Phase C** of the UI/UX hardening plan — RFC 055 (consolidate self-service onto `/me/security/*`: 9 handlers moved, `render_profile` removed, Nav "Profile" → "Security", 301 redirect for the GET endpoint, all old POST routes deleted), RFC 056 (recovery codes remaining: new `count_recovery_codes_remaining()` + i18n template replacing the hardcoded `0`), RFC 057 (language save confirmation banner via `?saved=1`), RFC 054 (aria-label sweep: 3 sites remaining after RFC 051's incidental fixes, now done). Bug fix: `.banner` CSS family was used in code but never declared — added in this release. |
 | v0.43.0 | **Phase B** of the UI/UX hardening plan — RFC 051 (per-screen i18n completeness audit: 95 hardcoded JA strings → 0 across every render function in `pages.rs`; ~100 new typed Strings fields with ja/en/zh values), RFC 052 (status word + empty placeholder vocabulary unification, completing pre-existing partial work), RFC 053 (copy-button i18n contract, last call site `audit_row_view`). Bug fix: missing Chinese option on `/me/security/language`. Language self-name discipline (`locale_native_*`). RFC 048 grep widened to catch 28 additional brace-missing sites missed in v0.42.0. RFC 054 deferred to v0.44.0. |
@@ -77,18 +78,19 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-v0.45.0 ships Phase D: dangerous operations make themselves visible.
-Every dangerous action — disable/delete user, MFA reset, disable/delete
-client, secret rotation, signing-key rotation/delete, self-service MFA
-disable, self-service passkey delete — now goes through a four-step
-contract: confirm screen, step-up re-authentication, action, audit row
-with populated `note`. A latent bypass on five routes is closed. The
-five confirm screens collapse into one shared `<ConfirmScreen>`
-component. New operator docs at `guides/dangerous-operations.md`.
+v0.46.0 ships Phase E: honest visual hierarchy. The dashboard now
+reads warning → action surface → reference numbers → background trend
+top-to-bottom; warnings draw the eye via amber `.card--warn` accents
+where ordinary content sits in plain `.card`. The recent-important-events
+table is promoted with `.card--info`. Empty sections show as
+dashed-bordered placeholders, not faded text. A latent v0.44.0
+regression — `.banner--success` shipping with no green tint because
+its token wasn't declared — is fixed and CI is hardened against the
+class of bug.
 
-The project is **on hold for v1.0** until Phases E–F land. Phase E
-(visual hierarchy: dashboard cards distinguishable at a glance,
-warn ≠ info) is the next milestone.
+The project is **on hold for v1.0** until Phase F lands. Phase F
+(code structure cleanup: `pages.rs` and `handlers/admin.rs` split
+per screen) is the last milestone before v1.0-rc.
 
 ---
 

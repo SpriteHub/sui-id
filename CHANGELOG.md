@@ -5,6 +5,151 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.0] — Unreleased
+
+**Phase E of the v0.42 → v1.0-rc UI/UX hardening plan: honest visual
+hierarchy.** The PDF asked for warnings that draw the eye, primary
+actions distinguishable from secondary, empty states that announce
+themselves. The current implementation had all the pieces — confirm
+screens, semantic colour names, the `.card` class — but every card
+looked the same. Phase E gives the variant system its missing
+tokens, the missing CSS rules, and the missing render primitives.
+
+A latent visual regression is closed: `.banner--success` shipped in
+v0.44.0 referencing `var(--success-subtle)`, which was never
+declared in `tokens.rs`. The CSS resolved to `unset` (transparent
+background), so the success banner was rendering without its
+intended pale-jade tint for two releases. RFC 061 declares the
+missing tokens; a new CI job catches the structural class of
+regression.
+
+---
+
+### RFC 061 — Semantic palette extension
+
+Every semantic colour (danger / warning / success / info) now has a
+**triple**:
+
+- `--{semantic}-default` — the border / foreground tint
+- `--{semantic}-subtle` — the tinted background for cards / banners
+- `--fg-on-{semantic}` — the foreground when text sits **on** a
+  `--{semantic}-default` fill
+
+Tokens are paired across the three mode roots (light `:root`,
+`[data-theme="dark"]`, and `@media (prefers-color-scheme: dark)`).
+Contrast pairs all clear WCAG AA.
+
+| Light triple | Dark triple |
+|---|---|
+| `--danger-subtle: #F6E3E3`, `--fg-on-danger: #FFFFFF` | `--danger-subtle: #3A1F22`, `--fg-on-danger: #FFFFFF` |
+| `--warning-subtle: #FBF1D9`, `--fg-on-warning: #2A1F00` | `--warning-subtle: #3A2E14`, `--fg-on-warning: #FFE7B3` |
+| `--success-subtle: #DFF3E9`, `--fg-on-success: #FFFFFF` | `--success-subtle: #1E3A2D`, `--fg-on-success: #FFFFFF` |
+| `--info-subtle: #E2ECF8`, `--fg-on-info: #FFFFFF` | `--info-subtle: #1F2D44`, `--fg-on-info: #FFFFFF` |
+
+Two hardcoded `rgba(212, 155, 42, 0.10)` and
+`rgba(230, 184, 92, 0.12)` literals in `components.rs` (in
+`.flash.warn` and `.banner--warning`) switch to
+`var(--warning-subtle)`. The dark-mode overrides (`[data-theme="dark"]
+.flash.warn { background: rgba(230, 184, 92, 0.12); }`) are removed
+— the token is now per-mode, so one rule resolves correctly under
+both themes.
+
+A new CI job `semantic-palette-parity` verifies that every semantic
+triple is declared in **all three mode roots**. Catches the
+structural class of the v0.44.0 regression.
+
+### RFC 062 — Card variant primitives
+
+Four card variants compose with `.card`:
+
+```css
+.card--warn     { background: --warning-subtle; border-color: --warning-default; border-left-width: 4px; }
+.card--info     { background: --info-subtle;    border-color: --info-default;    border-left-width: 4px; }
+.card--success  { background: --success-subtle; border-color: --success-default; border-left-width: 4px; }
+.card--callout  { background: --accent-subtle;  border-color: --accent-default;  border-left-width: 4px; }
+```
+
+The asymmetric 4px left accent lifts the variant out of the row of
+ordinary cards without being visually offensive. Subtle backgrounds
+keep body text legible.
+
+Two in-tree migrations replace inline `style="border-left:4px solid
+…"`:
+
+- `render_dashboard` action-required: inline → `.card--warn`
+- `render_setup_done` next-steps: plain `.card` → `.card--callout`
+
+### RFC 063 — Dashboard signal vs. noise
+
+`render_dashboard` reorder, top to bottom:
+
+| Position | Before (v0.45.0) | After (v0.46.0) |
+|--:|---|---|
+| 1 | Action required (warn) | Action required (warn) |
+| 2 | Stats grid (4 plain cards) | **Recent important events (info)** ← promoted |
+| 3 | Login activity (sparkline, h2 title) | Stats grid (4 plain cards) |
+| 4 | OIDC endpoints (table) | Login activity (sparkline, **h3** title, **opacity 0.85**) |
+| 5 | Recent important events (plain card) | OIDC endpoints (table) |
+
+Recent events promoted because they are operator-action surface;
+sparkline demoted because it is reference. The four stat cards stay
+as a grid (kv-grid--4col refactor deferred as risky for a CSS
+pass).
+
+### RFC 064 — Empty-state primitive
+
+New `empty_state(EmptyStateData)` helper in `pages.rs` and matching
+`.empty-state` CSS in `components.rs`. Replaces the per-page
+`<p class="muted">No X yet.</p>` pattern with a consistent
+dashed-bordered placeholder block.
+
+```rust
+pub struct EmptyStateData {
+    pub message: String,
+    pub hint: Option<String>,
+    pub action: Option<EmptyStateAction>,
+    pub compact: bool,
+}
+```
+
+Two flavours:
+
+- **Full** (`.empty-state`): dashed border, centred text, big padding,
+  optional CTA button. For section-level emptiness.
+- **Compact** (`.empty-state--compact`): solid border, left-aligned,
+  small padding. For card-internal fallback (e.g. dashboard recent
+  events when zero).
+
+Plus a sibling `table_empty_row(message, colspan)` for HTML table
+contexts, where the `<div>` of `empty_state` can't go inside `<td>`.
+Five sweep sites:
+
+| Site | Helper |
+|------|--------|
+| dashboard recent events empty | `empty_state(compact=true)` |
+| profile passkeys empty | `empty_state(compact=false)` |
+| users list empty | `table_empty_row` |
+| clients list empty | `table_empty_row` |
+| signing keys list empty | `table_empty_row` |
+
+The `<EmptyStateAction>` field is now available for future call
+sites that want an explicit CTA ("Add your first user → /admin/users/new").
+
+### Tests pass count
+
+Unchanged from v0.45.0 — Phase E is a visual / structural pass with
+no business-logic changes. Workspace and tests build clean:
+`cargo check --workspace --tests` PASSES. Unit suite stays at
+**215/215** (core 114 · i18n 12 · store 36 · sui-id 53; web 0
+because there are no logic-level web tests).
+
+### Breaking changes
+
+None. RFC 061 is additive; RFC 062 / 063 / 064 are render-time
+changes only.
+
+---
+
 ## [0.45.0] — Unreleased
 
 **Phase D of the v0.42 → v1.0-rc UI/UX hardening plan: dangerous

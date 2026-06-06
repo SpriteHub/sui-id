@@ -44,6 +44,10 @@ folders.
 
 | ID  | Title                                                          | Shipped in |
 |-----|----------------------------------------------------------------|------------|
+| 064 | [Empty / error state primitives](./done/064-empty-error-state-primitives.md) | v0.46.0 |
+| 063 | [Dashboard signal vs. noise pass](./done/063-dashboard-signal-noise.md) | v0.46.0 |
+| 062 | [Card variant primitives](./done/062-card-variant-primitives.md) | v0.46.0 |
+| 061 | [Semantic palette extension](./done/061-semantic-palette-extension.md) | v0.46.0 |
 | 060 | [Audit-note rollout](./done/060-audit-note-rollout.md) | v0.45.0 |
 | 059 | [Confirm-screen template component](./done/059-confirm-screen-template-component.md) | v0.45.0 |
 | 058 | [Dangerous-action step-up enforcement](./done/058-dangerous-action-step-up-enforcement.md) | v0.45.0 |

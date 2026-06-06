@@ -156,3 +156,43 @@ jobs:
             echo "::warning::Declared tokens with no references:"
             echo "$unused"
           fi
+
+  semantic-palette-parity:
+    # RFC 061: every semantic colour (danger / warning / success / info)
+    # has a triple {-default, -subtle, fg-on-} declared in BOTH the
+    # light :root and the dark [data-theme="dark"] root of tokens.rs.
+    # A v0.44.0 regression shipped because `--success-subtle` was used
+    # by `.banner--success` in components.rs but never declared in
+    # tokens.rs. The existing css-tokens job catches the
+    # used-but-undeclared case; this job catches the structural
+    # incompleteness that produced it.
+    name: Semantic palette light/dark parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Semantic triples are paired light + dark
+        run: |
+          set -e
+          tokens=crates/sui-id-web/src/tokens.rs
+          # The four semantic families.
+          for semantic in danger warning success info; do
+            for slot in default subtle fg-on; do
+              # fg-on takes the form "fg-on-{semantic}", others take
+              # the form "{semantic}-{slot}". Build the canonical name.
+              if [ "$slot" = "fg-on" ]; then
+                name="fg-on-$semantic"
+              else
+                name="$semantic-$slot"
+              fi
+              # Count declarations across the file.
+              count=$(grep -cE "^\s+--${name}\s*:" "$tokens" || true)
+              # Expect declarations in: light :root + dark
+              # [data-theme="dark"] + dark @media auto. = 3.
+              # If less, the token is missing in at least one mode.
+              if [ "$count" -lt 3 ]; then
+                echo "::error::--${name} declared only ${count} time(s); expected 3 (light :root + [data-theme=\"dark\"] + @media auto)"
+                exit 1
+              fi
+            done
+          done
+          echo "All 12 semantic tokens (4 families × 3 slots) declared in all 3 mode roots."
