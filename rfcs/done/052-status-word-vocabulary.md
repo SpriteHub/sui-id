@@ -1,6 +1,6 @@
 # RFC 052 — Status word vocabulary unification
 
-**Status.** Proposed
+**Status.** Implemented (v0.43.0)
 **Priority.** P1 — Phase B (v0.43.0)
 **Tracks.** Closes the operational half of RFC 044 (the
 state-words contract). Reduces the surface RFC 051's

@@ -17,6 +17,10 @@ pub mod layout;
 pub mod pages;
 pub mod tokens;
 
+// Status badge primitives (RFC 052) — exposed for handlers and tests
+// that want to compose a badge outside the page render functions.
+pub use components::{status_badge, StatusKind};
+
 pub use pages::{
     render_audit, render_client_edit, render_clients, render_dashboard, render_error,
     DashboardEventRow,

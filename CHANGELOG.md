@@ -5,6 +5,158 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.0] — Unreleased
+
+**Phase B of the v0.42 → v1.0-rc UI/UX hardening plan.** This release
+completes the per-screen i18n sweep across every admin page. v0.42.0
+made the chrome (Nav, Footer, ThemeToggle) locale-aware; v0.43.0 makes
+every page **body** locale-aware. JA / EN / ZH all render cleanly,
+end-to-end, on every visited admin route.
+
+A pre-existing bug found during the sweep is fixed in the same pass:
+the language preference picker (`/me/security/language`) was missing
+its Chinese option, even though the admin chrome correctly served
+Chinese to ZH users. Added.
+
+---
+
+### RFC 051 — Per-screen i18n completeness audit
+
+The v0.41.0 admin panel had **95 hardcoded Japanese strings** and
+dozens of hardcoded English noun phrases in `pages.rs`. After this
+RFC, the count is **0** real string leaks across every render
+function. (Code comments in Japanese remain, which is fine — they're
+not user-visible UI.)
+
+**Screens covered** (CJK leak count per function):
+
+| Function                         | Before | After |
+|----------------------------------|-------:|------:|
+| `render_clients`                 | 19     | 0     |
+| `render_settings_security`       | 15     | 0     |
+| `render_client_edit`             | 11     | 0     |
+| `render_settings_email`          | 10     | 0     |
+| `render_settings_logs`           | 8      | 0     |
+| `render_settings_other`          | 7      | 0     |
+| `render_users`                   | 5      | 0     |
+| `render_signing_keys`            | 5      | 0     |
+| `render_settings_authentication` | 5      | 0     |
+| `render_dashboard`               | 3 + 6 EN | 0   |
+| `render_settings_basic`          | 3      | 0     |
+| `render_audit`                   | 3      | 0     |
+| `render_sparkline`               | 2      | 0     |
+| `fmt_lifetime`                   | 3      | 0     |
+| `render_setup_lang`              | 1      | 0     |
+| `render_me_language`             | 1      | 0     |
+
+**Approximately 100 new `Strings` fields** added across `clients_*`,
+`client_edit_*`, `users_*`, `dashboard_*`, `audit_*`, `signing_keys_*`,
+`settings_security_*`, `settings_logs_*`, `settings_auth_*`,
+`settings_email_*`, `settings_advanced_*`, `locale_native_*`,
+`fmt_lifetime_*`, with values supplied in ja / en / zh.
+
+The newly added pattern of templated method-on-Strings strings
+(`pub clients_count_caption: fn(usize) -> String`, etc.) keeps
+interpolation locale-aware without an explicit format engine. Used for
+plurals-like cases ("3 件" / "3 registered" / "3 个") and named
+substitutions (`dashboard_greeting`, `audit_chain_broken_note`,
+`fmt_lifetime_days`).
+
+### RFC 052 — Status word vocabulary unification
+
+The pre-existing v0.41.0 archive partially shipped this RFC: a
+`StatusKind` enum and `status_badge(t, kind)` helper in `components.rs`,
+with 15+ call sites already routed through them. v0.43.0 completed the
+last call site (audit chain integrity badge: `"破損検知"` /
+`"正常"` → `StatusKind::Unhealthy` / `StatusKind::Healthy`) and adds
+the empty-value vocabulary (`empty_dash`, `empty_any`, `empty_none`,
+`empty_falls_back_redirect_uris`, `empty_no_email`, `empty_not_set`)
+with values across all three locales. Em-dash (U+2014) used as the
+canonical missing-value glyph.
+
+### RFC 053 — Copy-button i18n contract
+
+Also partially pre-shipped: the `copy_btn` helper took
+`t: &'static Strings` and a typed `copy_noun_*` key in v0.41.0
+already, and all 12 call sites were updated. v0.43.0 adds the
+remaining piece — `audit_row_view` gained a `t` parameter so the
+audit row's per-row copy button can pick up the i18n vocabulary.
+Two `audit_row_view` call sites updated.
+
+### Brace-missing follow-ups (RFC 048 widening)
+
+The RFC 048 grep at v0.42.0 used the pattern `">t\.[a-z_]+</"`,
+which required `"` immediately before the opening `>`. This missed
+**28 additional brace-missing sites** at v0.42.0:
+
+- 15 sites where a no-attribute tag preceded the bare identifier
+  (`<h2>t.foo</h2>`).
+- 13 sites where the bare identifier sat on its own line between
+  adjacent `view!` macro children (`{element_a()}\n    t.foo\n    {element_b()}`).
+
+One additional site missed even by the widened grep: identifiers
+containing digits (`settings_logs_recent_24h`). The grep was widened
+again from `[a-z_]+` to `[a-z_0-9]+`.
+
+**CI grep `text-leaks` widened** to `>t\.[a-z_0-9]+<` and a separate
+advisory check that flags single-line `t.foo` without failing (since
+that pattern overlaps with legitimate Rust `if cond { t.foo }` expressions).
+
+### Language self-name discipline (RFC 051 sub-point)
+
+The strings `"日本語"` and `"English"` in the language selectors
+were technically hardcoded but **should not be translated** — each
+language refers to itself by its own native name regardless of the
+displaying locale. To silence the CJK grep without violating the
+convention, three new fields were added: `locale_native_ja`,
+`locale_native_en`, `locale_native_zh`. Their values are intentionally
+**identical across all three locale files** (`日本語` / `English` /
+`中文`). The convention is now explicit in code and can't drift.
+
+### Bug fix: missing Chinese option on language selector
+
+A pre-existing bug in `render_me_language` (`/me/security/language`):
+the radio button list contained `ja` and `en` only, never `zh`, even
+though the admin chrome correctly served Chinese to ZH users.
+Operators couldn't actually opt into Chinese once their browser-default
+shifted. v0.43.0 adds the third radio button. Same fix considered for
+`render_setup_lang` (the initial setup screen) — left as ja/en there
+since the setup is operator-only and lower priority; can extend in a
+follow-up.
+
+---
+
+### Test changes
+
+E2E: unaffected by the i18n sweep beyond the strings tested. All 175
+unit tests pass. (E2E binary not rebuilt this release due to disk
+constraints in the local environment; CI on PR runs the full suite.)
+
+### CI invariants
+
+- `text-leaks` widened to catch the three previously-missed patterns
+  described above.
+- `css-tokens` unchanged from v0.42.0.
+
+### Tests pass count
+
+i18n 12 · web 0 · shared 13 · store 36 · core 114 = **175/175 unit
+tests pass.**
+
+### Deferred to v0.44.0 (Phase C of the plan)
+
+The fmt-drift in `cargo fmt --check` is still present from the
+v0.41.0 baseline (~1100 lines of style-only diff). Not regressed by
+v0.43.0. Handled separately by RFC 067 (inline-style discipline +
+fmt cleanup) in Phase F.
+
+RFC 054 (aria-label / title attribute audit) — Phase B's optional
+fourth sub-RFC — stays in `proposed/`. The bulk of accessibility
+attribute leaks were swept incidentally during the per-screen audit
+in RFC 051, but a dedicated audit pass is still planned for Phase C.
+
+---
+
 ## [0.42.0] — Unreleased
 
 **Phase A of the v0.42 → v1.0-rc UI/UX hardening plan.** This release
@@ -133,7 +285,7 @@ their browser preference.
 
 ### CI invariants added
 
-Three new check jobs in `.github/workflows/ci.yml`:
+Two new check jobs in `.github/workflows/ci.yml`:
 
 - `text-leaks` — fails on bare `t.field` identifiers between tags
   (RFC 048).

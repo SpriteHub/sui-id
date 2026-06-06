@@ -67,11 +67,13 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   text-leaks:
-    # RFC 048: Bare `t.field` identifiers as `view!` macro children
-    # render as literal text in the HTML output (Leptos treats anything
-    # outside `{…}` as a string literal). Forty-eight such sites
-    # leaked through to production at v0.41.0; this job prevents the
-    # regression class entirely.
+    # RFC 048 (+ RFC 051 widening): Bare `t.field` identifiers as
+    # `view!` macro children render as literal text in the HTML output
+    # (Leptos treats anything outside `{…}` as a string literal).
+    # Forty-eight such sites leaked through to production at v0.41.0;
+    # an additional 15 in tags-without-attributes (e.g. `<h2>t.foo</h2>`)
+    # leaked through the initial RFC 048 grep and were caught only at
+    # v0.43.0. The widened pattern below catches both.
     name: text-leak invariants
     runs-on: ubuntu-latest
     steps:
@@ -79,13 +81,32 @@ jobs:
       - name: No bare i18n expressions in view! children
         run: |
           set -e
-          found=$(grep -rEn '">t\.[a-z_]+</' crates/ \
-                    --include='*.rs' || true)
-          if [ -n "$found" ]; then
+          # Match `>t.foo<` regardless of what's before the opening `>`:
+          # both `<h2>t.foo</h2>` (no-attr open tag) and
+          # `<span class="x">t.foo</span>` (with-attr open tag) leak.
+          # Identifiers may include digits (e.g. `settings_logs_recent_24h`).
+          inline=$(grep -rEn '>t\.[a-z_0-9]+<' crates/ \
+                     --include='*.rs' || true)
+          if [ -n "$inline" ]; then
             echo "::error::Bare 't.field' identifier as view! macro child."
             echo "These render as literal text — wrap in {…}:"
-            echo "$found"
+            echo "$inline"
             exit 1
+          fi
+      - name: Advisory — standalone `t.foo` lines may also be view! leaks
+        run: |
+          # Standalone `    t.foo` on its own line MAY be a view! leak
+          # (Leptos treats macro children outside `{}` as literal text)
+          # OR may be a legitimate Rust expression — for example the
+          # body of `if cond { t.foo } else { t.bar }`. We can't
+          # distinguish statically without a Leptos-aware parser, so
+          # this check is advisory: it surfaces candidates without
+          # failing the build. Reviewers eyeball the output.
+          standalone=$(grep -rEn '^\s+t\.[a-z_0-9]+\s*$' crates/ \
+                         --include='*.rs' || true)
+          if [ -n "$standalone" ]; then
+            echo "::warning::Standalone 't.field' lines — verify whether each is inside view! macro:"
+            echo "$standalone"
           fi
 
   css-tokens:

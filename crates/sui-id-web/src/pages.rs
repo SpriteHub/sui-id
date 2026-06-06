@@ -61,16 +61,33 @@ where
 // ---------- copy-to-clipboard helper (RFC 028) ----------
 
 /// Render a copy-to-clipboard button for a credential value.
-/// Hidden when Clipboard API is unavailable (non-secure context).
-fn copy_btn(value: String, label: &'static str) -> impl IntoView {
+///
+/// `noun` is one of the `copy_noun_*` strings from
+/// [`sui_id_i18n::Strings`]; the aria-label and title are built by
+/// substituting it into `copy_button_aria_template`. The button text
+/// is `copy_button_label`; after a successful copy, the inline JS in
+/// [`crate::layout::COPY_JS`] swaps it for `copy_button_label_done`
+/// (carried on the button via a `data-copy-done` attribute) and
+/// restores after a short delay.
+///
+/// Hidden via CSS when the Clipboard API is unavailable (non-secure
+/// context). See `components.rs` `.copy-btn` rules.
+fn copy_btn(
+    t: &'static sui_id_i18n::Strings,
+    value: String,
+    noun: &'static str,
+) -> impl IntoView {
+    let phrase = t.copy_button_aria_template.replace("{noun}", noun);
+    let aria = phrase.clone();
     view! {
         <button
             type="button"
             class="copy-btn"
             data-copy=value
-            aria-label=format!("Copy {label}")
-            title=format!("Copy {label}")>
-            "📋 Copy"
+            data-copy-done=t.copy_button_label_done
+            aria-label=aria
+            title=phrase>
+            {t.copy_button_label}
         </button>
     }
 }
@@ -227,12 +244,12 @@ pub fn render_setup_lang(flash: Option<Flash>, current: &str, lang: sui_id_i18n:
                             <label class="row" style="gap:var(--space-2);align-items:center;cursor:pointer">
                                 <input type="radio" name="lang" value="ja"
                                        checked=ja_checked />
-                                <span>"日本語"</span>
+                                <span>{t.locale_native_ja}</span>
                             </label>
                             <label class="row" style="gap:var(--space-2);align-items:center;cursor:pointer">
                                 <input type="radio" name="lang" value="en"
                                        checked=en_checked />
-                                <span>"English"</span>
+                                <span>{t.locale_native_en}</span>
                             </label>
                         </div>
                     </fieldset>
@@ -808,7 +825,7 @@ pub struct DashboardData {
 /// - successes stack on top of failures
 /// - each bucket carries an invisible `<rect>` with a `<title>`
 ///   child so hovering shows the tooltip natively (no JS)
-fn render_sparkline(buckets: Vec<DashboardSparkBucket>) -> impl IntoView {
+fn render_sparkline(t: &'static sui_id_i18n::Strings, buckets: Vec<DashboardSparkBucket>) -> impl IntoView {
     const WIDTH: f64 = 200.0;
     const HEIGHT: f64 = 60.0;
     const PAD_TOP: f64 = 4.0;
@@ -850,10 +867,7 @@ fn render_sparkline(buckets: Vec<DashboardSparkBucket>) -> impl IntoView {
             let failure_y = base_y - failure_h;
             let success_y = failure_y - success_h;
 
-            let title = format!(
-                "{} : 成功 {} / 失敗 {}",
-                b.label, b.success, b.failure
-            );
+            let title = (t.dashboard_sparkline_tooltip)(&b.label, b.success, b.failure);
 
             view! {
                 <g>
@@ -888,7 +902,7 @@ fn render_sparkline(buckets: Vec<DashboardSparkBucket>) -> impl IntoView {
         <svg viewBox=format!("0 0 {WIDTH} {HEIGHT}")
              preserveAspectRatio="none"
              role="img"
-             aria-label="サインイン活動のスパークライン"
+             aria-label=t.dashboard_sparkline_aria
              style="width:100%;height:80px;display:block">
             <line x1="0" y1=format!("{:.2}", HEIGHT - PAD_BOTTOM)
                   x2=format!("{WIDTH}") y2=format!("{:.2}", HEIGHT - PAD_BOTTOM)
@@ -930,7 +944,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
 
         let total_success = sparkline.total_success;
         let total_failure = sparkline.total_failure;
-        let svg = render_sparkline(sparkline.buckets);
+        let svg = render_sparkline(t, sparkline.buckets);
 
         view! {
             <Shell title=t.dashboard_title.to_string() show_nav=true current=Some("dashboard".to_string()) dev_mode=dev_mode lang=lang>
@@ -938,16 +952,18 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
                     <div>
                         <h1 class="page-header__title">{t.dashboard_title}</h1>
                         <p class="page-header__lede">
-                            {format!("Hello, {}. {}", admin_username, t.dashboard_lede)}
+                            {(t.dashboard_greeting)(admin_username.as_str())}
+                            " "
+                            {t.dashboard_lede}
                         </p>
                     </div>
                 </header>
                 {flash_banner(flash)}
 
                 {(warn_smtp_not_configured || warn_hibp_off || warn_cookie_insecure).then(|| view! {
-                    <section class="card" style="border-left:4px solid var(--warning-default);margin-bottom:var(--space-4)" aria-label="Operator action required">
+                    <section class="card" style="border-left:4px solid var(--warning-default);margin-bottom:var(--space-4)" aria-label=t.dashboard_aria_action_required>
                         <h2 style="font-size:var(--font-size-body);margin:0 0 var(--space-2)">
-                            "⚠ Action required"
+                            "⚠ " {t.dashboard_action_required_title}
                         </h2>
                         <ul style="margin:0;padding-left:var(--space-4)">
                             {warn_smtp_not_configured.then(|| view! { <li>{t.dashboard_warn_smtp}</li> })}
@@ -957,17 +973,17 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
                     </section>
                 })}
 
-                <section class="grid-cards" aria-label="Statistics">
+                <section class="grid-cards" aria-label=t.dashboard_aria_stats>
                     <div class="card">
                         <div class="stat">
                             <span class="stat__value">{user_count.to_string()}</span>
-                            <span class="stat__label">"ユーザー"</span>
+                            <span class="stat__label">{t.dashboard_stat_users}</span>
                         </div>
                     </div>
                     <div class="card">
                         <div class="stat">
                             <span class="stat__value">{client_count.to_string()}</span>
-                            <span class="stat__label">"クライアント"</span>
+                            <span class="stat__label">{t.dashboard_stat_clients}</span>
                         </div>
                     </div>
                     <div class="card">
@@ -999,40 +1015,40 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
                                 <span class="stat__value" style="color:var(--accent-default)">
                                     {total_success.to_string()}
                                 </span>
-                                <span class="stat__label">"Success"</span>
+                                <span class="stat__label">{t.dashboard_activity_success}</span>
                             </div>
                             <div class="stat">
                                 <span class="stat__value" style="color:var(--danger-default)">
                                     {total_failure.to_string()}
                                 </span>
-                                <span class="stat__label">"Failure"</span>
+                                <span class="stat__label">{t.dashboard_activity_failure}</span>
                             </div>
                         </div>
                         {svg}
                         <p class="muted" style="margin-top:var(--space-2);margin-bottom:0">
-                            "ホバーで各バケットの詳細を表示。"
+                            {t.dashboard_activity_hover_hint}
                         </p>
                     </div>
                 </section>
 
                 <section>
-                    <h2>t.dashboard_oidc_endpoints_section</h2>
+                    <h2>{t.dashboard_oidc_endpoints_section}</h2>
                     <div class="table-wrap">
                         <table>
                             <tbody>
                                 <tr>
-                                    <th scope="row">"Issuer"</th>
+                                    <th scope="row">{t.dashboard_oidc_endpoint_issuer}</th>
                                     <td><span class="code">{issuer}</span></td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">"Discovery"</th>
+                                    <th scope="row">{t.dashboard_oidc_endpoint_discovery}</th>
                                     <td><a href="/.well-known/openid-configuration"><span class="code">"/.well-known/openid-configuration"</span></a></td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">"JWKS"</th>
+                                    <th scope="row">{t.dashboard_oidc_endpoint_jwks}</th>
                                     <td>
                                         <a href="/.well-known/jwks.json"><span class="code">"/.well-known/jwks.json"</span></a>
-                                        {copy_btn("/.well-known/jwks.json".to_string(), "JWKS URI")}
+                                        {copy_btn(t, "/.well-known/jwks.json".to_string(), t.copy_noun_jwks_uri)}
                                     </td>
                                 </tr>
                             </tbody>
@@ -1084,7 +1100,12 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
 
 // ---------- users ----------
 
-fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl IntoView {
+fn user_row_view(
+    t: &'static sui_id_i18n::Strings,
+    u: UserSummary,
+    current_user: String,
+    csrf: String,
+) -> impl IntoView {
     let display = u.display_name.clone().unwrap_or_default();
     let id_str = u.id.to_string();
     let is_self = u.username == current_user;
@@ -1101,26 +1122,26 @@ fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl Int
     let csrf_delete = csrf.clone();
     let csrf_reset = csrf.clone();
 
-    let status_badge = if is_deleted {
-        view! { <span class="badge badge--danger">"deleted"</span> }.into_any()
+    let status_view = if is_deleted {
+        crate::components::status_badge(t, crate::components::StatusKind::Deleted).into_any()
     } else if is_disabled {
-        view! { <span class="badge badge--warn">"disabled"</span> }.into_any()
+        crate::components::status_badge(t, crate::components::StatusKind::Disabled).into_any()
     } else if is_admin {
-        view! { <span class="badge badge--accent">"admin"</span> }.into_any()
+        crate::components::status_badge(t, crate::components::StatusKind::Admin).into_any()
     } else {
-        view! { <span class="badge badge--ok">"active"</span> }.into_any()
+        crate::components::status_badge(t, crate::components::StatusKind::Active).into_any()
     };
 
     let mfa_cell = if mfa_enabled {
-        view! { <td><span class="badge badge--ok">"on"</span></td> }.into_any()
+        view! { <td>{crate::components::status_badge(t, crate::components::StatusKind::On)}</td> }.into_any()
     } else {
-        view! { <td><span class="muted">"off"</span></td> }.into_any()
+        view! { <td><span class="muted">{t.status_off}</span></td> }.into_any()
     };
 
     let actions = if is_self {
         view! { <td><span class="muted">"(you)"</span></td> }.into_any()
     } else if is_deleted {
-        view! { <td><span class="muted">"-"</span></td> }.into_any()
+        view! { <td><span class="muted">{t.empty_dash}</span></td> }.into_any()
     } else {
         let disable_confirm_url = format!("/admin/users/{id_str}/disable-confirm");
         let delete_confirm_url = format!("/admin/users/{id_str}/delete-confirm");
@@ -1151,7 +1172,7 @@ fn user_row_view(u: UserSummary, current_user: String, csrf: String) -> impl Int
         <tr>
             <td><span class="code">{u.username}</span></td>
             <td>{display}</td>
-            <td>{status_badge}</td>
+            <td>{status_view}</td>
             {mfa_cell}
             <td class="muted">{fmt_time(u.created_at)}</td>
             {actions}
@@ -1174,7 +1195,7 @@ pub fn render_users(
         let user_count = users.len();
         let rows: Vec<_> = users
             .into_iter()
-            .map(|u| user_row_view(u, current_user.clone(), csrf_for_rows.clone()))
+            .map(|u| user_row_view(t, u, current_user.clone(), csrf_for_rows.clone()))
             .collect();
         view! {
             <Shell title=t.users_title.to_string() show_nav=true current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
@@ -1182,39 +1203,40 @@ pub fn render_users(
                     <div>
                         <h1 class="page-header__title">{t.users_title}</h1>
                         <p class="page-header__lede">
-                            t.users_lede
-                            {format!(" 現在 {user_count} 名。")}
+                            {t.users_lede}
+                            " "
+                            {(t.users_count_caption)(user_count)}
                         </p>
                     </div>
                 </header>
                 {flash_banner(flash)}
 
                 <section>
-                    <h2>t.users_create_section</h2>
+                    <h2>{t.users_create_section}</h2>
                     <div class="card">
                         <form method="post" action="/admin/users" class="stack">
                             <input type="hidden" name="_csrf" value=csrf_for_form />
                             <div class="field">
-                                <label for="u-name" class="field__label">"ユーザー名"</label>
+                                <label for="u-name" class="field__label">{t.users_label_username}</label>
                                 <input id="u-name" name="username" type="text"
                                        required=true autocomplete="off" />
                             </div>
                             <div class="field">
-                                <label for="u-disp" class="field__label">"表示名(任意)"</label>
+                                <label for="u-disp" class="field__label">{t.users_label_display_name}</label>
                                 <input id="u-disp" name="display_name" type="text" autocomplete="off" />
                             </div>
                             <div class="field">
-                                <label for="u-email" class="field__label">"メールアドレス(任意)"</label>
+                                <label for="u-email" class="field__label">{t.users_label_email}</label>
                                 <input id="u-email" name="email" type="email" autocomplete="off" />
                             </div>
                             <div class="field">
-                                <label for="u-pw" class="field__label">"パスワード(12 文字以上)"</label>
+                                <label for="u-pw" class="field__label">{t.users_label_password}</label>
                                 <input id="u-pw" name="password" type="password"
                                        required=true minlength="12" autocomplete="new-password" />
                             </div>
                             <label class="row" style="gap:var(--space-2)">
                                 <input name="is_admin" type="checkbox" value="true" />
-                                <span>t.users_is_admin_label</span>
+                                <span>{t.users_is_admin_label}</span>
                             </label>
                             <div>
                                 <button type="submit">{t.users_create_button}</button>
@@ -1224,7 +1246,7 @@ pub fn render_users(
                 </section>
 
                 <section>
-                    <h2>t.users_table_section</h2>
+                    <h2>{t.users_table_section}</h2>
                     <div class="table-wrap">
                         <table>
                             <thead>
@@ -1256,7 +1278,11 @@ pub fn render_users(
 
 // ---------- clients ----------
 
-fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
+fn client_row_view(
+    t: &'static sui_id_i18n::Strings,
+    c: ClientSummary,
+    csrf: String,
+) -> impl IntoView {
     let is_disabled = c.is_disabled;
     let is_deleted = c.is_deleted;
     let kind = if c.confidential { "confidential" } else { "public" };
@@ -1268,28 +1294,28 @@ fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
     let csrf_disable = csrf.clone();
     let csrf_delete = csrf.clone();
     let scopes_display = if c.allowed_scopes.trim().is_empty() {
-        "(any)".to_string()
+        t.empty_any.to_string()
     } else {
         c.allowed_scopes.clone()
     };
     let logout_count = c.post_logout_redirect_uris.len();
     let logout_display = if logout_count == 0 {
-        "(falls back to redirect_uris)".to_string()
+        t.empty_falls_back_redirect_uris.to_string()
     } else {
         format!("{logout_count} URI(s)")
     };
 
-    let status_badge = if is_deleted {
-        view! { <span class="badge badge--danger">"deleted"</span> }.into_any()
+    let status_view = if is_deleted {
+        crate::components::status_badge(t, crate::components::StatusKind::Deleted).into_any()
     } else if is_disabled {
-        view! { <span class="badge badge--warn">"disabled"</span> }.into_any()
+        crate::components::status_badge(t, crate::components::StatusKind::Disabled).into_any()
     } else {
-        view! { <span class="badge badge--ok">"active"</span> }.into_any()
+        crate::components::status_badge(t, crate::components::StatusKind::Active).into_any()
     };
 
     let edit_url = format!("/admin/clients/{id_str}/edit");
     let actions = if is_deleted {
-        view! { <td><span class="muted">"-"</span></td> }.into_any()
+        view! { <td><span class="muted">{t.empty_dash}</span></td> }.into_any()
     } else {
         view! {
             <td>
@@ -1313,12 +1339,12 @@ fn client_row_view(c: ClientSummary, csrf: String) -> impl IntoView {
             <td>{c.name}</td>
             <td>
                 <span class="code">{id_str}</span>
-                {copy_btn(id_for_copy, "Client ID")}
+                {copy_btn(t, id_for_copy, t.copy_noun_client_id)}
             </td>
             <td>{kind}</td>
             <td><span class="code">{scopes_display}</span></td>
             <td class="muted">{logout_display}</td>
-            <td>{status_badge}</td>
+            <td>{status_view}</td>
             {actions}
         </tr>
     }
@@ -1341,16 +1367,16 @@ pub fn render_clients(
             view! {
                 <div class="flash warn" role="status">
                     <div class="stack-tight">
-                        <strong>t.clients_secret_once_banner</strong>
-                        <div>"Client ID: "<span class="code">{cid.clone()}</span>{copy_btn(cid, "Client ID")}</div>
-                        <div>"Client Secret: "<span class="code">{sec.clone()}</span>{copy_btn(sec, "Client Secret")}</div>
+                        <strong>{t.clients_secret_once_banner}</strong>
+                        <div>"Client ID: "<span class="code">{cid.clone()}</span>{copy_btn(t, cid, t.copy_noun_client_id)}</div>
+                        <div>"Client Secret: "<span class="code">{sec.clone()}</span>{copy_btn(t, sec, t.copy_noun_client_secret)}</div>
                     </div>
                 </div>
             }
         });
         let rows: Vec<_> = clients
             .into_iter()
-            .map(|c| client_row_view(c, csrf_for_rows.clone()))
+            .map(|c| client_row_view(t, c, csrf_for_rows.clone()))
             .collect();
         view! {
             <Shell title=t.clients_title.to_string() show_nav=true current=Some("clients".to_string()) dev_mode=dev_mode lang=lang>
@@ -1358,8 +1384,9 @@ pub fn render_clients(
                     <div>
                         <h1 class="page-header__title">{t.clients_title}</h1>
                         <p class="page-header__lede">
-                            "OIDC クライアントの登録と管理。"
-                            {format!(" 現在 {client_count} 件。")}
+                            {t.clients_lede}
+                            " "
+                            {(t.clients_count_caption)(client_count)}
                         </p>
                     </div>
                 </header>
@@ -1367,64 +1394,63 @@ pub fn render_clients(
                 {secret_block}
 
                 <section>
-                    <h2>"新しいクライアントを登録"</h2>
+                    <h2>{t.clients_create_section}</h2>
                     <div class="card">
                         <form method="post" action="/admin/clients" class="stack">
                             <input type="hidden" name="_csrf" value=csrf_for_form />
                             <div class="field">
-                                <label for="c-name" class="field__label">"アプリケーション名"</label>
+                                <label for="c-name" class="field__label">{t.clients_label_app_name}</label>
                                 <input id="c-name" name="name" type="text" required=true />
                             </div>
                             <div class="field">
-                                <label for="c-uris" class="field__label">"Redirect URIs"</label>
+                                <label for="c-uris" class="field__label">{t.clients_label_redirect_uris}</label>
                                 <textarea id="c-uris" name="redirect_uris" required=true rows="3"></textarea>
-                                <span class="field__hint">"1 行に 1 つ。https またはループバックの http のみ。"</span>
+                                <span class="field__hint">{t.clients_hint_redirect_uris}</span>
                             </div>
                             <div class="field">
-                                <label for="c-scopes" class="field__label">"許可スコープ (Allowed scopes)"</label>
+                                <label for="c-scopes" class="field__label">{t.clients_label_allowed_scopes}</label>
                                 <input id="c-scopes" name="allowed_scopes" type="text" value="openid profile email" />
                                 <span class="field__hint">
-                                    "スペース区切り。既知のスコープ: "
-                                    <code>"openid"</code>" (必須) · "
-                                    <code>"profile"</code>" (名前・言語) · "
-                                    <code>"email"</code>" (メール) · "
-                                    <code>"offline_access"</code>" (リフレッシュトークン)。"
-                                    "空欄の場合は openid profile email がデフォルトになります。"
+                                    {t.clients_hint_scopes_intro}
+                                    <code>"openid"</code>{t.clients_hint_scopes_openid_note}
+                                    <code>"profile"</code>{t.clients_hint_scopes_profile_note}
+                                    <code>"email"</code>{t.clients_hint_scopes_email_note}
+                                    <code>"offline_access"</code>{t.clients_hint_scopes_offline_note}
+                                    {t.clients_hint_scopes_default}
                                 </span>
                             </div>
-                            // Single-realm note (RFC 027)
+                            // Single-realm note (RFC 027) — now via clients_single_realm_note key
                             <p class="field__hint" style="margin: 0;">
-                                "ℹ  sui-id は単一レルム IdP です。すべてのユーザーがすべてのクライアントを利用できます。"
-                                "クライアントごとにユーザーを限定する機能はありません。"
-                                "スコープはユーザーを制限するのではなく、クライアントが要求できる情報の範囲を制限します。"
+                                "ℹ  "
+                                {t.clients_single_realm_note}
                             </p>
                             <div class="field">
-                                <label for="c-logout" class="field__label">"Post-logout redirect URIs(任意)"</label>
+                                <label for="c-logout" class="field__label">{t.clients_label_post_logout_uris}</label>
                                 <textarea id="c-logout" name="post_logout_redirect_uris" rows="2"></textarea>
-                                <span class="field__hint">"1 行に 1 つ。"</span>
+                                <span class="field__hint">{t.clients_hint_one_per_line}</span>
                             </div>
                             <label class="row" style="gap:var(--space-2)">
                                 <input name="confidential" type="checkbox" value="true" checked=true />
-                                <span>"Confidential client(client secret を発行する)"</span>
+                                <span>{t.clients_label_confidential_checkbox}</span>
                             </label>
                             <div>
-                                <button type="submit">"登録"</button>
+                                <button type="submit">{t.clients_button_register}</button>
                             </div>
                         </form>
                     </div>
                 </section>
 
                 <section>
-                    <h2>t.clients_table_section</h2>
+                    <h2>{t.clients_table_section}</h2>
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
                                     <th>{t.clients_table_th_name}</th>
-                                    <th>"Client ID"</th>
+                                    <th>{t.clients_table_th_client_id}</th>
                                     <th>{t.clients_table_th_kind}</th>
                                     <th>{t.clients_table_th_scopes}</th>
-                                    <th>"Logout URIs"</th>
+                                    <th>{t.clients_table_th_logout}</th>
                                     <th>{t.clients_table_th_status}</th>
                                     <th></th>
                                 </tr>
@@ -1488,17 +1514,17 @@ pub fn render_client_edit(
         let redirect_uris_value = redirect_uris.join("\n");
         let post_logout_value = post_logout_redirect_uris.join("\n");
 
-        let status_badge = if is_disabled {
-            view! { <span class="badge badge--warn">"disabled"</span> }.into_any()
+        let status_view = if is_disabled {
+            crate::components::status_badge(t, crate::components::StatusKind::Disabled).into_any()
         } else {
-            view! { <span class="badge badge--ok">"active"</span> }.into_any()
+            crate::components::status_badge(t, crate::components::StatusKind::Active).into_any()
         };
 
         view! {
-            <Shell title="Edit client".to_string() show_nav=true current=Some("clients".to_string()) lang=lang>
+            <Shell title=t.client_edit_title.to_string() show_nav=true current=Some("clients".to_string()) lang=lang>
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"クライアントを編集"</h1>
+                        <h1 class="page-header__title">{t.client_edit_title}</h1>
                         <p class="page-header__lede">{name.clone()}</p>
                     </div>
                 </header>
@@ -1507,27 +1533,26 @@ pub fn render_client_edit(
                     let sec2 = sec.clone();
                     view! {
                         <div class="banner banner--warning" role="alert" style="margin-bottom:var(--space-3)">
-                            <strong>"New client secret (shown once):"</strong>
+                            <strong>{t.client_edit_new_secret_label}</strong>
                             <span class="code" style="margin-left:var(--space-2)">{sec}</span>
-                            {copy_btn(sec2, "Client Secret")}
+                            {copy_btn(t, sec2, t.copy_noun_client_secret)}
                         </div>
                     }
                 })}
 
                 <div class="card">
-                    <h3 class="card__title">"基本情報"</h3>
+                    <h3 class="card__title">{t.client_edit_basic_section}</h3>
                     <div class="stack-tight muted">
-                        <div>"Client ID: "<span class="code">{id.clone()}</span>{copy_btn(id.clone(), "Client ID")}</div>
+                        <div>{t.client_edit_label_client_id}": "<span class="code">{id.clone()}</span>{copy_btn(t, id.clone(), t.copy_noun_client_id)}</div>
                         <div class="row" style="gap:var(--space-2)">
-                            <span>"種別:"</span>
+                            <span>{t.client_edit_label_kind}":"</span>
                             <span class="badge badge--accent">{kind}</span>
-                            <span>"状態:"</span>
-                            {status_badge}
+                            <span>{t.client_edit_label_status}":"</span>
+                            {status_view}
                         </div>
                     </div>
                     <p class="muted" style="margin-top:var(--space-3)">
-                        "Client ID・種別(confidential/public)・client secret は作成時に固定されます。"
-                        "これらを変更したい場合は削除して登録し直してください。"
+                        {t.client_edit_basic_note}
                     </p>
                 </div>
 
@@ -1536,21 +1561,21 @@ pub fn render_client_edit(
                     <form method="post" action=post_url class="stack">
                         <input type="hidden" name="_csrf" value=csrf_token />
                         <div class="field">
-                            <label for="e-name" class="field__label">"アプリケーション名"</label>
+                            <label for="e-name" class="field__label">{t.clients_label_app_name}</label>
                             <input id="e-name" name="name" type="text" required=true value=name />
                         </div>
                         <div class="field">
-                            <label for="e-uris" class="field__label">"Redirect URIs"</label>
+                            <label for="e-uris" class="field__label">{t.clients_label_redirect_uris}</label>
                             <textarea id="e-uris" name="redirect_uris" required=true rows="3">
                                 {redirect_uris_value}
                             </textarea>
-                            <span class="field__hint">"1 行に 1 つ。https またはループバックの http のみ。"</span>
+                            <span class="field__hint">{t.clients_hint_redirect_uris}</span>
                         </div>
                         <div class="field">
-                            <label for="e-scopes" class="field__label">"許可スコープ (Allowed scopes)"</label>
+                            <label for="e-scopes" class="field__label">{t.clients_label_allowed_scopes}</label>
                             <input id="e-scopes" name="allowed_scopes" type="text" value=allowed_scopes />
                             <span class="field__hint">
-                                "スペース区切り。既知のスコープ: "
+                                {t.clients_hint_scopes_intro}
                                 <code>"openid"</code>" · "
                                 <code>"profile"</code>" · "
                                 <code>"email"</code>" · "
@@ -1558,11 +1583,11 @@ pub fn render_client_edit(
                             </span>
                         </div>
                         <div class="field">
-                            <label for="e-logout" class="field__label">"Post-logout redirect URIs"</label>
+                            <label for="e-logout" class="field__label">{t.clients_label_post_logout_uris}</label>
                             <textarea id="e-logout" name="post_logout_redirect_uris" rows="2">
                                 {post_logout_value}
                             </textarea>
-                            <span class="field__hint">"1 行に 1 つ。空欄=Redirect URIs を流用。"</span>
+                            <span class="field__hint">{t.client_edit_post_logout_hint}</span>
                         </div>
                         <div class="field">
                             <label for="e-consent" class="field__label">{t.consent_policy_label}</label>
@@ -1600,7 +1625,7 @@ pub fn render_client_edit(
 
 // ---------- audit ----------
 
-fn audit_row_view(e: AuditLogEntryDto) -> impl IntoView {
+fn audit_row_view(t: &'static sui_id_i18n::Strings, e: AuditLogEntryDto) -> impl IntoView {
     let result_badge = match e.result.as_str() {
         "ok" => view! { <span class="badge badge--ok">"ok"</span> }.into_any(),
         "fail" | "error" | "denied" => {
@@ -1624,7 +1649,7 @@ fn audit_row_view(e: AuditLogEntryDto) -> impl IntoView {
             <td>{e.action}</td>
             <td><span class="code">{e.target.unwrap_or_default()}</span></td>
             <td>{result_badge}</td>
-            <td>{copy_btn(row_id, "row ID")}</td>
+            <td>{copy_btn(t, row_id, t.copy_noun_audit_row_id)}</td>
         </tr>
     }
 }
@@ -1647,7 +1672,7 @@ pub fn render_audit(
             format!("/admin/audit.csv?q={}", url_encode(&fq))
         };
         let fq_display = fq.clone();
-        let rows: Vec<_> = entries.into_iter().map(audit_row_view).collect();
+        let rows: Vec<_> = entries.into_iter().map(|e| audit_row_view(t, e)).collect();
         let chain_banner_view = if chain_ok {
             view! {
                 <p class="badge badge--ok" style="margin-bottom:var(--space-3)">
@@ -1667,8 +1692,9 @@ pub fn render_audit(
                     <div>
                         <h1 class="page-header__title">{t.audit_title}</h1>
                         <p class="page-header__lede">
-                            t.audit_lede
-                            {format!(" ({entry_count})")}
+                            {t.audit_lede}
+                            " "
+                            {(t.audit_entry_count_caption)(entry_count)}
                         </p>
                     </div>
                 </header>
@@ -1681,7 +1707,7 @@ pub fn render_audit(
                                placeholder=t.audit_filter_placeholder
                                value=fq_display
                                style="min-width:16rem" />
-                        <button type="submit" class="secondary">"Filter"</button>
+                        <button type="submit" class="secondary">{t.audit_filter_button}</button>
                     </form>
                     <a href=csv_href class="button secondary">{t.audit_export_csv}</a>
                 </div>
@@ -1689,11 +1715,11 @@ pub fn render_audit(
                     <table>
                         <thead>
                             <tr>
-                                <th>t.audit_col_when</th>
-                                <th>t.audit_col_actor</th>
-                                <th>t.audit_col_action</th>
-                                <th>t.audit_col_target</th>
-                                <th>t.audit_col_outcome</th>
+                                <th>{t.audit_col_when}</th>
+                                <th>{t.audit_col_actor}</th>
+                                <th>{t.audit_col_action}</th>
+                                <th>{t.audit_col_target}</th>
+                                <th>{t.audit_col_outcome}</th>
                             </tr>
                         </thead>
                         {if rows.is_empty() {
@@ -1728,15 +1754,15 @@ fn signing_key_row_view(
     let id_for_url = id_str.clone();
     let id_for_display = id_str.clone();
     let id_for_confirm = id_str.clone();
-    let status_badge = if k.is_active {
-        view! { <span class="badge badge--ok">"active"</span> }.into_any()
+    let status_view = if k.is_active {
+        crate::components::status_badge(t, crate::components::StatusKind::InUse).into_any()
     } else {
-        view! { <span class="badge">"retired"</span> }.into_any()
+        crate::components::status_badge(t, crate::components::StatusKind::Retired).into_any()
     };
     let rotated = k
         .rotated_at
         .map(fmt_time)
-        .unwrap_or_else(|| "-".to_string());
+        .unwrap_or_else(|| t.empty_dash.to_string());
     let delete_url = format!("/admin/signing-keys/{id_for_url}/delete");
     let actions = if k.is_active {
         view! { <td><span class="muted">{t.signing_keys_in_use_badge}</span></td> }.into_any()
@@ -1752,7 +1778,7 @@ fn signing_key_row_view(
         <tr>
             <td><span class="code">{id_for_display}</span></td>
             <td>{k.algorithm}</td>
-            <td>{status_badge}</td>
+            <td>{status_view}</td>
             <td class="muted">{fmt_time(k.created_at)}</td>
             <td class="muted">{rotated}</td>
             {actions}
@@ -1778,16 +1804,17 @@ pub fn render_signing_keys(
             .collect();
         view! {
             <Shell
-                title="Signing keys".to_string()
+                title=t.signing_keys_title.to_string()
                 show_nav=true
                 current=Some("signing-keys".to_string()) lang=lang
             >
                 <header class="page-header">
                     <div>
-                        <h1 class="page-header__title">"署名キー"</h1>
+                        <h1 class="page-header__title">{t.signing_keys_title}</h1>
                         <p class="page-header__lede">
-                            t.signing_keys_lede
-                            {format!(" {key_count} 件登録。")}
+                            {t.signing_keys_lede}
+                            " "
+                            {(t.signing_keys_count_caption)(key_count)}
                         </p>
                     </div>
                 </header>
@@ -1796,9 +1823,11 @@ pub fn render_signing_keys(
                 <div class="card">
                     <h3 class="card__title">{t.signing_keys_rotate_section}</h3>
                     <p class="muted">
-                        "ローテーションを実行すると、新しい署名キーが発行され、現行キーは「退役」状態に遷移します。"
-                        "退役キーは JWKS に残るため、有効期限内の既発行トークンは検証可能です。"
-                        "それらが期限切れになった後、このページから安全に削除できます。"
+                        {t.signing_keys_rotate_explanation_1}
+                        " "
+                        {t.signing_keys_rotate_explanation_2}
+                        " "
+                        {t.signing_keys_rotate_explanation_3}
                     </p>
                     <div class="card__footer">
                         <form method="post" action="/admin/signing-keys/rotate">
@@ -1809,16 +1838,16 @@ pub fn render_signing_keys(
                 </div>
 
                 <section>
-                    <h2>t.signing_keys_table_section</h2>
+                    <h2>{t.signing_keys_table_section}</h2>
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
-                                    <th>"Key ID"</th>
-                                    <th>t.signing_keys_th_algorithm</th>
+                                    <th>{t.signing_keys_th_key_id}</th>
+                                    <th>{t.signing_keys_th_algorithm}</th>
                                     <th>{t.signing_keys_th_status}</th>
                                     <th>{t.signing_keys_th_created}</th>
-                                    <th>t.signing_keys_th_retired</th>
+                                    <th>{t.signing_keys_th_retired}</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -2107,11 +2136,11 @@ pub fn render_user_detail(data: UserDetailData, lang: sui_id_i18n::Locale) -> St
     render(move || {
         let t = lang.strings();
         let badge = if data.is_disabled {
-            view! { <span class="badge badge--warn">{t.badge_disabled}</span> }.into_any()
+            crate::components::status_badge(t, crate::components::StatusKind::Disabled).into_any()
         } else if data.is_admin {
-            view! { <span class="badge badge--accent">"admin"</span> }.into_any()
+            crate::components::status_badge(t, crate::components::StatusKind::Admin).into_any()
         } else {
-            view! { <span class="badge badge--ok">{t.badge_enabled}</span> }.into_any()
+            crate::components::status_badge(t, crate::components::StatusKind::Active).into_any()
         };
 
         let display = data.display_name.clone().unwrap_or_default();
@@ -2138,7 +2167,7 @@ pub fn render_user_detail(data: UserDetailData, lang: sui_id_i18n::Locale) -> St
         }).collect();
 
         let audit_rows: Vec<_> = data.recent_audit.iter().map(|e| {
-            audit_row_view(e.clone())
+            audit_row_view(t, e.clone())
         }).collect();
 
         let disable_confirm_url = format!("/admin/users/{uid}/disable-confirm");
@@ -2741,6 +2770,7 @@ pub fn render_me_language(
         let cur = current_preferred_lang.clone().unwrap_or_default();
         let cur2 = cur.clone();
         let cur3 = cur.clone();
+        let cur4 = cur.clone();
         view! {
             <Shell title=t.me_language_title.to_string() show_nav=true current=Some("me".to_string()) lang=lang>
                 <header class="page-header"><h1 class="page-header__title">{t.me_language_title}</h1></header>
@@ -2760,12 +2790,17 @@ pub fn render_me_language(
                                 <label class="row" style="align-items:center;gap:var(--space-2)">
                                     <input type="radio" name="locale" value="ja"
                                            checked=move || cur2 == "ja"/>
-                                    "日本語"
+                                    {t.locale_native_ja}
                                 </label>
                                 <label class="row" style="align-items:center;gap:var(--space-2)">
                                     <input type="radio" name="locale" value="en"
                                            checked=move || cur3 == "en"/>
-                                    "English"
+                                    {t.locale_native_en}
+                                </label>
+                                <label class="row" style="align-items:center;gap:var(--space-2)">
+                                    <input type="radio" name="locale" value="zh"
+                                           checked=move || cur4 == "zh"/>
+                                    {t.locale_native_zh}
                                 </label>
                             </div>
                         </div>
@@ -2940,7 +2975,7 @@ pub fn render_me_security(
                 }
                 if passkey_count > 0 {
                     v.push(
-                        t.me_security_mfa_factor_passkey_n
+                        {t.me_security_mfa_factor_passkey_n}
                             .replace("{n}", &passkey_count.to_string()),
                     );
                 }
@@ -3257,16 +3292,14 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
             <section class="section">
                 <h2 class="section__title">{t.settings_basic_default_lang}</h2>
                 <p class="muted">
-                    "ユーザーの言語設定とブラウザの Accept-Language が一致しない場合の "
-                    "フォールバックとして使用されます。 / Used as a fallback when no per-user "
-                    "preference is set and Accept-Language does not match a supported locale."
+                    {t.settings_basic_default_lang_hint}
                 </p>
                 <div class="card">
                     <form method="post" action="/admin/settings/basic/lang" class="stack">
                         <input type="hidden" name="_csrf" value=csrf_for_lang />
                         <div class="field">
                             <label for="default-lang-select" class="field__label">
-                                t.profile_lang_label
+                                {t.profile_lang_label}
                             </label>
                             <select id="default-lang-select" name="default_lang">
                                 {sui_id_i18n::Locale::ALL.iter().map(|loc| {
@@ -3297,7 +3330,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
-                            t.settings_basic_description
+                            {t.settings_basic_description}
                         </p>
                     </div>
                 </header>
@@ -3309,10 +3342,10 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_code("Issuer", issuer)}
-                                {kv_code("Listen address", listen_addr)}
-                                {kv_bool_badge(t, "Cookie Secure フラグ", cookie_secure)}
-                                {kv_text("Trusted proxies", proxies_display)}
+                                {kv_code(t.settings_basic_kv_issuer, issuer)}
+                                {kv_code(t.settings_basic_kv_listen, listen_addr)}
+                                {kv_bool_badge(t, t.settings_basic_kv_cookie_secure, cookie_secure)}
+                                {kv_text(t.settings_basic_kv_trusted_proxies, proxies_display)}
                             </tbody>
                         </table>
                     </div>
@@ -3324,7 +3357,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                         <table>
                             <tbody>
                                 <tr>
-                                    <th scope="row" style="width:14rem;font-weight:var(--font-weight-medium);color:var(--fg-muted);text-align:left">"Discovery"</th>
+                                    <th scope="row" style="width:14rem;font-weight:var(--font-weight-medium);color:var(--fg-muted);text-align:left">{t.dashboard_oidc_endpoint_discovery}</th>
                                     <td>
                                         {
                                             let url = discovery_url.clone();
@@ -3337,7 +3370,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
                                     </td>
                                 </tr>
                                 <tr>
-                                    <th scope="row" style="width:14rem;font-weight:var(--font-weight-medium);color:var(--fg-muted);text-align:left">"JWKS"</th>
+                                    <th scope="row" style="width:14rem;font-weight:var(--font-weight-medium);color:var(--fg-muted);text-align:left">{t.dashboard_oidc_endpoint_jwks}</th>
                                     <td>
                                         {
                                             let url = jwks_url.clone();
@@ -3400,23 +3433,20 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
             <section class="section">
                 <h2 class="section__title">{t.settings_security_session_section}</h2>
                 <p class="muted">
-                    "アイドルタイムアウトと同時セッション数の上限。 "
-                    "いずれも 0 で無効。デフォルトは 0 (無効) で、運用ポリシーに応じて opt-in。 "
-                    "/ Idle timeout and concurrent-session cap. Both default to 0 (disabled); "
-                    "enable per policy."
+                    {t.settings_security_session_lede}
                 </p>
                 <div class="card">
                     <form method="post" action="/admin/settings/security/idle-timeout" class="stack">
                         <input type="hidden" name="_csrf" value=csrf_for_idle />
                         <div class="field">
                             <label for="idle-timeout" class="field__label">
-                                t.settings_security_idle_timeout_label
+                                {t.settings_security_idle_timeout_label}
                             </label>
                             <input id="idle-timeout" name="secs" type="number"
                                    min="0" max="2592000"
                                    value=idle_session_timeout_secs.to_string() />
                             <span class="field__hint">
-                                "0 = 無効。0 < N <= 2,592,000 (= 30 日)。 / 0 disables; up to 30 days."
+                                {t.settings_security_idle_timeout_hint}
                             </span>
                         </div>
                         <div>
@@ -3429,14 +3459,13 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                         <input type="hidden" name="_csrf" value=csrf_for_cap />
                         <div class="field">
                             <label for="max-sessions" class="field__label">
-                                t.settings_security_max_sessions_label
+                                {t.settings_security_max_sessions_label}
                             </label>
                             <input id="max-sessions" name="cap" type="number"
                                    min="0" max="1000"
                                    value=max_concurrent_sessions.to_string() />
                             <span class="field__hint">
-                                "0 = 無効。1 <= N <= 1000。超過時は最も古いセッションが自動 revoke (FIFO)。 / "
-                                "0 disables. When exceeded, oldest session is auto-revoked (FIFO)."
+                                {t.settings_security_max_sessions_hint}
                             </span>
                         </div>
                         <div>
@@ -3452,7 +3481,7 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
-                            t.settings_basic_description
+                            {t.settings_basic_description}
                         </p>
                     </div>
                 </header>
@@ -3469,8 +3498,11 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                         </table>
                     </div>
                     <p class="muted" style="margin-top:var(--space-2);margin-bottom:0">
-                        "段階的バックオフの上限値。プログレッシブな失敗時間が積み重なってもこの値を超えません。"
-                        "管理者は "<span class="code">"sui-id admin unlock-user"</span>" コマンドでいつでも解除できます。"
+                        {t.settings_security_lockout_hint_1}
+                        " "
+                        {t.settings_security_lockout_hint_2_pre}
+                        <span class="code">"sui-id admin unlock-user"</span>
+                        {t.settings_security_lockout_hint_2_post}
                     </p>
                 </div>
 
@@ -3482,13 +3514,12 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                                 {kv_bool_badge(t, "HSTS (Strict-Transport-Security)", hsts_enabled)}
                                 {kv_bool_badge(t, "Content-Security-Policy", csp_enabled)}
                                 {kv_bool_badge(t, "X-Frame-Options: DENY", x_frame_deny)}
-                                {kv_bool_badge(t, "Permissions-Policy(最小)", permissions_policy_minimal)}
+                                {kv_bool_badge(t, t.settings_security_headers_perm_policy_label, permissions_policy_minimal)}
                             </tbody>
                         </table>
                     </div>
                     <p class="muted" style="margin-top:var(--space-2);margin-bottom:0">
-                        "管理画面はすべて上記ヘッダーを返します。"
-                        "/oauth2/* 系の公開エンドポイントは仕様上の必要に応じて一部省略します。"
+                        {t.settings_security_headers_hint}
                     </p>
                 </div>
 
@@ -3497,8 +3528,8 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_bool_badge(t, "Token endpoint の動的許可(登録 redirect_uris の origin)", cors_token_dynamic_from_clients)}
-                                {kv_bool_badge(t, "Discovery / JWKS / userinfo の公開許可(*)", cors_public_endpoints_open)}
+                                {kv_bool_badge(t, t.settings_security_cors_token_label, cors_token_dynamic_from_clients)}
+                                {kv_bool_badge(t, t.settings_security_cors_public_label, cors_public_endpoints_open)}
                             </tbody>
                         </table>
                     </div>
@@ -3525,13 +3556,13 @@ pub struct SettingsAuthenticationData {
     pub refresh_theft_detection: bool,
 }
 
-fn fmt_lifetime(secs: i64) -> String {
+fn fmt_lifetime(t: &'static sui_id_i18n::Strings, secs: i64) -> String {
     if secs % 86400 == 0 {
-        format!("{} 日 ({secs}s)", secs / 86400)
+        (t.fmt_lifetime_days)(secs / 86400, secs)
     } else if secs % 3600 == 0 {
-        format!("{} 時間 ({secs}s)", secs / 3600)
+        (t.fmt_lifetime_hours)(secs / 3600, secs)
     } else if secs % 60 == 0 {
-        format!("{} 分 ({secs}s)", secs / 60)
+        (t.fmt_lifetime_minutes)(secs / 60, secs)
     } else {
         format!("{secs} s")
     }
@@ -3563,7 +3594,7 @@ pub fn render_settings_authentication(
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
-                            t.settings_basic_description
+                            {t.settings_basic_description}
                         </p>
                     </div>
                 </header>
@@ -3575,7 +3606,7 @@ pub fn render_settings_authentication(
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_text(t.settings_auth_min_length_label, format!("{password_min_length} 文字"))}
+                                {kv_text(t.settings_auth_min_length_label, (t.settings_auth_min_length_value)(password_min_length))}
                                 {kv_text(t.settings_auth_hash_algorithm_label, password_argon2id)}
                             </tbody>
                         </table>
@@ -3589,14 +3620,14 @@ pub fn render_settings_authentication(
                             <tbody>
                                 {kv_bool_badge(t, t.settings_auth_mfa_totp, totp_enabled_per_user)}
                                 {kv_bool_badge(t, t.settings_auth_mfa_passkey, webauthn_enabled_per_user)}
-                                {kv_text("リカバリーコード(登録ごと)", format!("{recovery_codes_per_enrollment} 件"))}
+                                {kv_text(t.settings_auth_recovery_codes_label, (t.settings_auth_recovery_codes_value)(recovery_codes_per_enrollment))}
                             </tbody>
                         </table>
                     </div>
                     <p class="muted" style="margin-top:var(--space-2);margin-bottom:0">
-                        "ユーザー個別に有効化します。詳細は "
+                        {t.settings_auth_mfa_note_prefix}
                         <a href="/admin/profile">"/admin/profile"</a>
-                        " を参照してください。"
+                        {t.settings_auth_mfa_note_suffix}
                     </p>
                 </div>
 
@@ -3606,9 +3637,9 @@ pub fn render_settings_authentication(
                         <table>
                             <tbody>
                                 {kv_bool_badge(t, t.settings_auth_pkce_required, pkce_required)}
-                                {kv_text(t.settings_auth_access_token_ttl, fmt_lifetime(access_token_lifetime_secs))}
-                                {kv_text(t.settings_auth_id_token_ttl, fmt_lifetime(id_token_lifetime_secs))}
-                                {kv_text(t.settings_auth_refresh_token_ttl, fmt_lifetime(refresh_token_lifetime_secs))}
+                                {kv_text(t.settings_auth_access_token_ttl, fmt_lifetime(t, access_token_lifetime_secs))}
+                                {kv_text(t.settings_auth_id_token_ttl, fmt_lifetime(t, id_token_lifetime_secs))}
+                                {kv_text(t.settings_auth_refresh_token_ttl, fmt_lifetime(t, refresh_token_lifetime_secs))}
                                 {kv_bool_badge(t, t.settings_auth_refresh_rotate, refresh_rotation)}
                                 {kv_bool_badge(t, t.settings_auth_refresh_theft, refresh_theft_detection)}
                             </tbody>
@@ -3652,16 +3683,13 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
         } = data;
 
         let chain_badge = if chain_report.broken_at_seq.is_some() {
-            view! { <span class="badge badge--danger">"破損検知"</span> }.into_any()
+            crate::components::status_badge(t, crate::components::StatusKind::Unhealthy).into_any()
         } else {
-            view! { <span class="badge badge--ok">"正常"</span> }.into_any()
+            crate::components::status_badge(t, crate::components::StatusKind::Healthy).into_any()
         };
         let chain_note = match chain_report.broken_at_seq {
-            Some(seq) => format!("seq={seq} で不一致を検出。すぐに調査してください。"),
-            None => format!(
-                "末尾 {} 行を検査。レガシー(v0.17 以前)未ハッシュ行: {}",
-                chain_report.checked, chain_report.legacy_unhashed
-            ),
+            Some(seq) => (t.audit_chain_broken_note)(seq),
+            None => (t.audit_chain_ok_note)(chain_report.checked, chain_report.legacy_unhashed),
         };
 
         view! {
@@ -3670,7 +3698,7 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
-                            "ログ出力設定と監査ログの状態。"
+                            {t.settings_logs_lede}
                         </p>
                     </div>
                 </header>
@@ -3682,15 +3710,15 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
                     <div class="table-wrap">
                         <table>
                             <tbody>
-                                {kv_code("Format", log_format)}
-                                {kv_code("Filter", log_filter)}
+                                {kv_code(t.settings_logs_kv_format, log_format)}
+                                {kv_code(t.settings_logs_kv_filter, log_filter)}
                             </tbody>
                         </table>
                     </div>
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">t.settings_logs_recent_24h</h3>
+                    <h3 class="card__title">{t.settings_logs_recent_24h}</h3>
                     <div class="table-wrap">
                         <table>
                             <tbody>
@@ -3702,14 +3730,16 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
                         </table>
                     </div>
                     <p class="muted" style="margin-top:var(--space-2);margin-bottom:0">
-                        "詳細な履歴は "<a href="/admin/audit">"/admin/audit"</a>" を参照してください。"
+                        {t.settings_logs_audit_link_prefix}
+                        <a href="/admin/audit">"/admin/audit"</a>
+                        {t.settings_logs_audit_link_suffix}
                     </p>
                 </div>
 
                 <div class="card">
                     <h3 class="card__title">{t.settings_logs_audit_section}</h3>
                     <div class="row" style="gap:var(--space-3);align-items:center">
-                        <span>"状態:"</span>
+                        <span>{t.client_edit_label_status}":"</span>
                         {chain_badge}
                     </div>
                     <p class="muted" style="margin-top:var(--space-2);margin-bottom:0">
@@ -3752,7 +3782,7 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
-                            "ビルド情報・スキーマ・ストレージ。"
+                            {t.settings_advanced_lede}
                         </p>
                     </div>
                 </header>
@@ -3783,9 +3813,9 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                         </table>
                     </div>
                     <p class="muted" style="margin-top:var(--space-2);margin-bottom:0">
-                        "DB は単一の SQLite ファイル、マスターキーは環境変数 "
+                        {t.settings_advanced_storage_note_prefix}
                         <span class="code">"SUI_ID_MASTER_KEY"</span>
-                        " が指定されない場合のみキーファイルから読み込まれます。"
+                        {t.settings_advanced_storage_note_suffix}
                     </p>
                 </div>
 
@@ -3795,20 +3825,20 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
                         <table>
                             <tbody>
                                 <tr>
-                                    <th scope="row" style="width:14rem;font-weight:var(--font-weight-medium);color:var(--fg-muted);text-align:left">"ユーザー"</th>
+                                    <th scope="row" style="width:14rem;font-weight:var(--font-weight-medium);color:var(--fg-muted);text-align:left">{t.dashboard_stat_users}</th>
                                     <td>
-                                        {user_count.to_string()}" 名 "
+                                        {(t.settings_advanced_users_count)(user_count)}
                                         <a href="/admin/users" class="muted" style="margin-left:var(--space-2)">
-                                            t.settings_advanced_manage_link
+                                            {t.settings_advanced_manage_link}
                                         </a>
                                     </td>
                                 </tr>
                                 <tr>
-                                    <th scope="row" style="width:14rem;font-weight:var(--font-weight-medium);color:var(--fg-muted);text-align:left">"クライアント"</th>
+                                    <th scope="row" style="width:14rem;font-weight:var(--font-weight-medium);color:var(--fg-muted);text-align:left">{t.dashboard_stat_clients}</th>
                                     <td>
-                                        {client_count.to_string()}" 件 "
+                                        {(t.settings_advanced_clients_count)(client_count)}
                                         <a href="/admin/clients" class="muted" style="margin-left:var(--space-2)">
-                                            t.settings_advanced_manage_link
+                                            {t.settings_advanced_manage_link}
                                         </a>
                                     </td>
                                 </tr>
@@ -4028,9 +4058,9 @@ pub fn render_settings_email(
         let csrf_test = csrf_token.clone();
         let port_str = port.to_string();
         let pw_placeholder = if has_password {
-            "(変更する場合のみ入力)"
+            t.settings_email_password_placeholder_change
         } else {
-            "(認証不要の場合は空欄)"
+            t.settings_email_password_placeholder_none
         };
         let enabled_attr = if enabled { Some("checked") } else { None };
         let tls_implicit = if tls_mode == "implicit" { Some("selected") } else { None };
@@ -4042,7 +4072,7 @@ pub fn render_settings_email(
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>
                         <p class="page-header__lede">
-                            t.settings_email_lede
+                            {t.settings_email_lede}
                         </p>
                     </div>
                 </header>
@@ -4056,10 +4086,10 @@ pub fn render_settings_email(
                         <div class="field">
                             <label class="field__label">
                                 <input type="checkbox" name="enabled" value="on" checked=enabled_attr />
-                                " メール機能を有効化"
+                                " "{t.settings_email_enable_checkbox}
                             </label>
                             <span class="field__hint">
-                                "オフの場合、forgot-password などのメール送信エンドポイントは無効になります。"
+                                {t.settings_email_enable_hint}
                             </span>
                         </div>
                         <div class="field">
@@ -4076,7 +4106,7 @@ pub fn render_settings_email(
                             <label for="tls_mode" class="field__label">{t.settings_email_tls_label}</label>
                             <select id="tls_mode" name="tls_mode">
                                 <option value="starttls" selected=tls_starttls>"STARTTLS (587)"</option>
-                                <option value="implicit" selected=tls_implicit>t.settings_email_tls_implicit</option>
+                                <option value="implicit" selected=tls_implicit>{t.settings_email_tls_implicit}</option>
                             </select>
                         </div>
                         <div class="field">
@@ -4089,7 +4119,7 @@ pub fn render_settings_email(
                             <input id="password" name="password" type="password"
                                    autocomplete="off" placeholder=pw_placeholder />
                             <span class="field__hint">
-                                "保存済みのパスワードを変更する場合のみ入力してください。空欄の場合は既存値を保持します。"
+                                {t.settings_email_password_hint}
                             </span>
                         </div>
                         <hr class="divider" />
@@ -4108,18 +4138,17 @@ pub fn render_settings_email(
                                    required=true value=base_url
                                    placeholder="https://idp.example.com" />
                             <span class="field__hint">
-                                "リセットメールに記載する URL のベース。Issuer URL とは別に明示できます。"
+                                {t.settings_email_base_url_hint}
                             </span>
                         </div>
-                        <button type="submit">"設定を保存"</button>
+                        <button type="submit">{t.settings_email_save_button}</button>
                     </form>
                 </div>
 
                 <div class="card">
-                    <h3 class="card__title">"接続テスト"</h3>
+                    <h3 class="card__title">{t.settings_email_test_section}</h3>
                     <p class="muted">
-                        "現在の設定で SMTP サーバーへの接続と認証を試みます。"
-                        "メールは送信されません。"
+                        {t.settings_email_test_lede}
                     </p>
                     <form method="post" action="/admin/settings/email/test" class="stack">
                         <input type="hidden" name="_csrf" value=csrf_test />

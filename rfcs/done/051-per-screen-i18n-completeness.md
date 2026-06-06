@@ -1,6 +1,6 @@
 # RFC 051 — Per-screen i18n completeness audit
 
-**Status.** Proposed
+**Status.** Implemented (v0.43.0)
 **Priority.** P0 — primary work of Phase B (v0.43.0)
 **Tracks.** UI/UX correctness baseline; closes the
 "未完了 : admin dashboard / users / clients / signing keys /

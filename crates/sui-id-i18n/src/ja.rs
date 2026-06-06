@@ -24,6 +24,48 @@ pub static STRINGS_JA: Strings = Strings {
     label_required: "(必須)",
     muted_none: "(なし)",
 
+    // Language native names (RFC 051) — identical across all locales.
+    locale_native_ja: "日本語",
+    locale_native_en: "English",
+    locale_native_zh: "中文",
+
+    // Lifetime formatting (RFC 051)
+    fmt_lifetime_days: |n, secs| format!("{n} 日 ({secs}s)"),
+    fmt_lifetime_hours: |n, secs| format!("{n} 時間 ({secs}s)"),
+    fmt_lifetime_minutes: |n, secs| format!("{n} 分 ({secs}s)"),
+
+    // Settings: Auth extensions (RFC 051)
+    settings_auth_min_length_value: |n| format!("{n} 文字"),
+    settings_auth_recovery_codes_label: "リカバリーコード（登録ごと）",
+    settings_auth_recovery_codes_value: |n| format!("{n} 件"),
+    settings_auth_mfa_note_prefix: "ユーザー個別に有効化します。詳細は ",
+    settings_auth_mfa_note_suffix: " を参照してください。",
+
+    // Settings: Logs extensions (RFC 051)
+    settings_logs_lede: "ログ出力設定と監査ログの状態。",
+    settings_logs_kv_format: "Format",
+    settings_logs_kv_filter: "Filter",
+    settings_logs_audit_link_prefix: "詳細な履歴は ",
+    settings_logs_audit_link_suffix: " を参照してください。",
+
+    // Settings: Advanced/Other extensions (RFC 051)
+    settings_advanced_lede: "ビルド情報・スキーマ・ストレージ。",
+    settings_advanced_storage_note_prefix: "DB は単一の SQLite ファイル、マスターキーは環境変数 ",
+    settings_advanced_storage_note_suffix: " が指定されない場合のみキーファイルから読み込まれます。",
+    settings_advanced_users_count: |n| format!("{n} 名 "),
+    settings_advanced_clients_count: |n| format!("{n} 件 "),
+
+    // Settings: Email extensions (RFC 051)
+    settings_email_enable_checkbox: "メール機能を有効化",
+    settings_email_enable_hint: "オフの場合、forgot-password などのメール送信エンドポイントは無効になります。",
+    settings_email_password_placeholder_change: "（変更する場合のみ入力）",
+    settings_email_password_placeholder_none: "（認証不要の場合は空欄）",
+    settings_email_password_hint: "保存済みのパスワードを変更する場合のみ入力してください。空欄の場合は既存値を保持します。",
+    settings_email_base_url_hint: "リセットメールに記載する URL のベース。Issuer URL とは別に明示できます。",
+    settings_email_save_button: "設定を保存",
+    settings_email_test_section: "接続テスト",
+    settings_email_test_lede: "現在の設定で SMTP サーバーへの接続と認証を試みます。メールは送信されません。",
+
     // Navigation
     nav_dashboard: "ダッシュボード",
     nav_users: "ユーザー",
@@ -51,6 +93,41 @@ pub static STRINGS_JA: Strings = Strings {
     theme_toggle_light_title: "ライトテーマ",
     theme_toggle_auto_title: "OS の設定に従う",
     theme_toggle_dark_title: "ダークテーマ",
+
+    // Status words (RFC 052)
+    status_active: "有効",
+    status_disabled: "無効",
+    status_deleted: "削除済み",
+    status_admin: "管理者",
+    status_on: "オン",
+    status_off: "オフ",
+    status_in_use: "使用中",
+    status_retired: "引退",
+    status_published: "公開中",
+    status_pending: "保留中",
+    status_healthy: "正常",
+    status_unhealthy: "異常",
+
+    // Empty placeholders (RFC 052)
+    empty_dash: "—",
+    empty_any: "（すべて）",
+    empty_none: "（なし）",
+    empty_falls_back_redirect_uris: "（redirect_uris にフォールバック）",
+    empty_no_email: "（メールアドレスなし）",
+    empty_not_set: "（未設定）",
+
+    // Copy-to-clipboard button (RFC 053)
+    copy_button_label: "📋 コピー",
+    copy_button_label_done: "✓ コピー済み",
+    copy_button_aria_template: "{noun} をコピー",
+    copy_noun_client_id: "クライアント ID",
+    copy_noun_client_secret: "クライアントシークレット",
+    copy_noun_jwks_uri: "JWKS URI",
+    copy_noun_redirect_uri: "リダイレクト URI",
+    copy_noun_audit_row_id: "監査行 ID",
+    copy_noun_setup_token: "セットアップトークン",
+    copy_noun_recovery_code: "リカバリーコード",
+    copy_noun_passkey_id: "パスキー ID",
 
     // Login
     signed_out_flash: "サインアウトしました。",
@@ -228,7 +305,6 @@ pub static STRINGS_JA: Strings = Strings {
     settings_basic_trusted_proxies: "Trusted proxies",
     settings_basic_trusted_proxies_none: "(なし — peer の IP を直接信頼)",
     settings_basic_default_lang: "サーバーデフォルト言語",
-    settings_basic_default_lang_hint: "ユーザー言語設定が無く Accept-Language ヘッダも一致しない場合のフォールバック。",
     settings_basic_save: "保存",
     settings_basic_saved: "サーバー設定を更新しました。",
 
@@ -358,6 +434,19 @@ pub static STRINGS_JA: Strings = Strings {
     dashboard_activity_title: "サインイン活動",
     dashboard_activity_period: "期間",
     dashboard_oidc_endpoints_section: "OIDC エンドポイント",
+    // Dashboard extensions (RFC 051)
+    dashboard_greeting: |u| format!("こんにちは、{u} さん。"),
+    dashboard_aria_stats: "統計情報",
+    dashboard_aria_action_required: "対応が必要な項目",
+    dashboard_action_required_title: "対応が必要",
+    dashboard_activity_success: "成功",
+    dashboard_activity_failure: "失敗",
+    dashboard_activity_hover_hint: "ホバーで各バケットの詳細を表示。",
+    dashboard_oidc_endpoint_issuer: "Issuer",
+    dashboard_oidc_endpoint_discovery: "Discovery",
+    dashboard_oidc_endpoint_jwks: "JWKS",
+    dashboard_sparkline_aria: "サインイン活動のスパークライン",
+    dashboard_sparkline_tooltip: |label, success, failure| format!("{label} : 成功 {success} / 失敗 {failure}"),
 
     // ダッシュボード：オペレータープロンプト (RFC 031)
     dashboard_warn_smtp: "パスワードリセットメールが無効です。設定 → メール で SMTP を設定してください。",
@@ -376,6 +465,22 @@ pub static STRINGS_JA: Strings = Strings {
     users_table_th_created: "作成日",
     users_is_admin_label: "管理者権限を付与する",
     users_empty: "ユーザーはまだいません。上のフォームで最初のユーザーを作成してください。",
+    // Users extensions (RFC 051)
+    users_count_caption: |n| format!("現在 {n} 名。"),
+    users_label_username: "ユーザー名",
+    users_label_display_name: "表示名（任意）",
+    users_label_email: "メールアドレス（任意）",
+    users_label_password: "パスワード（12 文字以上）",
+
+    // Admin: クライアント編集 (RFC 051)
+    client_edit_title: "クライアントを編集",
+    client_edit_basic_section: "基本情報",
+    client_edit_basic_note: "Client ID・種別（confidential/public）・client secret は作成時に固定されます。これらを変更したい場合は削除して登録し直してください。",
+    client_edit_new_secret_label: "新しい client secret（このページでのみ表示）：",
+    client_edit_label_client_id: "Client ID",
+    client_edit_label_kind: "種別",
+    client_edit_label_status: "状態",
+    client_edit_post_logout_hint: "1 行に 1 つ。空欄＝Redirect URIs を流用。",
 
     // Admin: クライアント管理 (RFC 029)
     clients_title: "クライアント管理",
@@ -390,6 +495,23 @@ pub static STRINGS_JA: Strings = Strings {
     clients_table_th_status: "状態",
     clients_empty: "OIDC クライアントはまだありません。上のフォームで登録してください。",
     clients_single_realm_note: "sui-id は単一レルム IdP です。すべてのユーザーがすべてのクライアントを利用できます。スコープはユーザーを制限するのではなく、クライアントが要求できる情報の範囲を制限します。",
+    // Clients page extensions (RFC 051)
+    clients_table_th_client_id: "クライアント ID",
+    clients_count_caption: |n| format!("現在 {n} 件。"),
+    clients_label_app_name: "アプリケーション名",
+    clients_label_redirect_uris: "Redirect URIs",
+    clients_hint_redirect_uris: "1 行に 1 つ。https またはループバックの http のみ。",
+    clients_label_allowed_scopes: "許可スコープ (Allowed scopes)",
+    clients_hint_scopes_intro: "スペース区切り。既知のスコープ: ",
+    clients_hint_scopes_openid_note: " (必須) · ",
+    clients_hint_scopes_profile_note: " (名前・言語) · ",
+    clients_hint_scopes_email_note: " (メール) · ",
+    clients_hint_scopes_offline_note: " (リフレッシュトークン)。",
+    clients_hint_scopes_default: "空欄の場合は openid profile email がデフォルトになります。",
+    clients_label_post_logout_uris: "Post-logout redirect URIs(任意)",
+    clients_hint_one_per_line: "1 行に 1 つ。",
+    clients_label_confidential_checkbox: "Confidential client（client secret を発行する）",
+    clients_button_register: "登録",
 
     // Admin: 監査ログ (RFC 029)
     audit_lede: "管理操作の履歴（新しい順）。",
@@ -400,6 +522,11 @@ pub static STRINGS_JA: Strings = Strings {
     audit_filter_label: "イベントで絞り込む",
     audit_filter_placeholder: "例: auth.login",
     audit_export_csv: "CSV でエクスポート",
+    // Audit log extensions (RFC 051)
+    audit_entry_count_caption: |n| format!("({n} 件)"),
+    audit_filter_button: "フィルター",
+    audit_chain_broken_note: |seq| format!("seq={seq} で不一致を検出。すぐに調査してください。"),
+    audit_chain_ok_note: |checked, legacy| format!("末尾 {checked} 行を検査。レガシー(v0.17 以前)未ハッシュ行: {legacy}"),
 
     // Admin: 署名キー (RFC 029)
     signing_keys_title: "署名キー",
@@ -414,6 +541,12 @@ pub static STRINGS_JA: Strings = Strings {
     signing_keys_th_retired: "退役日",
     signing_keys_empty: "署名キーがありません。「署名キーをローテーション」で最初のキーを生成してください。",
     signing_keys_in_use_badge: "(使用中)",
+    // Signing keys extensions (RFC 051)
+    signing_keys_count_caption: |n| format!("{n} 件登録。"),
+    signing_keys_th_key_id: "Key ID",
+    signing_keys_rotate_explanation_1: "ローテーションを実行すると、新しい署名キーが発行され、現行キーは「退役」状態に遷移します。",
+    signing_keys_rotate_explanation_2: "退役キーは JWKS に残るため、有効期限内の既発行トークンは検証可能です。",
+    signing_keys_rotate_explanation_3: "それらが期限切れになった後、このページから安全に削除できます。",
 
     // 危険操作の確認画面 (RFC 030)
     confirm_cancel: "キャンセル",
@@ -456,12 +589,28 @@ pub static STRINGS_JA: Strings = Strings {
     // 設定セクションキー
     settings_page_title_template: "設定",
     settings_basic_description: "現在の有効な設定を確認します。値を変更するには sui-id.toml を編集して再起動してください。",
+    // Settings: Basic extensions (RFC 051)
+    settings_basic_default_lang_hint: "ユーザーの言語設定とブラウザの Accept-Language が一致しない場合のフォールバックとして使用されます。",
+    settings_basic_kv_issuer: "Issuer",
+    settings_basic_kv_listen: "Listen address",
+    settings_basic_kv_cookie_secure: "Cookie Secure フラグ",
+    settings_basic_kv_trusted_proxies: "Trusted proxies",
     settings_security_session_section: "セッション制限",
     settings_security_session_lede: "アイドルタイムアウトと同時セッション数の上限。どちらも 0 で無効（デフォルト）、運用ポリシーに応じて設定します。",
     settings_security_idle_timeout_label: "アイドルタイムアウト（秒）",
     settings_security_max_sessions_label: "1 ユーザーあたり最大同時セッション数",
     settings_security_lockout_section: "アカウントロックアウト",
     settings_security_headers_section: "セキュリティヘッダー",
+    // Settings: Security extensions (RFC 051)
+    settings_security_idle_timeout_hint: "0 = 無効。0 < N ≤ 2,592,000 (= 30 日)。",
+    settings_security_max_sessions_hint: "0 = 無効。1 ≤ N ≤ 1000。超過時は最も古いセッションが自動 revoke (FIFO)。",
+    settings_security_lockout_hint_1: "段階的バックオフの上限値。プログレッシブな失敗時間が積み重なってもこの値を超えません。",
+    settings_security_lockout_hint_2_pre: "管理者は ",
+    settings_security_lockout_hint_2_post: " コマンドでいつでも解除できます。",
+    settings_security_headers_perm_policy_label: "Permissions-Policy（最小）",
+    settings_security_headers_hint: "管理画面はすべて上記ヘッダーを返します。/oauth2/* 系の公開エンドポイントは仕様上の必要に応じて一部省略します。",
+    settings_security_cors_token_label: "Token endpoint の動的許可（登録 redirect_uris の origin）",
+    settings_security_cors_public_label: "Discovery / JWKS / userinfo の公開許可（*）",
     settings_auth_password_section: "パスワード",
     settings_auth_mfa_section: "2 段階認証",
     settings_auth_oidc_section: "OIDC / トークン設定",
@@ -514,26 +663,21 @@ pub static STRINGS_JA: Strings = Strings {
     settings_advanced_server_time_label: "サーバ時刻",
     settings_advanced_db_file_label: "DB ファイル",
     settings_advanced_key_file_label: "マスターキーファイル",
-    settings_advanced_users_count: "ユーザー",
-    settings_advanced_clients_count: "クライアント",
     settings_advanced_manage_link: "管理 →",
     // 設定: メールタブ本文 (RFC 039)
     settings_email_page_title: "設定 — メール",
     settings_email_lede: "パスワードリセットや変更通知メールの SMTP 設定。",
     settings_email_smtp_section: "SMTP 接続",
     settings_email_enable_label: "メール送信を有効化",
-    settings_email_enable_hint: "オフの場合、forgot-password などのメール送信エンドポイントは無効になります。",
     settings_email_host_label: "SMTP ホスト",
     settings_email_port_label: "ポート",
     settings_email_port_hint: "587（STARTTLS）または 465（暗黙 TLS）が一般的です。",
     settings_email_tls_label: "TLS モード",
     settings_email_tls_implicit: "暗黙 TLS（465）",
     settings_email_username_label: "ユーザー名（任意）",
-    settings_email_password_hint: "パスワードを変更する場合のみ入力してください。空欄の場合は既存値を保持します。",
     settings_email_from_addr_label: "送信元アドレス",
     settings_email_from_name_label: "送信元表示名（任意）",
     settings_email_base_url_label: "公開 Base URL",
-    settings_email_base_url_hint: "メール内のリセットリンクに記載する URL。Issuer URL とは別に設定できます。",
     settings_email_test_button: "接続をテスト",
     settings_email_test_hint: "現在の設定で SMTP サーバーへの接続を試みます。メールは送信されません。",
 

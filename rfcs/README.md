@@ -33,10 +33,7 @@ folders.
 
 | ID  | Title                                                          | Priority |
 |-----|----------------------------------------------------------------|----------|
-| 051 | [Per-screen i18n completeness audit](./proposed/051-per-screen-i18n-completeness.md) | P0 — Phase B (v0.43.0) |
-| 052 | [Status word vocabulary unification](./proposed/052-status-word-vocabulary.md) | P1 — Phase B |
-| 053 | [Copy-button i18n contract](./proposed/053-copy-button-i18n.md) | P1 — Phase B |
-| 054 | [Aria-label / title attribute i18n audit](./proposed/054-aria-title-attribute-audit.md) | P1 — Phase B |
+| 054 | [Aria-label / title attribute i18n audit](./proposed/054-aria-title-attribute-audit.md) | P1 — Phase C (v0.44.0) |
 | 008 | [Third-party-posture bundle](./proposed/008-third-party-posture.md) | Low-medium — post-1.0 |
 | 025 | [Multi-tenant expansion path: detailed design](./proposed/025-multi-tenant-expansion.md) | Low — post-1.0, no schedule |
 | 004 | [Federation as upstream OIDC client](./proposed/004-federation.md) | Low — post-1.0 |
@@ -48,6 +45,9 @@ folders.
 
 | ID  | Title                                                          | Shipped in |
 |-----|----------------------------------------------------------------|------------|
+| 053 | [Copy-button i18n contract](./done/053-copy-button-i18n.md) | v0.43.0 |
+| 052 | [Status word vocabulary unification](./done/052-status-word-vocabulary.md) | v0.43.0 |
+| 051 | [Per-screen i18n completeness audit](./done/051-per-screen-i18n-completeness.md) | v0.43.0 |
 | 050 | [Admin chrome i18n (Nav, Footer, ThemeToggle)](./done/050-admin-chrome-i18n.md) | v0.42.0 |
 | 049 | [CSS token vocabulary freeze](./done/049-css-token-vocabulary-freeze.md) | v0.42.0 |
 | 048 | [Fix `t.xxx` brace-missing literals in `pages.rs`](./done/048-fix-i18n-brace-missing.md) | v0.42.0 |

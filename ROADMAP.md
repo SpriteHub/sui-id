@@ -51,7 +51,8 @@ proposed RFCs once they enter the repository at each phase start.
 
 | Version | What shipped |
 |---|---|
-| v0.42.0 | **Phase A** of the UI/UX hardening plan — RFC 048 (48 `t.xxx` literal-leak fixes), RFC 049 (CSS token freeze + 7 typo fixes), RFC 050 (admin chrome i18n: Nav, Footer, ThemeToggle). Plus the `/me/security/*` locale-resolution fix. Three new CI invariants. |
+| v0.43.0 | **Phase B** of the UI/UX hardening plan — RFC 051 (per-screen i18n completeness audit: 95 hardcoded JA strings → 0 across every render function in `pages.rs`; ~100 new typed Strings fields with ja/en/zh values), RFC 052 (status word + empty placeholder vocabulary unification, completing pre-existing partial work), RFC 053 (copy-button i18n contract, last call site `audit_row_view`). Bug fix: missing Chinese option on `/me/security/language`. Language self-name discipline (`locale_native_*`). RFC 048 grep widened to catch 28 additional brace-missing sites missed in v0.42.0. RFC 054 deferred to v0.44.0. |
+| v0.42.0 | **Phase A** of the UI/UX hardening plan — RFC 048 (48 `t.xxx` literal-leak fixes), RFC 049 (CSS token freeze + 7 typo fixes), RFC 050 (admin chrome i18n: Nav, Footer, ThemeToggle). Plus the `/me/security/*` locale-resolution fix. Two new CI invariants (`text-leaks`, `css-tokens`). |
 | v0.41.0 | RFC 040 completion (`/me/security/mfa`+`/sessions`), RFC 045 (user disable reason), RFC 046 (audit copy-ID), RFC 047 (dev summary + secret rotation) |
 | v0.40.0 | RFC 040 (`/me/security` tabs initial), RFC 041 (HIBP consistency), RFC 042 (error i18n), RFC 043 (dashboard events), RFC 044 (state-word contract) |
 | v0.39.0 | RFC 038 (consent screen), RFC 039 (settings i18n complete) |
@@ -74,18 +75,17 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-v0.42.0 ships Phase A of the v0.42 → v1.0-rc UI/UX hardening plan.
-A v0.41.0 implementation review found that the rendered admin panel
-did not match the design contract the HANDOFF claimed had been
-delivered: 48 `t.xxx` literal leaks on page titles and buttons, 7
-undefined CSS variables breaking visual styling, an entirely non-i18n
-admin navigation chrome, and a `/me/security/*` locale-resolution
-helper that ignored Accept-Language and the user-preference cookie.
-Phase A addresses these correctness gaps so the rest of the hardening
-plan rests on screens that at least render their own headings.
+v0.43.0 ships Phase B of the v0.42 → v1.0-rc UI/UX hardening plan:
+the per-screen i18n completeness sweep. Every visible string on every
+admin page now flows through the typed `Strings` table; the count of
+hardcoded Japanese characters in `pages.rs` went from 95 to 0. Three
+locales (ja / en / zh) are fully populated end-to-end across every
+visited admin route. A side discovery — that the v0.42.0 RFC 048 grep
+missed three categories of brace-missing leak — was fixed in the same
+release.
 
-The project is **on hold for v1.0** until Phases B–F land. Phase B
-(per-screen i18n completeness sweep) is the next milestone.
+The project is **on hold for v1.0** until Phases C–F land. Phase C
+(self-service unification on `/me/security/*`) is the next milestone.
 
 ---
 

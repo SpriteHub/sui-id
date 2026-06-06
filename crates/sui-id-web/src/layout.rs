@@ -84,7 +84,11 @@ const COPY_JS: &str = r#"
     navigator.clipboard.writeText(value).then(function () {
       var orig = btn.textContent;
       btn.setAttribute('aria-pressed','true');
-      btn.textContent = '\u2713 Copied';
+      // RFC 053: localised "Copied" text carried on each button via
+      // data-copy-done. Falls back to a Unicode check + English if
+      // missing.
+      var done = btn.getAttribute('data-copy-done') || '\u2713 Copied';
+      btn.textContent = done;
       setTimeout(function () {
         btn.textContent = orig;
         btn.removeAttribute('aria-pressed');

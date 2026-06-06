@@ -24,6 +24,48 @@ pub static STRINGS_EN: Strings = Strings {
     label_required: "(required)",
     muted_none: "(none)",
 
+    // Language native names (RFC 051) — identical across all locales.
+    locale_native_ja: "日本語",
+    locale_native_en: "English",
+    locale_native_zh: "中文",
+
+    // Lifetime formatting (RFC 051)
+    fmt_lifetime_days: |n, secs| format!("{n} d ({secs}s)"),
+    fmt_lifetime_hours: |n, secs| format!("{n} h ({secs}s)"),
+    fmt_lifetime_minutes: |n, secs| format!("{n} m ({secs}s)"),
+
+    // Settings: Auth extensions (RFC 051)
+    settings_auth_min_length_value: |n| format!("{n} characters"),
+    settings_auth_recovery_codes_label: "Recovery codes (per enrollment)",
+    settings_auth_recovery_codes_value: |n| format!("{n} codes"),
+    settings_auth_mfa_note_prefix: "Enabled per user. See ",
+    settings_auth_mfa_note_suffix: " for details.",
+
+    // Settings: Logs extensions (RFC 051)
+    settings_logs_lede: "Log output settings and audit log status.",
+    settings_logs_kv_format: "Format",
+    settings_logs_kv_filter: "Filter",
+    settings_logs_audit_link_prefix: "For detailed history see ",
+    settings_logs_audit_link_suffix: ".",
+
+    // Settings: Advanced/Other extensions (RFC 051)
+    settings_advanced_lede: "Build, schema, and storage details.",
+    settings_advanced_storage_note_prefix: "The database is a single SQLite file. The master key is read from the key file only when the environment variable ",
+    settings_advanced_storage_note_suffix: " is not set.",
+    settings_advanced_users_count: |n| format!("{n} users "),
+    settings_advanced_clients_count: |n| format!("{n} clients "),
+
+    // Settings: Email extensions (RFC 051)
+    settings_email_enable_checkbox: "Enable email",
+    settings_email_enable_hint: "When disabled, forgot-password and other mail-sending endpoints are unavailable.",
+    settings_email_password_placeholder_change: "(only enter to change)",
+    settings_email_password_placeholder_none: "(leave blank if no authentication)",
+    settings_email_password_hint: "Enter only to change the stored password. Leave blank to keep the existing value.",
+    settings_email_base_url_hint: "Base URL used in reset emails. May differ from the issuer URL.",
+    settings_email_save_button: "Save settings",
+    settings_email_test_section: "Connection test",
+    settings_email_test_lede: "Attempts a connection and authentication to the SMTP server using current settings. No email is sent.",
+
     // Navigation
     nav_dashboard: "Dashboard",
     nav_users: "Users",
@@ -51,6 +93,41 @@ pub static STRINGS_EN: Strings = Strings {
     theme_toggle_light_title: "Light theme",
     theme_toggle_auto_title: "Follow system",
     theme_toggle_dark_title: "Dark theme",
+
+    // Status words (RFC 052)
+    status_active: "Active",
+    status_disabled: "Disabled",
+    status_deleted: "Deleted",
+    status_admin: "Admin",
+    status_on: "On",
+    status_off: "Off",
+    status_in_use: "In use",
+    status_retired: "Retired",
+    status_published: "Published",
+    status_pending: "Pending",
+    status_healthy: "Healthy",
+    status_unhealthy: "Unhealthy",
+
+    // Empty placeholders (RFC 052)
+    empty_dash: "—",
+    empty_any: "(any)",
+    empty_none: "(none)",
+    empty_falls_back_redirect_uris: "(falls back to redirect_uris)",
+    empty_no_email: "(no email)",
+    empty_not_set: "(not set)",
+
+    // Copy-to-clipboard button (RFC 053)
+    copy_button_label: "📋 Copy",
+    copy_button_label_done: "✓ Copied",
+    copy_button_aria_template: "Copy {noun}",
+    copy_noun_client_id: "Client ID",
+    copy_noun_client_secret: "client secret",
+    copy_noun_jwks_uri: "JWKS URI",
+    copy_noun_redirect_uri: "redirect URI",
+    copy_noun_audit_row_id: "audit row ID",
+    copy_noun_setup_token: "setup token",
+    copy_noun_recovery_code: "recovery code",
+    copy_noun_passkey_id: "passkey ID",
 
     // Login
     signed_out_flash: "Signed out.",
@@ -228,7 +305,6 @@ pub static STRINGS_EN: Strings = Strings {
     settings_basic_trusted_proxies: "Trusted proxies",
     settings_basic_trusted_proxies_none: "(none — peer IP is trusted directly)",
     settings_basic_default_lang: "Server default language",
-    settings_basic_default_lang_hint: "Used as a fallback when the user has no preferred language and no Accept-Language header matches.",
     settings_basic_save: "Save",
     settings_basic_saved: "Server settings updated.",
 
@@ -358,6 +434,19 @@ pub static STRINGS_EN: Strings = Strings {
     dashboard_activity_title: "Sign-in activity",
     dashboard_activity_period: "Period",
     dashboard_oidc_endpoints_section: "OIDC endpoints",
+    // Dashboard extensions (RFC 051)
+    dashboard_greeting: |u| format!("Hello, {u}."),
+    dashboard_aria_stats: "Statistics",
+    dashboard_aria_action_required: "Operator action required",
+    dashboard_action_required_title: "Action required",
+    dashboard_activity_success: "Success",
+    dashboard_activity_failure: "Failure",
+    dashboard_activity_hover_hint: "Hover a bucket to see its details.",
+    dashboard_oidc_endpoint_issuer: "Issuer",
+    dashboard_oidc_endpoint_discovery: "Discovery",
+    dashboard_oidc_endpoint_jwks: "JWKS",
+    dashboard_sparkline_aria: "Sign-in activity sparkline",
+    dashboard_sparkline_tooltip: |label, success, failure| format!("{label} : success {success} / failure {failure}"),
 
     // Dashboard operator prompts (RFC 031)
     dashboard_warn_smtp: "Forgot-password email is disabled. Configure SMTP in Settings → Email to enable it.",
@@ -376,6 +465,23 @@ pub static STRINGS_EN: Strings = Strings {
     users_table_th_created: "Created",
     users_is_admin_label: "Grant admin privileges",
     users_empty: "No users yet. Create the first user above.",
+    // Users extensions (RFC 051)
+    users_count_caption: |n| format!("{n} registered."),
+    users_label_username: "Username",
+    users_label_display_name: "Display name (optional)",
+    users_label_email: "Email address (optional)",
+    users_label_password: "Password (12 or more characters)",
+
+    // Admin: Clients (RFC 029)
+    // Admin: Client edit (RFC 051)
+    client_edit_title: "Edit client",
+    client_edit_basic_section: "Basic information",
+    client_edit_basic_note: "Client ID, kind (confidential/public) and client secret are fixed at creation. To change these, delete the client and register a new one.",
+    client_edit_new_secret_label: "New client secret (shown once):",
+    client_edit_label_client_id: "Client ID",
+    client_edit_label_kind: "Kind",
+    client_edit_label_status: "Status",
+    client_edit_post_logout_hint: "One per line. Leave blank to reuse Redirect URIs.",
 
     // Admin: Clients (RFC 029)
     clients_title: "Clients",
@@ -390,6 +496,23 @@ pub static STRINGS_EN: Strings = Strings {
     clients_table_th_status: "Status",
     clients_empty: "No OIDC clients registered. Use the form above to add one.",
     clients_single_realm_note: "sui-id is a single-realm IdP. All users can access all clients. Scopes restrict what information a client can request, not which users can log in.",
+    // Clients page extensions (RFC 051)
+    clients_table_th_client_id: "Client ID",
+    clients_count_caption: |n| format!("{n} registered."),
+    clients_label_app_name: "Application name",
+    clients_label_redirect_uris: "Redirect URIs",
+    clients_hint_redirect_uris: "One per line. https or loopback http only.",
+    clients_label_allowed_scopes: "Allowed scopes",
+    clients_hint_scopes_intro: "Space-separated. Known scopes: ",
+    clients_hint_scopes_openid_note: " (required) · ",
+    clients_hint_scopes_profile_note: " (name, language) · ",
+    clients_hint_scopes_email_note: " (email) · ",
+    clients_hint_scopes_offline_note: " (refresh tokens).",
+    clients_hint_scopes_default: " Leaving this blank defaults to openid profile email.",
+    clients_label_post_logout_uris: "Post-logout redirect URIs (optional)",
+    clients_hint_one_per_line: "One per line.",
+    clients_label_confidential_checkbox: "Confidential client (issues a client secret)",
+    clients_button_register: "Register",
 
     // Admin: Audit log (RFC 029)
     audit_lede: "Administrative operation history (newest first).",
@@ -400,6 +523,11 @@ pub static STRINGS_EN: Strings = Strings {
     audit_filter_label: "Filter by event",
     audit_filter_placeholder: "e.g. auth.login",
     audit_export_csv: "Export CSV",
+    // Audit log extensions (RFC 051)
+    audit_entry_count_caption: |n| format!("({n})"),
+    audit_filter_button: "Filter",
+    audit_chain_broken_note: |seq| format!("Mismatch detected at seq={seq}. Investigate immediately."),
+    audit_chain_ok_note: |checked, legacy| format!("Last {checked} rows inspected. Legacy unhashed rows (pre-v0.17): {legacy}"),
 
     // Admin: Signing keys (RFC 029)
     signing_keys_title: "Signing keys",
@@ -414,6 +542,12 @@ pub static STRINGS_EN: Strings = Strings {
     signing_keys_th_retired: "Retired",
     signing_keys_empty: "No signing keys. Click \"Rotate signing key\" to generate the first key.",
     signing_keys_in_use_badge: "(active)",
+    // Signing keys extensions (RFC 051)
+    signing_keys_count_caption: |n| format!("{n} registered."),
+    signing_keys_th_key_id: "Key ID",
+    signing_keys_rotate_explanation_1: "Rotating issues a new signing key and moves the current one to the retired state.",
+    signing_keys_rotate_explanation_2: "Retired keys stay in JWKS so tokens issued before rotation remain verifiable until they expire.",
+    signing_keys_rotate_explanation_3: "Once those tokens have expired, you can safely delete the retired key from this page.",
 
     // Dangerous operation confirmation screens (RFC 030)
     confirm_cancel: "Cancel",
@@ -456,12 +590,28 @@ pub static STRINGS_EN: Strings = Strings {
     // Settings section keys
     settings_page_title_template: "Settings",
     settings_basic_description: "Review the current effective configuration. To change values, edit sui-id.toml and restart.",
+    // Settings: Basic extensions (RFC 051)
+    settings_basic_default_lang_hint: "Used as a fallback when no per-user preference is set and Accept-Language does not match a supported locale.",
+    settings_basic_kv_issuer: "Issuer",
+    settings_basic_kv_listen: "Listen address",
+    settings_basic_kv_cookie_secure: "Cookie Secure flag",
+    settings_basic_kv_trusted_proxies: "Trusted proxies",
     settings_security_session_section: "Session limits",
     settings_security_session_lede: "Idle timeout and concurrent session cap. Both default to 0 (disabled); opt in per your policy.",
     settings_security_idle_timeout_label: "Idle timeout (seconds)",
     settings_security_max_sessions_label: "Max concurrent sessions per user",
     settings_security_lockout_section: "Account lockout",
     settings_security_headers_section: "Security headers",
+    // Settings: Security extensions (RFC 051)
+    settings_security_idle_timeout_hint: "0 disables. 0 < N ≤ 2,592,000 (= 30 days).",
+    settings_security_max_sessions_hint: "0 disables. 1 ≤ N ≤ 1000. When exceeded, the oldest session is auto-revoked (FIFO).",
+    settings_security_lockout_hint_1: "Cap on progressive backoff. Failed-attempt lockout time will never exceed this value.",
+    settings_security_lockout_hint_2_pre: "Administrators can clear a lockout at any time via the ",
+    settings_security_lockout_hint_2_post: " command.",
+    settings_security_headers_perm_policy_label: "Permissions-Policy (minimal)",
+    settings_security_headers_hint: "All admin pages return the headers above. /oauth2/* public endpoints omit some headers where the protocol requires it.",
+    settings_security_cors_token_label: "Token endpoint dynamic allow-list (origins of registered redirect_uris)",
+    settings_security_cors_public_label: "Discovery / JWKS / userinfo open to all origins (*)",
     settings_auth_password_section: "Password",
     settings_auth_mfa_section: "Two-factor authentication",
     settings_auth_oidc_section: "OIDC / token settings",
@@ -514,26 +664,21 @@ pub static STRINGS_EN: Strings = Strings {
     settings_advanced_server_time_label: "Server time",
     settings_advanced_db_file_label: "Database file",
     settings_advanced_key_file_label: "Master key file",
-    settings_advanced_users_count: "Users",
-    settings_advanced_clients_count: "Clients",
     settings_advanced_manage_link: "Manage →",
     // Settings: email tab body (RFC 039)
     settings_email_page_title: "Settings — Email",
     settings_email_lede: "SMTP settings for password-reset and change notification emails.",
     settings_email_smtp_section: "SMTP connection",
     settings_email_enable_label: "Enable email delivery",
-    settings_email_enable_hint: "When off, forgot-password and notification endpoints are disabled.",
     settings_email_host_label: "SMTP host",
     settings_email_port_label: "Port",
     settings_email_port_hint: "587 (STARTTLS) or 465 (implicit TLS) are common.",
     settings_email_tls_label: "TLS mode",
     settings_email_tls_implicit: "Implicit TLS (465)",
     settings_email_username_label: "Username (optional)",
-    settings_email_password_hint: "Leave blank to keep the saved password.",
     settings_email_from_addr_label: "From address",
     settings_email_from_name_label: "From display name (optional)",
     settings_email_base_url_label: "Public base URL",
-    settings_email_base_url_hint: "Base URL for reset links in email. Can differ from issuer URL.",
     settings_email_test_button: "Test connection",
     settings_email_test_hint: "Attempts SMTP connection with current settings. No mail is sent.",
 

@@ -27,6 +27,48 @@ pub static STRINGS_ZH: Strings = Strings {
     label_required: "（必填）",
     muted_none: "（无）",
 
+    // Language native names (RFC 051) — identical across all locales.
+    locale_native_ja: "日本語",
+    locale_native_en: "English",
+    locale_native_zh: "中文",
+
+    // Lifetime formatting (RFC 051)
+    fmt_lifetime_days: |n, secs| format!("{n} 天 ({secs}s)"),
+    fmt_lifetime_hours: |n, secs| format!("{n} 小时 ({secs}s)"),
+    fmt_lifetime_minutes: |n, secs| format!("{n} 分钟 ({secs}s)"),
+
+    // Settings: Auth extensions (RFC 051)
+    settings_auth_min_length_value: |n| format!("{n} 个字符"),
+    settings_auth_recovery_codes_label: "恢复码（每次注册）",
+    settings_auth_recovery_codes_value: |n| format!("{n} 个"),
+    settings_auth_mfa_note_prefix: "按用户启用。详情请参见 ",
+    settings_auth_mfa_note_suffix: "。",
+
+    // Settings: Logs extensions (RFC 051)
+    settings_logs_lede: "日志输出设置与审计日志状态。",
+    settings_logs_kv_format: "Format",
+    settings_logs_kv_filter: "Filter",
+    settings_logs_audit_link_prefix: "详细历史请参见 ",
+    settings_logs_audit_link_suffix: "。",
+
+    // Settings: Advanced/Other extensions (RFC 051)
+    settings_advanced_lede: "构建信息、模式与存储。",
+    settings_advanced_storage_note_prefix: "数据库为单一 SQLite 文件。主密钥仅在环境变量 ",
+    settings_advanced_storage_note_suffix: " 未设置时才从密钥文件读取。",
+    settings_advanced_users_count: |n| format!("{n} 名 "),
+    settings_advanced_clients_count: |n| format!("{n} 个 "),
+
+    // Settings: Email extensions (RFC 051)
+    settings_email_enable_checkbox: "启用邮件功能",
+    settings_email_enable_hint: "关闭时，忘记密码等邮件发送端点不可用。",
+    settings_email_password_placeholder_change: "（仅修改时填写）",
+    settings_email_password_placeholder_none: "（无需认证时留空）",
+    settings_email_password_hint: "仅在修改保存的密码时填写。留空时保留原有值。",
+    settings_email_base_url_hint: "重置邮件中使用的 URL 基址。可与 Issuer URL 不同。",
+    settings_email_save_button: "保存设置",
+    settings_email_test_section: "连接测试",
+    settings_email_test_lede: "使用当前设置尝试连接并认证 SMTP 服务器。不会发送邮件。",
+
     // Navigation
     nav_dashboard: "仪表盘",
     nav_users: "用户",
@@ -54,6 +96,41 @@ pub static STRINGS_ZH: Strings = Strings {
     theme_toggle_light_title: "浅色主题",
     theme_toggle_auto_title: "跟随系统",
     theme_toggle_dark_title: "深色主题",
+
+    // Status words (RFC 052)
+    status_active: "启用",
+    status_disabled: "已禁用",
+    status_deleted: "已删除",
+    status_admin: "管理员",
+    status_on: "开",
+    status_off: "关",
+    status_in_use: "使用中",
+    status_retired: "已退役",
+    status_published: "已发布",
+    status_pending: "待处理",
+    status_healthy: "正常",
+    status_unhealthy: "异常",
+
+    // Empty placeholders (RFC 052)
+    empty_dash: "—",
+    empty_any: "（全部）",
+    empty_none: "（无）",
+    empty_falls_back_redirect_uris: "（回退到 redirect_uris）",
+    empty_no_email: "（无邮箱）",
+    empty_not_set: "（未设置）",
+
+    // Copy-to-clipboard button (RFC 053)
+    copy_button_label: "📋 复制",
+    copy_button_label_done: "✓ 已复制",
+    copy_button_aria_template: "复制 {noun}",
+    copy_noun_client_id: "Client ID",
+    copy_noun_client_secret: "客户端密钥",
+    copy_noun_jwks_uri: "JWKS URI",
+    copy_noun_redirect_uri: "重定向 URI",
+    copy_noun_audit_row_id: "审计条目 ID",
+    copy_noun_setup_token: "初始化令牌",
+    copy_noun_recovery_code: "恢复码",
+    copy_noun_passkey_id: "通行密钥 ID",
 
     // Login
     signed_out_flash: "已退出登录。",
@@ -231,7 +308,6 @@ pub static STRINGS_ZH: Strings = Strings {
     settings_basic_trusted_proxies: "可信代理",
     settings_basic_trusted_proxies_none: "（无 — 直接信任对端 IP）",
     settings_basic_default_lang: "服务器默认语言",
-    settings_basic_default_lang_hint: "当用户没有设置首选语言且没有匹配的 Accept-Language 请求头时使用。",
     settings_basic_save: "保存",
     settings_basic_saved: "服务器设置已更新。",
 
@@ -361,6 +437,19 @@ pub static STRINGS_ZH: Strings = Strings {
     dashboard_activity_title: "登录活动",
     dashboard_activity_period: "时间范围",
     dashboard_oidc_endpoints_section: "OIDC 端点",
+    // Dashboard extensions (RFC 051)
+    dashboard_greeting: |u| format!("您好，{u}。"),
+    dashboard_aria_stats: "统计",
+    dashboard_aria_action_required: "需要操作员处理",
+    dashboard_action_required_title: "需要处理",
+    dashboard_activity_success: "成功",
+    dashboard_activity_failure: "失败",
+    dashboard_activity_hover_hint: "悬停查看每个时间段的详细信息。",
+    dashboard_oidc_endpoint_issuer: "Issuer",
+    dashboard_oidc_endpoint_discovery: "Discovery",
+    dashboard_oidc_endpoint_jwks: "JWKS",
+    dashboard_sparkline_aria: "登录活动迷你图",
+    dashboard_sparkline_tooltip: |label, success, failure| format!("{label} : 成功 {success} / 失败 {failure}"),
 
     // 仪表盘：操作员提示 (RFC 031)
     dashboard_warn_smtp: "密码重置邮件已禁用，请在设置 → 邮件中配置 SMTP。",
@@ -379,6 +468,23 @@ pub static STRINGS_ZH: Strings = Strings {
     users_table_th_created: "创建时间",
     users_is_admin_label: "授予管理员权限",
     users_empty: "暂无用户，请在上方表单中创建第一个用户。",
+    // Users extensions (RFC 051)
+    users_count_caption: |n| format!("当前 {n} 名。"),
+    users_label_username: "用户名",
+    users_label_display_name: "显示名（可选）",
+    users_label_email: "邮箱地址（可选）",
+    users_label_password: "密码（12 个字符以上）",
+
+    // Admin: 客户端管理 (RFC 029)
+    // Admin: 客户端编辑 (RFC 051)
+    client_edit_title: "编辑客户端",
+    client_edit_basic_section: "基本信息",
+    client_edit_basic_note: "Client ID、类型（confidential/public）和 client secret 在创建时固定。如需修改，请删除后重新注册。",
+    client_edit_new_secret_label: "新的 client secret（仅此页面显示一次）：",
+    client_edit_label_client_id: "Client ID",
+    client_edit_label_kind: "类型",
+    client_edit_label_status: "状态",
+    client_edit_post_logout_hint: "每行一个。留空＝沿用 Redirect URIs。",
 
     // Admin: 客户端管理 (RFC 029)
     clients_title: "客户端管理",
@@ -393,6 +499,23 @@ pub static STRINGS_ZH: Strings = Strings {
     clients_table_th_status: "状态",
     clients_empty: "暂无 OIDC 客户端，请使用上方表单注册。",
     clients_single_realm_note: "sui-id 是单域 IdP，所有用户均可访问所有客户端。权限范围限制客户端可请求的信息，而非限制哪些用户可以登录。",
+    // Clients page extensions (RFC 051)
+    clients_table_th_client_id: "Client ID",
+    clients_count_caption: |n| format!("当前 {n} 个。"),
+    clients_label_app_name: "应用名称",
+    clients_label_redirect_uris: "Redirect URIs",
+    clients_hint_redirect_uris: "每行一个，仅支持 https 或回环 http。",
+    clients_label_allowed_scopes: "允许的权限范围 (Allowed scopes)",
+    clients_hint_scopes_intro: "空格分隔。已知范围：",
+    clients_hint_scopes_openid_note: " (必填) · ",
+    clients_hint_scopes_profile_note: " (姓名、语言) · ",
+    clients_hint_scopes_email_note: " (邮箱) · ",
+    clients_hint_scopes_offline_note: " (刷新令牌)。",
+    clients_hint_scopes_default: "留空时默认为 openid profile email。",
+    clients_label_post_logout_uris: "Post-logout redirect URIs（可选）",
+    clients_hint_one_per_line: "每行一个。",
+    clients_label_confidential_checkbox: "Confidential client（发放 client secret）",
+    clients_button_register: "注册",
 
     // Admin: 审计日志 (RFC 029)
     audit_lede: "管理操作历史（最新在前）。",
@@ -403,6 +526,11 @@ pub static STRINGS_ZH: Strings = Strings {
     audit_filter_label: "按事件筛选",
     audit_filter_placeholder: "例如：auth.login",
     audit_export_csv: "导出 CSV",
+    // Audit log extensions (RFC 051)
+    audit_entry_count_caption: |n| format!("({n} 条)"),
+    audit_filter_button: "筛选",
+    audit_chain_broken_note: |seq| format!("在 seq={seq} 处检测到不一致，请立即调查。"),
+    audit_chain_ok_note: |checked, legacy| format!("已检查最近 {checked} 行。遗留（v0.17 之前）未哈希行：{legacy}"),
 
     // Admin: 签名密钥 (RFC 029)
     signing_keys_title: "签名密钥",
@@ -417,6 +545,12 @@ pub static STRINGS_ZH: Strings = Strings {
     signing_keys_th_retired: "退役时间",
     signing_keys_empty: "暂无签名密钥，请点击\"轮换签名密钥\"生成第一个密钥。",
     signing_keys_in_use_badge: "（使用中）",
+    // Signing keys extensions (RFC 051)
+    signing_keys_count_caption: |n| format!("已登记 {n} 个。"),
+    signing_keys_th_key_id: "Key ID",
+    signing_keys_rotate_explanation_1: "执行轮换将签发新的签名密钥，并将当前密钥移至「退役」状态。",
+    signing_keys_rotate_explanation_2: "退役密钥仍保留在 JWKS 中，确保已签发但未过期的令牌仍可验证。",
+    signing_keys_rotate_explanation_3: "待这些令牌到期之后，可在本页安全地删除退役密钥。",
 
     // 危险操作确认页面 (RFC 030)
     confirm_cancel: "取消",
@@ -459,12 +593,28 @@ pub static STRINGS_ZH: Strings = Strings {
     // 设置页面分区键
     settings_page_title_template: "设置",
     settings_basic_description: "查看当前有效配置。如需修改，请编辑 sui-id.toml 并重启。",
+    // Settings: Basic extensions (RFC 051)
+    settings_basic_default_lang_hint: "当未设置用户偏好且浏览器 Accept-Language 不匹配支持的语言时，使用此值作为回退。",
+    settings_basic_kv_issuer: "Issuer",
+    settings_basic_kv_listen: "监听地址",
+    settings_basic_kv_cookie_secure: "Cookie Secure 标志",
+    settings_basic_kv_trusted_proxies: "受信代理",
     settings_security_session_section: "会话限制",
     settings_security_session_lede: "空闲超时和每用户并发会话上限，均默认为 0（禁用），按需启用。",
     settings_security_idle_timeout_label: "空闲超时（秒）",
     settings_security_max_sessions_label: "每用户最大并发会话数",
     settings_security_lockout_section: "账户锁定",
     settings_security_headers_section: "安全响应头",
+    // Settings: Security extensions (RFC 051)
+    settings_security_idle_timeout_hint: "0 表示禁用。0 < N ≤ 2,592,000（= 30 天）。",
+    settings_security_max_sessions_hint: "0 表示禁用。1 ≤ N ≤ 1000。超过时自动撤销最旧的会话（FIFO）。",
+    settings_security_lockout_hint_1: "渐进式回退的上限值。失败累计时间不会超过该值。",
+    settings_security_lockout_hint_2_pre: "管理员随时可通过 ",
+    settings_security_lockout_hint_2_post: " 命令解锁。",
+    settings_security_headers_perm_policy_label: "Permissions-Policy（最小）",
+    settings_security_headers_hint: "所有管理页面均返回上述响应头。/oauth2/* 公开端点会按协议要求省略部分头。",
+    settings_security_cors_token_label: "Token 端点的动态允许列表（已注册 redirect_uris 的来源）",
+    settings_security_cors_public_label: "Discovery / JWKS / userinfo 公开允许（*）",
     settings_auth_password_section: "密码",
     settings_auth_mfa_section: "双重认证",
     settings_auth_oidc_section: "OIDC / 令牌设置",
@@ -517,26 +667,21 @@ pub static STRINGS_ZH: Strings = Strings {
     settings_advanced_server_time_label: "服务器时间",
     settings_advanced_db_file_label: "数据库文件",
     settings_advanced_key_file_label: "主密钥文件",
-    settings_advanced_users_count: "用户",
-    settings_advanced_clients_count: "客户端",
     settings_advanced_manage_link: "管理 →",
     // 设置: 邮件选项卡正文 (RFC 039)
     settings_email_page_title: "设置 — 邮件",
     settings_email_lede: "用于密码重置和更改通知邮件的 SMTP 设置。",
     settings_email_smtp_section: "SMTP 连接",
     settings_email_enable_label: "启用邮件发送",
-    settings_email_enable_hint: "关闭时，忘记密码等邮件发送端点将被禁用。",
     settings_email_host_label: "SMTP 主机",
     settings_email_port_label: "端口",
     settings_email_port_hint: "587（STARTTLS）或 465（隐式 TLS）较为常见。",
     settings_email_tls_label: "TLS 模式",
     settings_email_tls_implicit: "隐式 TLS（465）",
     settings_email_username_label: "用户名（可选）",
-    settings_email_password_hint: "仅在需要修改密码时填写，留空则保留已保存的密码。",
     settings_email_from_addr_label: "发件人地址",
     settings_email_from_name_label: "发件人显示名称（可选）",
     settings_email_base_url_label: "公开 Base URL",
-    settings_email_base_url_hint: "邮件中重置链接的 URL 基础。可与 Issuer URL 不同。",
     settings_email_test_button: "测试连接",
     settings_email_test_hint: "使用当前设置尝试连接 SMTP 服务器，不会发送邮件。",
 

@@ -35,6 +35,54 @@ pub struct Strings {
     pub label_required: &'static str,
     pub muted_none: &'static str,
 
+    // ---- Language native names (RFC 051) ----
+    // Each language's name in its own script. These values are
+    // intentionally the SAME across all three locale files: a Japanese
+    // user sees "日本語" exactly as a French user would, since this is
+    // how the language refers to itself. Routing through `Strings`
+    // makes the convention explicit and silences the CJK grep.
+    pub locale_native_ja: &'static str,
+    pub locale_native_en: &'static str,
+    pub locale_native_zh: &'static str,
+
+    // ---- Lifetime formatting (RFC 051) ----
+    // Used by fmt_lifetime() to render durations like "30 days (2592000s)".
+    pub fmt_lifetime_days: fn(i64, i64) -> String,
+    pub fmt_lifetime_hours: fn(i64, i64) -> String,
+    pub fmt_lifetime_minutes: fn(i64, i64) -> String,
+
+    // ---- Settings: Auth extensions (RFC 051) ----
+    pub settings_auth_min_length_value: fn(usize) -> String,
+    pub settings_auth_recovery_codes_label: &'static str,
+    pub settings_auth_recovery_codes_value: fn(usize) -> String,
+    pub settings_auth_mfa_note_prefix: &'static str,
+    pub settings_auth_mfa_note_suffix: &'static str,
+
+    // ---- Settings: Logs extensions (RFC 051) ----
+    pub settings_logs_lede: &'static str,
+    pub settings_logs_kv_format: &'static str,
+    pub settings_logs_kv_filter: &'static str,
+    pub settings_logs_audit_link_prefix: &'static str,
+    pub settings_logs_audit_link_suffix: &'static str,
+
+    // ---- Settings: Advanced/Other extensions (RFC 051) ----
+    pub settings_advanced_lede: &'static str,
+    pub settings_advanced_storage_note_prefix: &'static str,
+    pub settings_advanced_storage_note_suffix: &'static str,
+    pub settings_advanced_users_count: fn(usize) -> String,
+    pub settings_advanced_clients_count: fn(usize) -> String,
+
+    // ---- Settings: Email extensions (RFC 051) ----
+    pub settings_email_enable_checkbox: &'static str,
+    pub settings_email_enable_hint: &'static str,
+    pub settings_email_password_placeholder_change: &'static str,
+    pub settings_email_password_placeholder_none: &'static str,
+    pub settings_email_password_hint: &'static str,
+    pub settings_email_base_url_hint: &'static str,
+    pub settings_email_save_button: &'static str,
+    pub settings_email_test_section: &'static str,
+    pub settings_email_test_lede: &'static str,
+
     // ---- Navigation ----
     pub nav_dashboard: &'static str,
     pub nav_users: &'static str,
@@ -62,6 +110,54 @@ pub struct Strings {
     pub theme_toggle_light_title: &'static str,
     pub theme_toggle_auto_title: &'static str,
     pub theme_toggle_dark_title: &'static str,
+
+    // ---- Status words (RFC 052) ----
+    // Single source of truth for the status badges that previously
+    // duplicated their text+class assignment across 24+ call sites.
+    // Used via `components::status_badge(t, kind)`.
+    pub status_active: &'static str,
+    pub status_disabled: &'static str,
+    pub status_deleted: &'static str,
+    pub status_admin: &'static str,
+    pub status_on: &'static str,
+    pub status_off: &'static str,
+    pub status_in_use: &'static str,
+    pub status_retired: &'static str,
+    pub status_published: &'static str,
+    pub status_pending: &'static str,
+    pub status_healthy: &'static str,
+    pub status_unhealthy: &'static str,
+
+    // ---- Empty placeholders (RFC 052) ----
+    // For rendering "no value" / "any" / "fallback" cells consistently.
+    // The em-dash `empty_dash` replaces the ASCII `-` previously used,
+    // because U+2014 renders consistently across CJK and Latin fonts
+    // and is unambiguous (the ASCII hyphen could be confused with a
+    // real value).
+    pub empty_dash: &'static str,
+    pub empty_any: &'static str,
+    pub empty_none: &'static str,
+    pub empty_falls_back_redirect_uris: &'static str,
+    pub empty_no_email: &'static str,
+    pub empty_not_set: &'static str,
+
+    // ---- Copy-to-clipboard button (RFC 053) ----
+    // The clipboard button reads `copy_button_label` for its idle text
+    // and `copy_button_label_done` for its post-click confirmation. The
+    // aria-label / title attributes are built from
+    // `copy_button_aria_template`, where `{noun}` is replaced with one
+    // of the `copy_noun_*` strings at the call site.
+    pub copy_button_label: &'static str,
+    pub copy_button_label_done: &'static str,
+    pub copy_button_aria_template: &'static str,
+    pub copy_noun_client_id: &'static str,
+    pub copy_noun_client_secret: &'static str,
+    pub copy_noun_jwks_uri: &'static str,
+    pub copy_noun_redirect_uri: &'static str,
+    pub copy_noun_audit_row_id: &'static str,
+    pub copy_noun_setup_token: &'static str,
+    pub copy_noun_recovery_code: &'static str,
+    pub copy_noun_passkey_id: &'static str,
 
     // ---- Login ----
     pub signed_out_flash: &'static str,
@@ -402,6 +498,19 @@ pub struct Strings {
     pub dashboard_activity_title: &'static str,
     pub dashboard_activity_period: &'static str,
     pub dashboard_oidc_endpoints_section: &'static str,
+    // ---- Admin: Dashboard extensions (RFC 051) ----
+    pub dashboard_greeting: fn(&str) -> String,
+    pub dashboard_aria_stats: &'static str,
+    pub dashboard_aria_action_required: &'static str,
+    pub dashboard_action_required_title: &'static str,
+    pub dashboard_activity_success: &'static str,
+    pub dashboard_activity_failure: &'static str,
+    pub dashboard_activity_hover_hint: &'static str,
+    pub dashboard_oidc_endpoint_issuer: &'static str,
+    pub dashboard_oidc_endpoint_discovery: &'static str,
+    pub dashboard_oidc_endpoint_jwks: &'static str,
+    pub dashboard_sparkline_aria: &'static str,
+    pub dashboard_sparkline_tooltip: fn(&str, i64, i64) -> String,
     // ---- Admin: Dashboard operator prompts (RFC 031) ----
     pub dashboard_warn_smtp: &'static str,
     pub dashboard_warn_hibp: &'static str,
@@ -420,6 +529,11 @@ pub struct Strings {
     pub settings_page_title_template: &'static str, // "{tab} — Settings"
     // Basic tab sections
     pub settings_basic_description: &'static str,
+    // Settings: Basic extensions (RFC 051)
+    pub settings_basic_kv_issuer: &'static str,
+    pub settings_basic_kv_listen: &'static str,
+    pub settings_basic_kv_cookie_secure: &'static str,
+    pub settings_basic_kv_trusted_proxies: &'static str,
     // Security tab sections
     pub settings_security_session_section: &'static str,
     pub settings_security_session_lede: &'static str,
@@ -427,6 +541,16 @@ pub struct Strings {
     pub settings_security_max_sessions_label: &'static str,
     pub settings_security_lockout_section: &'static str,
     pub settings_security_headers_section: &'static str,
+    // ---- Settings: Security extensions (RFC 051) ----
+    pub settings_security_idle_timeout_hint: &'static str,
+    pub settings_security_max_sessions_hint: &'static str,
+    pub settings_security_lockout_hint_1: &'static str,
+    pub settings_security_lockout_hint_2_pre: &'static str,
+    pub settings_security_lockout_hint_2_post: &'static str,
+    pub settings_security_headers_perm_policy_label: &'static str,
+    pub settings_security_headers_hint: &'static str,
+    pub settings_security_cors_token_label: &'static str,
+    pub settings_security_cors_public_label: &'static str,
     // Authentication tab sections
     pub settings_auth_password_section: &'static str,
     pub settings_auth_mfa_section: &'static str,
@@ -501,8 +625,6 @@ pub struct Strings {
     pub settings_advanced_server_time_label: &'static str,
     pub settings_advanced_db_file_label: &'static str,
     pub settings_advanced_key_file_label: &'static str,
-    pub settings_advanced_users_count: &'static str,
-    pub settings_advanced_clients_count: &'static str,
     pub settings_advanced_manage_link: &'static str,
 
     // ---- Settings: email tab body (RFC 039) ----
@@ -510,18 +632,15 @@ pub struct Strings {
     pub settings_email_lede: &'static str,
     pub settings_email_smtp_section: &'static str,
     pub settings_email_enable_label: &'static str,
-    pub settings_email_enable_hint: &'static str,
     pub settings_email_host_label: &'static str,
     pub settings_email_port_label: &'static str,
     pub settings_email_port_hint: &'static str,
     pub settings_email_tls_label: &'static str,
     pub settings_email_tls_implicit: &'static str,
     pub settings_email_username_label: &'static str,
-    pub settings_email_password_hint: &'static str,
     pub settings_email_from_addr_label: &'static str,
     pub settings_email_from_name_label: &'static str,
     pub settings_email_base_url_label: &'static str,
-    pub settings_email_base_url_hint: &'static str,
     pub settings_email_test_button: &'static str,
     pub settings_email_test_hint: &'static str,
 
@@ -555,6 +674,22 @@ pub struct Strings {
     pub users_table_th_created: &'static str,
     pub users_is_admin_label: &'static str,
     pub users_empty: &'static str,
+    // ---- Admin: Users extensions (RFC 051) ----
+    pub users_count_caption: fn(usize) -> String,
+    pub users_label_username: &'static str,
+    pub users_label_display_name: &'static str,
+    pub users_label_email: &'static str,
+    pub users_label_password: &'static str,
+
+    // ---- Admin: Client edit (RFC 051) ----
+    pub client_edit_title: &'static str,
+    pub client_edit_basic_section: &'static str,
+    pub client_edit_basic_note: &'static str,
+    pub client_edit_new_secret_label: &'static str,
+    pub client_edit_label_client_id: &'static str,
+    pub client_edit_label_kind: &'static str,
+    pub client_edit_label_status: &'static str,
+    pub client_edit_post_logout_hint: &'static str,
 
     // ---- Admin: Clients (RFC 029) ----
     pub clients_title: &'static str,
@@ -569,6 +704,23 @@ pub struct Strings {
     pub clients_table_th_status: &'static str,
     pub clients_empty: &'static str,
     pub clients_single_realm_note: &'static str,
+    // ---- Clients page extensions (RFC 051) ----
+    pub clients_table_th_client_id: &'static str,
+    pub clients_count_caption: fn(usize) -> String,
+    pub clients_label_app_name: &'static str,
+    pub clients_label_redirect_uris: &'static str,
+    pub clients_hint_redirect_uris: &'static str,
+    pub clients_label_allowed_scopes: &'static str,
+    pub clients_hint_scopes_intro: &'static str,
+    pub clients_hint_scopes_openid_note: &'static str,
+    pub clients_hint_scopes_profile_note: &'static str,
+    pub clients_hint_scopes_email_note: &'static str,
+    pub clients_hint_scopes_offline_note: &'static str,
+    pub clients_hint_scopes_default: &'static str,
+    pub clients_label_post_logout_uris: &'static str,
+    pub clients_hint_one_per_line: &'static str,
+    pub clients_label_confidential_checkbox: &'static str,
+    pub clients_button_register: &'static str,
 
     // ---- Admin: Audit log (RFC 029) ----
     pub audit_lede: &'static str,
@@ -578,6 +730,11 @@ pub struct Strings {
     pub audit_filter_label: &'static str,
     pub audit_filter_placeholder: &'static str,
     pub audit_export_csv: &'static str,
+    // ---- Audit log extensions (RFC 051) ----
+    pub audit_entry_count_caption: fn(usize) -> String,
+    pub audit_filter_button: &'static str,
+    pub audit_chain_broken_note: fn(i64) -> String,
+    pub audit_chain_ok_note: fn(usize, usize) -> String,
 
 
     // ---- Admin: Signing keys (RFC 029) ----
@@ -593,6 +750,12 @@ pub struct Strings {
     pub signing_keys_th_retired: &'static str,
     pub signing_keys_empty: &'static str,
     pub signing_keys_in_use_badge: &'static str,
+    // ---- Signing keys extensions (RFC 051) ----
+    pub signing_keys_count_caption: fn(usize) -> String,
+    pub signing_keys_th_key_id: &'static str,
+    pub signing_keys_rotate_explanation_1: &'static str,
+    pub signing_keys_rotate_explanation_2: &'static str,
+    pub signing_keys_rotate_explanation_3: &'static str,
     // ---- Dangerous operation confirmation screens (RFC 030) ----
     pub confirm_cancel: &'static str,
     pub badge_recoverable: &'static str,

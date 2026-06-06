@@ -1,6 +1,6 @@
 # RFC 053 — Copy-button i18n contract
 
-**Status.** Proposed
+**Status.** Implemented (v0.43.0)
 **Priority.** P1 — Phase B (v0.43.0)
 **Tracks.** Closes a long-tail i18n leak that RFC 051's
 body-text audit deliberately leaves out (since copy-button
