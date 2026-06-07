@@ -95,4 +95,43 @@ pub const CARDS_CSS: &str = r#"
   display: inline-block;
 }
 
+/* ── Callout (RFC-MI-011, v0.50.1) ───────────────────────────────────── */
+/* Persistent explanatory block. Not a flash banner (transient) and       */
+/* not a card (no shadow / elevation). Used for setup instructions,        */
+/* security-policy notes, and any "read this before you proceed" block.   */
+/*                                                                         */
+/* .callout           — neutral (surface-subtle + border-muted)           */
+/* .callout--info     — informational (info-subtle + info-default border) */
+/* .callout--success  — confirmation (success-subtle + success-default)   */
+/* .callout--warning  — caution (warning-subtle + warning-default)        */
+/* .callout--danger   — destructive action (danger-subtle + danger-default)*/
+/*                                                                         */
+/* Note: .card--callout (existing) uses accent fill for "next steps" CTA  */
+/* blocks. The new .callout is tone-neutral; prefer it for read-only       */
+/* informational copy.                                                     */
+.callout {
+  background: var(--surface-subtle);
+  border: var(--border-width-default) solid var(--border-muted);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  color: var(--fg-default);
+}
+.callout + .callout { margin-top: var(--space-2); }
+.callout--info {
+  background: var(--info-subtle);
+  border-color: var(--info-default);
+}
+.callout--success {
+  background: var(--success-subtle);
+  border-color: var(--success-default);
+}
+.callout--warning {
+  background: var(--warning-subtle);
+  border-color: var(--warning-default);
+}
+.callout--danger {
+  background: var(--danger-subtle);
+  border-color: var(--danger-default);
+}
+
 "#;

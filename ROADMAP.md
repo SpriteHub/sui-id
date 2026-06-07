@@ -65,12 +65,12 @@ implementation work has an auditable baseline. See
 [`docs/mockup-integration/`](docs/mockup-integration/) for the
 migration plan, codebase handoff, and mockup handoff package.
 
-| Phase | Target version | Theme                                                   | RFCs (proposed)               |
+| Phase | Target version | Theme                                                   | RFCs                          |
 |-------|----------------|---------------------------------------------------------|-------------------------------|
-| **0** | v0.49.0        | RFCs + planning artifacts introduced (no runtime code) | RFC-MI-000                    |
-| **0** | v0.49.1        | Baseline delta inventory shipped; RFC-MI-000 → `done/` | RFC-MI-000 → `done/`          |
-| **1** | **v0.50.0**    | **CSS sharding (this release; D-01 blocker resolved)**  | RFC-MI-010 → `done/`          |
-| **1** | v0.50.x        | Token mapping + visual primitives; theme persistence    | RFC-MI-011, RFC-MI-012        |
+| **0** | v0.49.0        | RFCs + planning artifacts introduced                    | RFC-MI-000 → `done/`          |
+| **0** | v0.49.1        | Baseline delta inventory; RFC-MI-000 → `done/`          | RFC-MI-000 → `done/`          |
+| **1** | v0.50.0        | CSS sharding (D-01 blocker resolved)                    | RFC-MI-010 → `done/`          |
+| **1** | **v0.50.1**    | **Token mapping + primitives; theme decision (this release; Phase 1 complete)** | RFC-MI-011, 012 → `done/` |
 | **2** | v0.51.0        | Shell layout, server-rendered CSRF, route-based tabs    | RFC-MI-020, 021, 022          |
 | **3** | v0.52.0        | Read-only admin: dashboard, audit, tables               | RFC-MI-030, 031               |
 | **4** | v0.53.0        | Setup wizard + authentication surfaces                  | RFC-MI-040, 041               |
@@ -92,6 +92,7 @@ deferred (verification phase, spec §22).
 
 | Version | What shipped |
 |---|---|
+| v0.50.1 | **Phase 1 complete: RFC-MI-011 (Token Mapping + Visual Primitives) + RFC-MI-012 (Theme Persistence).** Zero new CSS tokens (mockup vocabulary is a strict subset of the product's). Three CSS primitives adopted: `.callout` + tone variants (→ `cards.rs`), `.field__error` + `.field--invalid` (→ `forms.rs`), `.dl-grid` (→ `utilities.rs`). Theme persistence: **Option A chosen** (preserve `localStorage` model, no code change). Phase-1 blockers D-01/D-02/D-03 status: D-01 resolved (v0.50.0); D-02 and D-03 owned by Phase 2 (RFC-MI-022 and RFC-MI-021). **228/228 tests PASS; 0 warnings; all 4 CI invariants unchanged.** |
 | v0.50.0 | **Phase 1 opens: RFC-MI-010 (Component CSS Sharding).** `components.rs` (1094 lines) split into 11 bounded shards under `components/` (badges, banners, buttons, cards, chrome, confirm, forms, setup, tables, tabs, utilities). `StatusKind` + `status_badge` moved to `badges.rs`; re-exported from `components.rs` for backward compatibility. `components_css()` fn (OnceLock-cached) replaces the former `COMPONENTS_CSS` const — produces a byte-identical CSS body to v0.49.x. Phase-1 blocker `D-01` (CSS sharding) resolved. **228/228 tests PASS; 0 warnings; all 4 CI invariants unchanged.** |
 | v0.49.1 | **Phase 0 of the Mockup Integration arc completes.** The six baseline-inventory documents specified by `RFC-MI-000` (`screen-map.md`, `dangerous-action-map.md`, `tab-routing-delta.md`, `token-delta-draft.md`, `i18n-copy-delta-draft.md`, `route-render-handler-map.md` + a `README.md` index) ship under `docs/mockup-integration/inventory/`. Headline findings: zero new CSS tokens (mockup vocabulary is a strict subset of the product's), 18 dangerous-action values reduce to 9 link-rewrites + 5 do-not-implement + 3 step-up-policy-deltas + 1 inline-only, the 382 mockup-only i18n keys are mostly renames (~58 net-new keys × 3 locales = ~174 translation entries). `RFC-MI-000` moves to `rfcs/done/` with `Status = Implemented (v0.49.1)`. **No runtime code change**; CI invariants unchanged; 228/228 library tests PASS. |
 | v0.49.0 | **Opens the Mockup Integration ("MI") arc.** Sixteen `RFC-MI-NNN` documents added to `rfcs/proposed/` (Phase 0 → Phase 8 plan); supporting planning artifacts placed under `docs/mockup-integration/` (migration plan, codebase handoff, mockup handoff package) and `docs/development-specification.md` (v3 spec). `rfcs/README.md` rewritten to surface the MI namespace and the eight-phase implementation order. Phase-1 blockers `D-01`/`D-02`/`D-03` restated. Workspace version → 0.49.0. **No runtime code changes**: CI invariants unchanged at their v0.48.4 values (228/228 floor unaffected; text-leaks 0; inline-style-bound 16; css-tokens green; semantic-palette-parity 12×3). |
@@ -129,20 +130,25 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-The project is in **Phase 1 of the Mockup Integration ("MI") arc**.
+**Phase 1 of the Mockup Integration arc is complete.**
 
-**v0.50.0** ships `RFC-MI-010` (Component CSS Sharding) — the first
-Phase 1 blocker (`D-01`). The `components.rs` monolith is now eleven
-bounded shards; every subsequent Phase 1 RFC (`RFC-MI-011` token
-mapping, `RFC-MI-012` theme persistence) has a clean shard to land
-into. This is the **first release in the MI arc to modify Rust source
-code**; all prior MI releases were planning-only.
+v0.50.0 resolved Phase-1 blocker `D-01` (CSS sharding);
+v0.50.1 (this release) ships the token-mapping confirmation (zero
+new tokens) and three CSS primitives (`.callout`, `.field__error`,
+`.dl-grid`), and formally records the theme persistence decision
+(Option A — `localStorage` model, no change).
 
-**Remaining Phase 1 work:** `RFC-MI-011` (Token Mapping + Visual
-Primitive Adoption) and `RFC-MI-012` (Theme Persistence Decision).
-Phase-2 blockers `D-02` (path-based tabs, `RFC-MI-022`) and `D-03`
-(server-rendered CSRF for Shell, `RFC-MI-021`) unlock once Phase 1
-ships.
+**Phase 2** (`v0.51.0`) is now unblocked. The three Phase-2 RFCs
+are ready to begin:
+
+- **RFC-MI-020** (Shell Layout Integration) — adopt the mockup's
+  page-header and sidebar layout adjustments.
+- **RFC-MI-021** (Server-Rendered CSRF for Shell) — Phase-2 blocker
+  `D-03`. Thread the CSRF token through the `Shell` component so
+  every form on any page receives it without per-handler plumbing.
+- **RFC-MI-022** (Route-Based Tab Component) — Phase-2 blocker
+  `D-02`. Implement the tab-helper API forward-declared in
+  `docs/mockup-integration/inventory/tab-routing-delta.md`.
 
 The project remains in **verification phase**. A v1.0 designation
 continues to be deferred until sufficient soak and external

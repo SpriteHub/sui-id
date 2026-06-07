@@ -5,6 +5,86 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.50.1] — Unreleased
+
+**Phase 1 of the Mockup Integration arc completes.** `RFC-MI-011`
+(Token Mapping + Visual Primitive Adoption) and `RFC-MI-012` (Theme
+Persistence Decision) ship together. No screen layouts are changed;
+this release prepares the component shards for Phase 2 adoption.
+
+---
+
+### Token mapping — zero new tokens (`RFC-MI-011`)
+
+The Phase 0 inventory's headline finding is formally confirmed in
+this release: **the product's 75-token vocabulary is a strict
+superset of the mockup's 33 tokens.** No new CSS custom properties
+are added. Every mockup spacing value rounds onto the existing
+`--space-1..--space-6` scale (8–48 px); every mockup font-size maps
+to the existing `--font-size-*` scale. `tokens.rs` is unchanged.
+
+### Three new CSS primitives (`RFC-MI-011`)
+
+Three CSS primitives land in the appropriate shards, ready for the
+screen-level RFCs (Phase 2 onward) to use:
+
+**`.callout` + tone variants** (→ `cards.rs`): A persistent
+explanatory block for setup instructions, security notes, and
+"read this before you proceed" copy. Neutral tone uses
+`--surface-subtle` + `--border-muted`; four semantic tone variants
+(`--info`, `--success`, `--warning`, `--danger`) follow the existing
+semantic palette. Distinct from the existing `.card--callout`
+(accent-filled CTA block).
+
+**`.field__error` + `.field--invalid`** (→ `forms.rs`): Inline
+validation error message (`--danger-default` text, caption size)
+linked to its input via `aria-describedby`. `.field--invalid`
+applies the red border to `input`, `textarea`, and `select` in the
+field container without inline styles. Replaces the two ad-hoc
+`style="color:red"` patterns identified in the Phase 0 inline-style
+survey; those migrations are deferred to RFC-MI-050 (Phase 5).
+
+**`.dl-grid`** (→ `utilities.rs`): A CSS-grid definition-list
+wrapper for key-value displays on admin detail pages. Uses semantic
+`<dl>/<dt>/<dd>`; replaces ad-hoc `<table>` usage for non-tabular
+data. Screen-level migration deferred to RFC-MI-031 (Phase 3).
+
+Three candidate primitives are explicitly deferred to their owning
+Phase-5 RFC: `impact-summary` and `danger-zone` (RFC-MI-051) and the
+route-tabs helper (RFC-MI-022 Phase 2). The `metric-card` pattern
+is already covered by existing `.card + .stat` composition.
+
+### Theme persistence decision record (`RFC-MI-012`)
+
+**Option A chosen** — preserve the current `theme-init.js` +
+`localStorage` model. No code change. Decision record committed to
+`rfcs/done/RFC-MI-012-theme-persistence.md`. The mockup's
+`/theme/{auto|light|dark}` server-side cookie routes remain
+`do-not-implement-yet` per the Phase 0 screen-map inventory.
+
+### Both Phase-1 RFCs → `rfcs/done/`
+
+`rfcs/README.md` Proposed MI table now lists 12 entries (was 14).
+RFC-MI-011 and RFC-MI-012 join RFC-MI-010 and RFC-MI-000 in the
+Implemented table.
+
+### Tests, CI, and compatibility
+
+- `cargo check -p sui-id-web` passes clean.
+- **228/228 library tests pass** (unchanged).
+- All four CI invariants unchanged: `text-leaks` = 0,
+  `css-tokens` = 148, `semantic-palette-parity` = 36,
+  `inline-style-bound` = 17.
+- No class names changed; no routes or handlers changed; no page
+  layout changed.
+
+### Version bumps
+
+Workspace, all six crate `Cargo.toml`, and `Cargo.lock`:
+`0.50.0` → `0.50.1`.
+
+---
+
 ## [0.50.0] — Unreleased
 
 **Phase 1 of the Mockup Integration arc opens with `RFC-MI-010`

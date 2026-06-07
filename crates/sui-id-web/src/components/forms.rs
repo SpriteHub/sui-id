@@ -60,4 +60,29 @@ input[type="checkbox"], input[type="radio"] {
   accent-color: var(--accent-default);
 }
 
+/* ── Field validation states (RFC-MI-011, v0.50.1) ───────────────────── */
+/* .field__error is the accessible inline error message that appears      */
+/* below an invalid input. It must be linked via aria-describedby on      */
+/* the input element.                                                      */
+/*                                                                         */
+/* .field--invalid marks the field container; it triggers the red border  */
+/* on the contained input without requiring inline styles.                */
+.field__error {
+  font-size: var(--font-size-caption);
+  color: var(--danger-default);
+  margin-top: var(--space-1);
+  /* Match .field__hint so error and hint are interchangeable in layout. */
+  line-height: var(--line-height-caption);
+}
+.field--invalid input,
+.field--invalid textarea,
+.field--invalid select {
+  border-color: var(--danger-default);
+}
+.field--invalid input:focus-visible,
+.field--invalid textarea:focus-visible,
+.field--invalid select:focus-visible {
+  outline-color: var(--danger-default);
+}
+
 "#;

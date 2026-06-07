@@ -3,13 +3,57 @@
 ```toml
 id = "RFC-MI-011"
 title = "Mockup Token Mapping and Visual Primitive Adoption"
-status = "Proposed"
+status = "Implemented (v0.50.1)"
 phase = "Phase 1"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.50.1** alongside RFC-MI-012. The Phase 0
+inventory (`docs/mockup-integration/inventory/token-delta-draft.md`)
+already contained the token delta table; the key findings:
+
+### Token delta table
+
+| Mockup need | Existing mapping | New token? | Reason |
+|---|---|---|---|
+| Colour semantics (fg, surface, accent, semantic palette) | All 33 mockup tokens ⊂ existing 75 tokens | **none** | Mockup vocabulary is a strict subset of the product's |
+| Spacing rhythm (8px, 12px, 16px, 24px, 32px, 48px) | `--space-1..--space-6` (identity mapping) | **none** | Perfect match |
+| Intermediate spacing (14px, 10px, 6px, 18px, 20px, 28px) | Rounded to nearest `--space-*` (see token-delta-draft §4) | **none** | Within 4px of an existing token; below perception threshold |
+| Typography scale | `--font-size-caption / body / h3 / h2 / display` | **none** | All mockup font-size values map to existing scale |
+| Border widths, radius, shadow | Existing `--border-width-*`, `--radius-*`, `--shadow-*` | **none** | All map directly |
+
+**Zero new tokens added.** `tokens.rs` is unchanged.
+
+### Primitives adopted
+
+Three of the six candidate primitives are adopted in this release;
+three are explicitly deferred to their owning RFCs:
+
+| Primitive | Shard | Status | Notes |
+|---|---|---|---|
+| `.callout` + tone variants | `cards.rs` | ✅ adopted | Neutral explanatory block (surface-subtle + border-muted + space-3). Four semantic variants (info, success, warning, danger). Supplements but does not replace `.card--callout` (which uses accent fill for CTA blocks). |
+| `.field__error` + `.field--invalid` | `forms.rs` | ✅ adopted | Inline validation error (danger-default text, caption size). `.field--invalid` triggers red border on contained inputs. Both require `aria-describedby` linkage from the input — not enforced in CSS, must be enforced in page templates. |
+| `.dl-grid` | `utilities.rs` | ✅ adopted | Definition-list key-value grid for admin detail screens. Semantic `<dl>/<dt>/<dd>` wrapper; replaces ad-hoc `<table>` for non-tabular key-value data. |
+| `metric-card` | — | not needed | Already covered by existing `.card` + `.stat` composition. Documented only. |
+| `impact-summary` | `confirm.rs` | ⏳ deferred | Designed fully in RFC-MI-051 (Phase 5). |
+| `route-tabs` | `tabs.rs` | ⏳ deferred | Designed fully in RFC-MI-022 (Phase 2). |
+| `danger-zone` | `confirm.rs` | ⏳ deferred | Designed fully in RFC-MI-051 (Phase 5). |
+
+### Acceptance criteria
+
+- [x] Token delta table committed (above — zero new tokens).
+- [x] Every new token has a documented reason (n/a — none added).
+- [x] No mockup spacing token added without mapping analysis (spacing reconciliation in token-delta-draft.md §4).
+- [x] Semantic palette parity remains green (36 declarations, unchanged).
+- [x] New primitives are reusable and accessible (`.callout`, `.field__error`, `.dl-grid` use token vars throughout; focus states inherited from global `:focus-visible`; `aria-describedby` linkage documented in `.field__error` comment).
+
+---
 
 ## 1. Summary
 

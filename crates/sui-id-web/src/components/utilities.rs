@@ -212,4 +212,29 @@ pub const UTILITIES_ADDITIONAL_CSS: &str = r#"
 .flex-0-auto { flex: 0 0 auto; }
 .gap1-center { gap: var(--space-1); align-items: center; }
 
+/* ── Definition-list grid (RFC-MI-011, v0.50.1) ─────────────────────── */
+/* Key-value pair layout used on admin detail screens (/admin/users/{id}, */
+/* /admin/clients/{id}). Replaces ad-hoc <table> usage for non-tabular   */
+/* key-value data; respects the semantic meaning of <dl>/<dt>/<dd>.       */
+/*                                                                         */
+/* Usage: <dl class="dl-grid">                                            */
+/*          <dt>Label</dt><dd>Value</dd>                                  */
+/*        </dl>                                                            */
+.dl-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+.dl-grid dt {
+  font-size: var(--font-size-caption);
+  color: var(--fg-muted);
+  padding-top: 2px; /* optical alignment with dd value */
+}
+.dl-grid dd {
+  margin: 0;
+  color: var(--fg-default);
+  word-break: break-word;
+}
+
 "#;

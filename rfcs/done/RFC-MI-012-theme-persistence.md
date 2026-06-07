@@ -3,13 +3,85 @@
 ```toml
 id = "RFC-MI-012"
 title = "Theme Persistence Decision"
-status = "Proposed"
+status = "Implemented (v0.50.1)"
 phase = "Phase 1"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.50.1** alongside RFC-MI-011. **Option A is
+chosen.** No code changes are made; this is a documentation-only
+release of the decision record.
+
+### Decision record
+
+```
+theme-persistence = "localStorage"
+option            = "A — preserve current model"
+
+precedence = [
+  "1. data-theme attribute set by theme-init.js (from localStorage)",
+  "2. prefers-color-scheme media query (system default if no localStorage entry)",
+]
+
+fouc-mitigation = [
+  "theme-init.js loaded with 'defer' attribute from <head>",
+  "script reads localStorage before first paint via DOMContentLoaded",
+  "CSS tokens for both light and dark modes are present in the emitted <style>",
+  "auto-mode (no localStorage entry) respects prefers-color-scheme natively",
+]
+
+rollback = [
+  "No server-side state was added; rollback is N/A.",
+  "If a future RFC introduces cookie-backed theme, the migration path",
+  "is: read cookie server-side if present, fall back to localStorage",
+  "client-side for existing installs (Option C).",
+]
+```
+
+### Rationale for Option A
+
+- The product's `theme-init.js` + `localStorage` model already works
+  correctly for Leptos SSR-only rendering. The script runs before
+  first paint; no hydration dependency; no theme flash in practice.
+- The mockup's `/theme/{auto|light|dark}` server-side cookie routes
+  exist for the mockup's dev-server context; they are explicitly
+  classified as `do-not-implement-yet` in the Phase 0 screen-map
+  inventory (tab-routing-delta.md §"Theme + locale cookies").
+- Cookie-backed theme (Option B) would require adding `sui_id_theme`
+  to every handler's request extraction, adding cookie-setting routes,
+  and resolving cookie-vs-localStorage precedence — all complexity
+  without a user-visible benefit for this product's operator-facing
+  context.
+- Option C (hybrid) is only justified if the mockup requires
+  server-visible theme state; it does not.
+
+### Theme toggle contract
+
+The existing contract remains in force for all future MI phases:
+
+- Theme choices: `system` (auto), `light`, `dark`.
+- Toggle is keyboard accessible via native `<button>` elements.
+- All labels are localised through `sui_id_i18n::Strings`.
+- No inline event handlers (`theme-init.js` attaches listeners on
+  DOM-ready via `data-theme-value` attributes).
+- `prefers-reduced-motion` is respected via `--motion-*` tokens
+  applied to transitions in `utilities.rs::UTILITIES_MOTION_CSS`.
+
+### Acceptance criteria
+
+- [x] Theme persistence model explicitly documented (above).
+- [x] No visible theme flash regression introduced (no code change).
+- [x] Theme toggle remains no-hydration and no-framework.
+- [x] All theme labels are localized (existing i18n keys `theme_auto_label`, `theme_light_label`, `theme_dark_label`).
+- [x] Rollback path documented (above — no state added, N/A).
+
+---
 
 ## 1. Summary
 
