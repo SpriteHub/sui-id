@@ -3,13 +3,56 @@
 ```toml
 id = "RFC-MI-000"
 title = "Baseline Delta Inventory and Integration Mapping Contract"
-status = "Proposed"
+status = "Implemented (v0.49.1)"
 phase = "Phase 0"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.49.1**. The six required inventory files were
+produced under
+[`docs/mockup-integration/inventory/`](../../docs/mockup-integration/inventory/)
+rather than the speculative location `rfcs/proposed/mockup-integration-inventory/`
+mentioned in §6 below. The new location keeps non-RFC planning
+artifacts in `docs/` (alongside the migration plan and the codebase
+handoff) and out of the `rfcs/` namespace, whose folders are
+reserved for RFC-state tracking by the lifecycle policy.
+
+Inventory files shipped:
+
+- `docs/mockup-integration/inventory/screen-map.md`
+- `docs/mockup-integration/inventory/dangerous-action-map.md`
+- `docs/mockup-integration/inventory/tab-routing-delta.md`
+- `docs/mockup-integration/inventory/token-delta-draft.md`
+- `docs/mockup-integration/inventory/i18n-copy-delta-draft.md`
+- `docs/mockup-integration/inventory/route-render-handler-map.md`
+- `docs/mockup-integration/inventory/README.md` (index)
+
+All twelve acceptance criteria in §11 below were met. Twenty-one
+decisions were surfaced (5 screen-level, 6 dangerous-action, 5
+token, 5 i18n) — each with a recommended default. None blocks
+Phase 1.
+
+The headline structural findings:
+
+- The mockup token vocabulary is a **strict subset** of the
+  product's (33 ⊂ 75 tokens) — zero new tokens.
+- The mockup's 382-key i18n delta is **mostly renames**; net new
+  translation work is ~58 keys × 3 locales ≈ 174 entries.
+- The mockup's 18 dangerous-action values reduce to **9 link
+  rewrites + 5 do-not-implement + 3 step-up-policy-deltas + 1
+  inline-only**.
+- The mockup's `?tab=` model is rewritten to the product's path
+  model with a mechanical anchor-substitution table.
+- **No mockup intent crosses the web-crate boundary**; protocol
+  layers (`sui-id-core`, OIDC engine, audit chain) are untouched.
+
+---
 
 ## 1. Summary
 

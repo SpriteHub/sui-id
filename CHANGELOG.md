@@ -5,6 +5,99 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.1] — Unreleased
+
+**Phase 0 of the Mockup Integration arc completes.** The six
+baseline-inventory documents specified by `RFC-MI-000` are produced
+and shipped under `docs/mockup-integration/inventory/`. `RFC-MI-000`
+moves from `rfcs/proposed/` to `rfcs/done/` with its `Status` field
+updated to `Implemented (v0.49.1)`. **No runtime code is changed in
+this release.**
+
+The inventory is the **frozen baseline** Phase 1 onward references.
+Every cross-cutting structural question the migration plan raised
+about the integration ("does the mockup need new tokens? how many
+new strings is that? how do `?tab=` URLs become path-based URLs?
+which mockup dangerous-action values survive and which are
+rejected?") is now answered concretely.
+
+---
+
+### Six inventory documents shipped under `docs/mockup-integration/inventory/`
+
+Each is the implementation contract for the screen-level RFCs that
+follow. See the directory
+[README](./docs/mockup-integration/inventory/README.md) for the
+orientation overview.
+
+| File | Headline finding |
+|------|------------------|
+| `screen-map.md` | 35 mockup routes mapped to product routes / render functions / handlers, classified into 5 status buckets (`ready-to-integrate`, `needs-visual-adaptation`, `requires-handler-change`, `requires-backend-review`, `do-not-implement-yet`). No route classified as `requires-backend-review` — the integration is web-layer-only. |
+| `dangerous-action-map.md` | 18 mockup `?action=` values resolve to **9 link rewrites + 5 do-not-implement-yet + 3 step-up-policy-deltas + 1 inline-only**. The generic `/confirm/{token}` is rejected per migration plan §D-02 and `RFC-MI-051`; named confirm GETs are preserved. |
+| `tab-routing-delta.md` | Mockup `?tab=…` query parameters are mechanically rewritten to product path-based slugs. Two renames (`passkey` → `passkeys`, `auth` → `authentication`); two mockup-only sub-states (`recovery`, `totp`) folded into MFA tab. Tab-helper API forward-declared for `RFC-MI-022`. |
+| `token-delta-draft.md` | **The mockup introduces zero new CSS token names.** 33 mockup tokens are a strict subset of 75 product tokens. Mockup spacing rhythm (206 hardcoded pixel values) rounds onto the existing `--space-*` token scale per §D-05. Nine visual primitives proposed for adoption by `RFC-MI-011`. |
+| `i18n-copy-delta-draft.md` | 382 mockup-only key names are mostly **renames** (~280 keys), some rewords (~50), and only ~58 are net-new copy. Translation effort: ~58 × 3 locales = ~174 entries spread across phases. The `impact_*` cluster (16 keys, `RFC-MI-051`) is the largest single net-new contribution. |
+| `route-render-handler-map.md` | All 82 product routes documented with method, auth, CSRF, handler, render function, and audit event emission — the product-side reference for every MI implementer. |
+
+### 21 decisions surfaced
+
+Each inventory file lists the decisions it surfaces with a
+recommended default. Five screen-level (`screen-D1`..`D5`), six
+dangerous-action (`danger-D1`..`D6`), five token (`token-D1`..`D5`),
+and five i18n (`i18n-D1`..`D5`). The defaults consistently preserve
+the existing product surface; mockup intent is absorbed visually,
+not structurally. None blocks Phase 1.
+
+### `RFC-MI-000` moves to `rfcs/done/`
+
+Per the lifecycle policy (`RFC 000-rfc-lifecycle-policy`), the file
+location is the source of truth for status; the in-file `Status`
+field updates to `Implemented (v0.49.1)`. The RFC's existing body is
+preserved verbatim; a short implementation note is added at the top
+explaining the location adjustment (inventory files live under
+`docs/mockup-integration/inventory/` rather than the speculative
+location in §6, to keep the `rfcs/` namespace clean per the
+lifecycle policy).
+
+The MI epic table in `rfcs/README.md` now lists 15 Proposed MI RFCs
+(was 16); `RFC-MI-000` appears in the Implemented table.
+
+### `ROADMAP.md`
+
+The Mockup Integration arc phase table now reflects the two-step
+Phase 0:
+
+| Phase | Version  | What ships |
+|------:|----------|------------|
+| 0     | v0.49.0  | RFCs + planning artifacts (no runtime code) |
+| 0     | v0.49.1  | Baseline delta inventory (this release; closes RFC-MI-000) |
+| 1     | v0.50.0  | (Phase 1 begins — `RFC-MI-010` / `011` / `012`) |
+
+The status block restates the verification phase position and the
+"no rc / pre / beta tag" stance.
+
+### Tests, CI, and compatibility
+
+- `cargo check --workspace` passes clean.
+- `cargo fmt --check`, `cargo clippy -D warnings` — pre-existing
+  toolchain-drift warnings unchanged from v0.49.0 (no MI RFC changes
+  them; addressed as a separate maintenance line, not in scope for
+  MI).
+- The four MI-tracked CI invariants (`text-leaks`, `css-tokens`,
+  `semantic-palette-parity`, `inline-style-bound`) hold at the
+  v0.49.0 values unchanged.
+- 228/228 library tests pass.
+- Zero source-code (.rs) files differ from v0.49.0.
+- Zero runtime behaviour change: deploying v0.49.0 → v0.49.1 yields
+  identical binary surface.
+
+### Version bumps
+
+- Workspace, all six crate Cargo.toml, and Cargo.lock: `0.49.0` →
+  `0.49.1`.
+
+---
+
 ## [0.49.0] — Unreleased
 
 **Opens the Mockup Integration ("MI") development arc.** Sixteen

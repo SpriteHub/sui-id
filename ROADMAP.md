@@ -67,7 +67,8 @@ migration plan, codebase handoff, and mockup handoff package.
 
 | Phase | Target version | Theme                                                   | RFCs (proposed)               |
 |-------|----------------|---------------------------------------------------------|-------------------------------|
-| **0** | **v0.49.0**    | **Baseline freeze + RFC + planning artifacts (this release)** | RFC-MI-000                |
+| **0** | v0.49.0        | RFCs + planning artifacts introduced (no runtime code) | RFC-MI-000                    |
+| **0** | **v0.49.1**    | **Baseline delta inventory shipped (this release; closes RFC-MI-000)** | RFC-MI-000 → `done/` |
 | **1** | v0.50.0        | Visual foundations: CSS sharding, token mapping, theme  | RFC-MI-010, 011, 012          |
 | **2** | v0.51.0        | Shell layout, server-rendered CSRF, route-based tabs    | RFC-MI-020, 021, 022          |
 | **3** | v0.52.0        | Read-only admin: dashboard, audit, tables               | RFC-MI-030, 031               |
@@ -90,6 +91,7 @@ deferred (verification phase, spec §22).
 
 | Version | What shipped |
 |---|---|
+| v0.49.1 | **Phase 0 of the Mockup Integration arc completes.** The six baseline-inventory documents specified by `RFC-MI-000` (`screen-map.md`, `dangerous-action-map.md`, `tab-routing-delta.md`, `token-delta-draft.md`, `i18n-copy-delta-draft.md`, `route-render-handler-map.md` + a `README.md` index) ship under `docs/mockup-integration/inventory/`. Headline findings: zero new CSS tokens (mockup vocabulary is a strict subset of the product's), 18 dangerous-action values reduce to 9 link-rewrites + 5 do-not-implement + 3 step-up-policy-deltas + 1 inline-only, the 382 mockup-only i18n keys are mostly renames (~58 net-new keys × 3 locales = ~174 translation entries). `RFC-MI-000` moves to `rfcs/done/` with `Status = Implemented (v0.49.1)`. **No runtime code change**; CI invariants unchanged; 228/228 library tests PASS. |
 | v0.49.0 | **Opens the Mockup Integration ("MI") arc.** Sixteen `RFC-MI-NNN` documents added to `rfcs/proposed/` (Phase 0 → Phase 8 plan); supporting planning artifacts placed under `docs/mockup-integration/` (migration plan, codebase handoff, mockup handoff package) and `docs/development-specification.md` (v3 spec). `rfcs/README.md` rewritten to surface the MI namespace and the eight-phase implementation order. Phase-1 blockers `D-01`/`D-02`/`D-03` restated. Workspace version → 0.49.0. **No runtime code changes**: CI invariants unchanged at their v0.48.4 values (228/228 floor unaffected; text-leaks 0; inline-style-bound 16; css-tokens green; semantic-palette-parity 12×3). |
 | v0.48.4 | **Setup UX.** (1) Setup token moved from text-input to URL parameter: startup now prints a full URL (`/setup?token=xxx`), the welcome screen forwards it to `/setup/admin?token=xxx`, and the admin form holds it as `<input type="hidden">` — operators no longer copy-paste a raw token string. Token travels through language PRG redirects and error re-renders unchanged. (2) Chinese (`中文`) removed from setup wizard language picker — core i18n covers ja and en only; showing zh would be misleading. 228/228 PASS; 0 warnings. |
 | v0.48.3 | **Verification-phase bug: `email` claim absent from ID token.** External RP reported `JSON error: missing field 'email'` at OIDC callback. `IdTokenClaims` had no `email`/`email_verified` fields; only the UserInfo endpoint returned them. OIDC Core §5.1: `email` scope SHOULD populate those claims in the ID token too. Fix: added `email: Option<String>` + `email_verified: Option<bool>` (both `skip_serializing_if = "Option::is_none"`) to `IdTokenClaims`; `issue_token_set` takes a new `user_email: Option<(&str, bool)>` param; `exchange_code` passes it from the already-fetched user row; `exchange_refresh` adds a conditional `users::get` only when scope includes `"email"`. Accounts without email → field omitted (not null). `email_verified` faithfully reflects `email_verified_at IS NULL`. 228/228 tests PASS; 0 warnings; CI PASS. |
@@ -125,15 +127,16 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-v0.49.0 opens the **Mockup Integration ("MI") arc** — a controlled
+The project is in the **Mockup Integration ("MI") arc** — a controlled
 migration that adopts the `sui-id-web-mockup-v0.4.8` UI/UX language
-into the product across eight phases (Phase 0 → Phase 8). This
-release covers **Phase 0 only**: introducing the sixteen
-`RFC-MI-NNN` proposed documents and the supporting planning
-artifacts (migration plan, codebase handoff, mockup handoff
-package, v3 development specification). **No runtime code is
-changed**, so every CI invariant remains at its v0.48.4 value by
-construction.
+into the product across eight phases (Phase 0 → Phase 8).
+
+**Phase 0 is now complete.** v0.49.0 introduced the sixteen
+`RFC-MI-NNN` documents and the supporting planning artifacts;
+v0.49.1 (this release) ships the six baseline-inventory documents
+specified by `RFC-MI-000`, which now moves to `rfcs/done/`. Through
+both releases **no runtime code is changed**, so every CI invariant
+remains at its v0.48.4 value by construction.
 
 The arc parallels the v0.42 → v0.48.0 hardening sequence (Phases
 A–F). Phase 1 (Visual foundations: CSS sharding, token mapping,
@@ -141,7 +144,8 @@ theme persistence) is the next step; the three Phase-1 blockers
 identified in the migration plan — `D-01` component sharding,
 `D-02` path-based tabs, `D-03` server-rendered CSRF for `Shell` —
 must be resolved before any visual replacement at page level can
-proceed.
+proceed. The inventory shipped in v0.49.1 quantifies the work for
+each blocker so Phase 1 RFCs can be implemented mechanically.
 
 The project remains in **verification phase**. A v1.0 designation
 continues to be deferred until sufficient soak and external
