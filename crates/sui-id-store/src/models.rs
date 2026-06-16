@@ -8,6 +8,49 @@
 use chrono::{DateTime, Utc};
 use sui_id_shared::ids::{ClientId, EmailOutboxId, SessionId, SigningKeyId, UserId};
 
+/// Administrative access level for a user account (RFC 071, migration 0027).
+///
+/// The three values correspond to the `role` column's check constraint.
+/// `is_admin` (the old boolean column) is still written in parallel until
+/// migration 0029 drops it; read paths use `role` exclusively after v0.59.0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// Full administrative capability — can read and mutate all admin state.
+    Admin,
+    /// Read-only access to all admin surfaces; cannot mutate any state.
+    Auditor,
+    /// End-user self-service only (`/me/*` routes).
+    User,
+}
+
+impl Role {
+    /// Parse from the database string value.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "admin"   => Some(Self::Admin),
+            "auditor" => Some(Self::Auditor),
+            "user"    => Some(Self::User),
+            _         => None,
+        }
+    }
+    /// Database / API string representation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Admin   => "admin",
+            Self::Auditor => "auditor",
+            Self::User    => "user",
+        }
+    }
+    /// True if the role permits administrative READ access (admin or auditor).
+    pub fn can_read_admin(self) -> bool {
+        matches!(self, Self::Admin | Self::Auditor)
+    }
+    /// True if the role permits administrative WRITE access (admin only).
+    pub fn is_admin(self) -> bool {
+        matches!(self, Self::Admin)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UserRow {
     pub id: UserId,
@@ -31,7 +74,11 @@ pub struct UserRow {
     /// no preference; the application falls back through Cookie /
     /// Accept-Language / server default. Added in migration 0016.
     pub preferred_lang: Option<String>,
+    /// Legacy boolean admin flag — kept in sync with `role` until migration
+    /// 0029 drops this column. New code must read `role` instead.
     pub is_admin: bool,
+    /// RFC 071 role (migration 0027). Authoritative source of admin access.
+    pub role: Role,
     pub is_disabled: bool,
     pub is_deleted: bool,
     /// Stable per-user UUID handle for WebAuthn `user.id`. Backfilled

@@ -6,6 +6,7 @@ use super::common::*;
 use sui_id_shared::api::ClientSummary;
 
 fn client_row_view(
+    can_write: bool,
     t: &'static sui_id_i18n::Strings,
     c: ClientSummary,
     csrf: String,
@@ -41,6 +42,14 @@ fn client_row_view(
     let edit_url = format!("/admin/clients/{id_str}/edit");
     let actions = if is_deleted {
         view! { <td><span class="muted">{t.empty_dash}</span></td> }.into_any()
+    } else if !can_write {
+        // RFC 071: auditors see no mutation controls.
+        view! {
+            <td>
+                <a href=edit_url class="button secondary">"View"</a>
+            </td>
+        }
+        .into_any()
     } else {
         view! {
             <td>
@@ -77,6 +86,7 @@ fn client_row_view(
 
 
 pub fn render_clients(
+    can_write: bool,
     clients: Vec<ClientSummary>,
     flash: Option<Flash>,
     new_secret: Option<(String, String)>,
@@ -102,7 +112,7 @@ pub fn render_clients(
         });
         let rows: Vec<_> = clients
             .into_iter()
-            .map(|c| client_row_view(t, c, csrf_for_rows.clone()))
+            .map(|c| client_row_view(can_write, t, c, csrf_for_rows.clone()))
             .collect();
         view! {
             <Shell title=t.clients_title.to_string() show_nav=true current=Some("clients".to_string()) dev_mode=dev_mode lang=lang csrf_token=csrf_token.clone()>
@@ -217,6 +227,7 @@ pub struct ClientEditData {
 
 
 pub fn render_client_edit(
+    can_write: bool,
     data: ClientEditData,
     flash: Option<Flash>,
     csrf_token: String,
@@ -338,24 +349,34 @@ pub fn render_client_edit(
                                 }
                             </select>
                         </div>
-                        <div class="row">
-                            <button type="submit">{t.button_save}</button>
-                            <a href="/admin/clients" class="button secondary">{t.button_cancel}</a>
-                        </div>
+                        // RFC 071: auditors cannot save changes.
+                        {can_write.then(|| view! {
+                            <div class="row">
+                                <button type="submit">{t.button_save}</button>
+                                <a href="/admin/clients" class="button secondary">{t.button_cancel}</a>
+                            </div>
+                        })}
+                        {(!can_write).then(|| view! {
+                            <div class="form-actions">
+                                <a href="/admin/clients" class="button secondary">{t.button_cancel}</a>
+                            </div>
+                        })}
                     </form>
                 </div>
 
-                // RFC-MI-051: danger zone for destructive client operations.
-                <section class="danger-zone">
-                    <h2 class="danger-zone__title">
-                        "⚠ " {t.danger_zone_title}
-                    </h2>
-                    <div class="form-actions">
-                        <a href=format!("/admin/clients/{}/delete-confirm", id) class="button danger">
-                            {t.button_delete}
-                        </a>
-                    </div>
-                </section>
+                // RFC-MI-051 danger zone; RFC 071: hidden for auditors.
+                {can_write.then(|| view! {
+                    <section class="danger-zone">
+                        <h2 class="danger-zone__title">
+                            "⚠ " {t.danger_zone_title}
+                        </h2>
+                        <div class="form-actions">
+                            <a href=format!("/admin/clients/{}/delete-confirm", id) class="button danger">
+                                {t.button_delete}
+                            </a>
+                        </div>
+                    </section>
+                })}
             </Shell>
         }
     })

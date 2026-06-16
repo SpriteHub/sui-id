@@ -106,6 +106,7 @@ pub async fn create_user(
         // language on /me/profile.
         preferred_lang: None,
         is_admin: spec.is_admin,
+        role: if spec.is_admin { sui_id_store::models::Role::Admin } else { sui_id_store::models::Role::User },
         is_disabled: false,
         is_deleted: false,
      user_uuid: uuid::Uuid::new_v4(),

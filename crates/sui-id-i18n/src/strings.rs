@@ -554,6 +554,13 @@ pub struct Strings {
     pub user_detail_activity_section: &'static str,
     /// Description paragraph inside the user-detail danger zone.
     pub user_detail_danger_zone_body: &'static str,
+    pub role_admin: &'static str,
+    pub role_auditor: &'static str,
+    pub role_user: &'static str,
+    pub user_detail_role_section: &'static str,
+    pub user_detail_role_change: &'static str,
+    pub user_detail_role_saved: &'static str,
+    pub user_detail_role_last_admin: &'static str,
     // ---- Settings: common sections (RFC 029 second pass) ----
     pub settings_page_title_template: &'static str, // "{tab} — Settings"
     // Basic tab sections

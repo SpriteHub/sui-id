@@ -2,7 +2,7 @@
 
 use crate::errors::HttpError;
 use crate::handlers::{
-    AppStateExt, CurrentAdmin,
+    AppStateExt, CurrentAdmin, CurrentAdminOrAuditor,
 };
 use axum::extract::{Path, State};
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -23,7 +23,7 @@ use super::with_csrf_cookie;
 
 pub async fn clients_delete_confirm_get(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
@@ -54,7 +54,7 @@ pub async fn clients_delete_confirm_get(
 
 pub async fn clients_get(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -76,7 +76,7 @@ pub async fn clients_get(
         .collect();
     let token = crate::csrf::ensure_token(&jar);
     let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
-    let resp = Html(render_clients(summaries, None, None, token.clone(), app.is_dev_mode, lang)).into_response();
+    let resp = Html(render_clients(role.is_admin(), summaries, None, None, token.clone(), app.is_dev_mode, lang)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -173,7 +173,7 @@ pub async fn clients_create(
         created.generated_secret.map(|s| (created.row.id.to_string(), s));
     let token = crate::csrf::ensure_token(&jar);
     let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
-    let resp = Html(render_clients(summaries, None, secret_payload, token.clone(), app.is_dev_mode, lang)).into_response();
+    let resp = Html(render_clients(true, summaries, None, secret_payload, token.clone(), app.is_dev_mode, lang)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -245,7 +245,7 @@ pub struct ClientEditQuery {
 
 pub async fn clients_edit_get(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     jar: CookieJar,
     Path(id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<ClientEditQuery>,
@@ -255,7 +255,7 @@ pub async fn clients_edit_get(
         .map_err(|_| HttpError::html(CoreError::BadRequest("invalid client id".into())))?;
     let row = admin_uc::get_client(&app.db, admin_id, target).await.map_err(HttpError::html)?;
     let token = crate::csrf::ensure_token(&jar);
-    let resp = Html(sui_id_web::render_client_edit(
+    let resp = Html(sui_id_web::render_client_edit(role.is_admin(), 
         sui_id_web::ClientEditData {
             id: row.id.to_string(),
             name: row.name,

@@ -5,6 +5,7 @@ use crate::layout::Shell;
 use super::common::*;
 
 fn signing_key_row_view(
+    can_write: bool,
     k: sui_id_shared::api::SigningKeySummary,
     _csrf: String,
     t: &'static sui_id_i18n::Strings,
@@ -26,13 +27,15 @@ fn signing_key_row_view(
     // RFC 065 split.
     let actions = if k.is_active {
         view! { <td><span class="muted">{t.signing_keys_in_use_badge}</span></td> }.into_any()
-    } else {
+    } else if can_write {
         view! {
             <td>
                 <a href=format!("/admin/signing-keys/{}/delete-confirm", id_for_confirm) class="button danger">{t.button_delete}</a>
             </td>
         }
         .into_any()
+    } else {
+        view! { <td></td> }.into_any()
     };
     view! {
         <tr>
@@ -48,6 +51,7 @@ fn signing_key_row_view(
 
 
 pub fn render_signing_keys(
+    can_write: bool,
     keys: Vec<sui_id_shared::api::SigningKeySummary>,
     flash: Option<Flash>,
     csrf_token: String,
@@ -61,7 +65,7 @@ pub fn render_signing_keys(
         let key_count = keys.len();
         let rows: Vec<_> = keys
             .into_iter()
-            .map(|k| signing_key_row_view(k, csrf_for_rows.clone(), t))
+            .map(|k| signing_key_row_view(can_write, k, csrf_for_rows.clone(), t))
             .collect();
         view! {
             <Shell
@@ -82,22 +86,25 @@ pub fn render_signing_keys(
                 </header>
                 {flash_banner(flash)}
 
-                <div class="card">
-                    <h3 class="card__title">{t.signing_keys_rotate_section}</h3>
-                    <p class="muted">
-                        {t.signing_keys_rotate_explanation_1}
-                        " "
-                        {t.signing_keys_rotate_explanation_2}
-                        " "
-                        {t.signing_keys_rotate_explanation_3}
-                    </p>
-                    <div class="card__footer">
-                        <form method="post" action="/admin/signing-keys/rotate">
-                            <input type="hidden" name="_csrf" value=csrf_for_form />
-                            <button type="submit">{t.signing_keys_rotate_button}</button>
-                        </form>
+                // RFC 071: auditors cannot rotate keys.
+                {can_write.then(|| view! {
+                    <div class="card">
+                        <h3 class="card__title">{t.signing_keys_rotate_section}</h3>
+                        <p class="muted">
+                            {t.signing_keys_rotate_explanation_1}
+                            " "
+                            {t.signing_keys_rotate_explanation_2}
+                            " "
+                            {t.signing_keys_rotate_explanation_3}
+                        </p>
+                        <div class="card__footer">
+                            <form method="post" action="/admin/signing-keys/rotate">
+                                <input type="hidden" name="_csrf" value=csrf_for_form />
+                                <button type="submit">{t.signing_keys_rotate_button}</button>
+                            </form>
+                        </div>
                     </div>
-                </div>
+                })}
 
                 <section>
                     <h2>{t.signing_keys_table_section}</h2>

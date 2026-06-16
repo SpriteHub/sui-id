@@ -69,6 +69,7 @@ pub async fn create_initial_admin(
         // server_settings.default_lang.
         preferred_lang: None,
         is_admin: true,
+        role: sui_id_store::models::Role::Admin,
         is_disabled: false,
         is_deleted: false,
      user_uuid: uuid::Uuid::new_v4(),

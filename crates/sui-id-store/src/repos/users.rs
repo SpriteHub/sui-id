@@ -45,6 +45,18 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
         username: row.get(1)?,
         display_name: row.get(2)?,
         is_admin: row.get::<_, i64>(3)? != 0,
+        // RFC 071: read role column; fall back to is_admin for rows
+        // that predate migration 0027 (role will be '' or NULL in that case).
+        role: row.get::<_, Option<String>>(15)?
+            .as_deref()
+            .and_then(crate::models::Role::from_str)
+            .unwrap_or_else(|| {
+                if row.get::<_, i64>(3).unwrap_or(0) != 0 {
+                    crate::models::Role::Admin
+                } else {
+                    crate::models::Role::User
+                }
+            }),
         is_disabled: row.get::<_, i64>(4)? != 0,
         is_deleted: row.get::<_, i64>(5)? != 0,
         user_uuid,
@@ -62,7 +74,7 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
 const SELECT_USER: &str = "SELECT id, username, display_name, is_admin, is_disabled, \
                            is_deleted, created_at, updated_at, user_uuid, \
                            failed_login_count, locked_until, email, preferred_lang, \
-                           email_normalized, email_verified_at \
+                           email_normalized, email_verified_at, role \
                            FROM users";
 
 pub async fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
@@ -73,11 +85,11 @@ pub async fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
     let user = user.clone();
     db.with_conn(move |conn| {
         conn.execute(
-            "INSERT INTO users(id, username, display_name, is_admin, is_disabled, is_deleted, \
+            "INSERT INTO users(id, username, display_name, is_admin, role, is_disabled, is_deleted, \
                                 created_at, updated_at, user_uuid, \
                                 failed_login_count, locked_until, email, preferred_lang, \
                                 email_normalized) \
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             VALUES(?1, ?2, ?3, ?4, ?15, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 user.id.to_string(),
                 user.username,
@@ -93,6 +105,7 @@ pub async fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
                 user.email,
                 user.preferred_lang,
                 email_normalized,
+                user.role.as_str(),
             ],
         )
         .map_err(|e| match e {
@@ -407,5 +420,42 @@ pub async fn has_mfa(db: &Database, user_id: &UserId) -> StoreResult<bool> {
             |row| row.get(0),
         )?;
         Ok(n > 0)
+    }).await
+}
+
+/// RFC 071: Change a user's role. Writes both `role` (new) and `is_admin`
+/// (compat shim) so old code that still reads `is_admin` continues to work
+/// until migration 0029 drops the column.
+pub async fn set_role(
+    db: &Database,
+    user_id: &UserId,
+    role: crate::models::Role,
+) -> StoreResult<()> {
+    let uid = user_id.to_string();
+    let role_str = role.as_str().to_owned();
+    let is_admin_val = role.is_admin() as i64;
+    db.with_conn(move |conn| {
+        let rows = conn.execute(
+            "UPDATE users SET role = ?2, is_admin = ?3, updated_at = datetime('now') \
+             WHERE id = ?1 AND is_deleted = 0",
+            params![uid, role_str, is_admin_val],
+        )?;
+        if rows == 0 {
+            return Err(StoreError::NotFound.into());
+        }
+        Ok(())
+    }).await
+}
+
+/// RFC 071: Count non-deleted users whose role = 'admin'.
+/// Used by the last-admin safeguard before a demotion is permitted.
+pub async fn count_admins(db: &Database) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_deleted = 0",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
     }).await
 }

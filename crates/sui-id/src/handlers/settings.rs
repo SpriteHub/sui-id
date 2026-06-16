@@ -18,7 +18,7 @@
 //! survives in-flight server-side flash messages cleanly.
 
 use crate::handlers::admin::with_csrf_cookie;
-use crate::handlers::{AppStateExt, CurrentAdmin};
+use crate::handlers::{AppStateExt, CurrentAdmin, CurrentAdminOrAuditor};
 use crate::{csrf, errors::HttpError};
 use axum::extract::State;
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -38,7 +38,7 @@ pub async fn index_redirect() -> Redirect {
 
 pub async fn basic_get(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -96,7 +96,7 @@ pub async fn basic_lang_post(
 
 pub async fn security_get(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -186,7 +186,7 @@ pub async fn max_sessions_post(
 
 pub async fn authentication_get(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -214,7 +214,7 @@ pub async fn authentication_get(
 
 pub async fn logs_get(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -263,7 +263,7 @@ pub async fn logs_get(
 
 pub async fn other_get(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -315,7 +315,7 @@ pub struct EmailSettingsForm {
 
 pub async fn email_get(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;

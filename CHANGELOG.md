@@ -5,6 +5,76 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.59.0] — Unreleased
+
+**RFC 071 — Auditor role.** Adds a third human role (`auditor`) with
+read-only access to all admin surfaces. No deployment with more than one
+operator could previously grant safe read-only access without sharing full
+admin credentials.
+
+---
+
+### Schema: migrations 0027 and 0028
+
+**0027** — `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'
+CHECK (role IN ('admin', 'auditor', 'user'))`. Backfills from `is_admin`.
+Adds `idx_users_role`. The old `is_admin` boolean column is kept in sync
+as a compatibility shim and will be dropped in a future migration (0029).
+
+**0028** — `ALTER TABLE audit_log ADD COLUMN actor_role TEXT CHECK (...)`.
+NULL for pre-migration rows.
+
+### `Role` enum
+
+New `sui_id_store::models::Role { Admin, Auditor, User }` with
+`is_admin()`, `can_read_admin()`, `as_str()`, `from_str()`.
+`UserRow` gains `role: Role`; the row mapper reads the new column with
+an `is_admin` fallback for rows that pre-date migration 0027.
+
+### `CurrentAdminOrAuditor` extractor
+
+New Axum extractor in `handlers.rs` returning `(UserId, Role)`.
+Passes for `role ∈ {admin, auditor}`; returns 403 for plain users.
+All admin **GET** routes now use this extractor. All **POST / DELETE**
+routes remain on `CurrentAdmin` (admin-only).
+
+### `can_write: bool` in render functions
+
+Five render functions gained a `can_write: bool` first parameter.
+When `false` (auditor), the following controls are hidden:
+- Users list: "Add user" form, row action buttons
+- User detail: danger zone section (Reset MFA, Disable, Delete)
+- Clients list: Edit/Disable/Delete buttons replaced by a "View" link
+- Client edit: Save button and danger zone
+- Signing keys: rotate form and delete buttons
+
+### Role-change UI on user detail page
+
+New "Access role" section on the user detail page (visible only to admins)
+with a `<select>` drop-down and a submit button. Posts to the new route
+`POST /admin/users/{id}/role`.
+
+**Last-admin safeguard**: if the target is the only admin, demotion is
+refused with a localised error message. The check uses a new
+`users::count_admins()` repo helper.
+
+### i18n
+
+7 new keys (×3 locales — en/ja/zh): `role_admin`, `role_auditor`,
+`role_user`, `user_detail_role_section`, `user_detail_role_change`,
+`user_detail_role_saved`, `user_detail_role_last_admin`.
+
+### Tests and CI
+
+- `cargo check --workspace` clean; 0 errors, 0 warnings.
+- **175/175 library tests pass** (sui-id-i18n 12, sui-id-shared 13,
+  sui-id-web 0, sui-id-store 36, sui-id-core 114).
+- 7 test `UserRow` constructors in `sui-id-core` gained the `role` field.
+- CI invariants unchanged: `text-leaks`=0, `inline-style-bound`=0,
+  `css-tokens`=148, `semantic-parity`=36.
+
+---
+
 ## [0.58.0] — Unreleased
 
 **RFC 073 — Dashboard action items.** The admin dashboard now surfaces

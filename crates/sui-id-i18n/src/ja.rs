@@ -604,6 +604,13 @@ pub static STRINGS_JA: Strings = Strings {
     user_detail_sessions_th_factors: "認証方式",
     user_detail_activity_section: "最近のアクティビティ",
     user_detail_danger_zone_body: "これらの操作はユーザーのアクセスに影響し、取り消せない場合があります。各操作には確認が必要です。",
+    role_admin: "管理者",
+    role_auditor: "監査者",
+    role_user: "ユーザー",
+    user_detail_role_section: "アクセス権限",
+    user_detail_role_change: "ロール変更",
+    user_detail_role_saved: "ロールを更新しました。",
+    user_detail_role_last_admin: "最後の管理者は降格できません。",
 
     // 設定セクションキー
     settings_page_title_template: "設定",

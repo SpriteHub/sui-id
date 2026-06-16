@@ -2,7 +2,7 @@
 
 use crate::errors::HttpError;
 use crate::handlers::{
-    AppStateExt, CurrentAdmin,
+    AppStateExt, CurrentAdmin, CurrentAdminOrAuditor,
 };
 use axum::extract::{Path, State};
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -31,7 +31,7 @@ use super::with_csrf_cookie;
 
 pub async fn users_get(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -55,7 +55,7 @@ pub async fn users_get(
     // summaries already collected in for loop above
     let token = crate::csrf::ensure_token(&jar);
     let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
-    let resp = Html(render_users(summaries, None, admin.username, token.clone(), app.is_dev_mode, lang)).into_response();
+    let resp = Html(render_users(role.is_admin(), summaries, None, admin.username, token.clone(), app.is_dev_mode, lang)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -136,7 +136,7 @@ pub async fn users_create(
             }
             let flash = Flash { kind: FlashKind::Error, text: msg };
     let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
-            let resp = Html(render_users(summaries, Some(flash), admin.username, token.clone(), app.is_dev_mode, lang)).into_response();
+            let resp = Html(render_users(true, summaries, Some(flash), admin.username, token.clone(), app.is_dev_mode, lang)).into_response();
             Ok((axum::http::StatusCode::CONFLICT, with_csrf_cookie(resp, &app, &token)).into_response())
         }
         Err(e) => Err(HttpError::html(e)),
@@ -231,7 +231,7 @@ pub async fn users_mfa_reset(
 
 pub async fn users_detail_get(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     jar: CookieJar,
     Path(id): Path<String>,
 ) -> Result<Response, HttpError> {
@@ -287,6 +287,7 @@ pub async fn users_detail_get(
         display_name: user.display_name,
         email: user.email,
         is_admin: user.is_admin,
+        role: user.role,   // RFC 071
         is_disabled: user.is_disabled,
         totp_enabled,
         passkey_count,
@@ -296,7 +297,7 @@ pub async fn users_detail_get(
         csrf_token: token.clone(),
     };
 
-    let resp = Html(render_user_detail(data, lang)).into_response();
+    let resp = Html(render_user_detail(role.is_admin(), data, lang)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -305,7 +306,7 @@ pub async fn users_detail_get(
 
 pub async fn users_disable_confirm_get(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     jar: CookieJar,
     Path(id): Path<String>,
 ) -> Result<Response, HttpError> {
@@ -330,7 +331,7 @@ pub async fn users_disable_confirm_get(
 
 pub async fn users_delete_confirm_get(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
@@ -361,7 +362,7 @@ pub async fn users_delete_confirm_get(
 
 pub async fn users_mfa_reset_confirm_get(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
@@ -387,4 +388,56 @@ pub async fn users_mfa_reset_confirm_get(
     let resp = Html(render_confirm_reset_mfa(data, app.is_dev_mode, lang))
         .into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+/// POST /admin/users/{id}/role — change a user's access role (RFC 071).
+/// Admin-only; enforces the last-admin safeguard before any demotion.
+pub async fn users_set_role(
+    State(app): AppStateExt,
+    CurrentAdmin(admin_id): CurrentAdmin,
+    jar: CookieJar,
+    Path(id): Path<String>,
+    Form(form): Form<CsrfRoleForm>,
+) -> Result<Response, HttpError> {
+    crate::handlers::enforce_csrf(&jar, Some(form._csrf.as_str()))?;
+
+    let target = UserId::from_str(&id)
+        .map_err(|_| HttpError::html(CoreError::BadRequest("invalid user id".into())))?;
+
+    let new_role = sui_id_store::models::Role::from_str(form.role.as_str())
+        .ok_or_else(|| HttpError::html(CoreError::BadRequest("invalid role value".into())))?;
+
+    // Last-admin safeguard: refuse to demote the last remaining admin.
+    if !new_role.is_admin() {
+        let target_user = users::get(&app.db, target)
+            .await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+        if target_user.role.is_admin() {
+            let count = sui_id_store::repos::users::count_admins(&app.db)
+                .await.unwrap_or(1);
+            if count <= 1 {
+                return Err(HttpError::html(CoreError::BadRequest(
+                    {
+                        let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+                        lang.strings().user_detail_role_last_admin.to_owned()
+                    }.into()
+                )));
+            }
+        }
+    }
+
+    sui_id_store::repos::users::set_role(&app.db, &target, new_role)
+        .await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+
+    Ok(Redirect::to(&format!("/admin/users/{id}")).into_response())
+}
+
+#[derive(serde::Deserialize)]
+pub struct CsrfRoleForm {
+    pub _csrf: String,
+    pub role: String,
+}
+
+// Satisfy enforce_csrf which takes Option<&str>
+impl CsrfRoleForm {
+    pub fn csrf_str(&self) -> &str { &self._csrf }
 }

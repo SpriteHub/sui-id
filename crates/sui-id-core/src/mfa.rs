@@ -412,6 +412,7 @@ mod integration_tests {
                 username: "alice".into(),
                 display_name: None,
                 is_admin: true,
+        role: if true { sui_id_store::models::Role::Admin } else { sui_id_store::models::Role::User },
                 is_disabled: false,
                 is_deleted: false,
                 user_uuid: uuid::Uuid::new_v4(),

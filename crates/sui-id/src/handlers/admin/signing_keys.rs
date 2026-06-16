@@ -2,7 +2,7 @@
 
 use crate::errors::HttpError;
 use crate::handlers::{
-    AppStateExt, CurrentAdmin,
+    AppStateExt, CurrentAdmin, CurrentAdminOrAuditor,
 };
 use axum::extract::{Path, State};
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -49,7 +49,7 @@ pub async fn signing_keys_delete_confirm_get(
 
 pub async fn signing_keys_get(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -66,7 +66,7 @@ pub async fn signing_keys_get(
         .collect();
     let token = crate::csrf::ensure_token(&jar);
     let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
-    let resp = Html(render_signing_keys(summaries, None, token.clone(), app.is_dev_mode, lang)).into_response();
+    let resp = Html(render_signing_keys(role.is_admin(), summaries, None, token.clone(), app.is_dev_mode, lang)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 

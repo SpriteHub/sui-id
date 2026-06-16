@@ -84,16 +84,13 @@ Phase-1 blockers resolved:
 | RFC | Title | Release |
 |-----|-------|---------|
 | 073 | [Dashboard action items](./done/073-dashboard-action-items.md) | v0.58.0 |
+| 071 | [Auditor role](./done/071-auditor-role.md) | v0.59.0 |
 
-### Proposed — UX rethink (v0.58.x candidates)
-
-These three RFCs follow from the post-MI-arc UX audit (v0.57.1 session)
-and target gaps the MI arc did not address.
+### Proposed — UX rethink (next)
 
 | RFC | Title | Priority | Scope |
 |-----|-------|----------|-------|
-| 071 | [Auditor role](./proposed/071-auditor-role.md) | P1 | Schema + middleware + per-page UI conditional rendering |
-| 072 | [End-user app-access surface](./proposed/072-end-user-app-access.md) | P1 | New `/me/apps` page + token-endpoint touchpoint |
+| 072 | [End-user app-access surface](./proposed/072-end-user-app-access.md) | P1 | New `/me/apps` tab + token-endpoint `last_used_at` touchpoint |
 
 ### Proposed — maintenance / dependency refresh
 

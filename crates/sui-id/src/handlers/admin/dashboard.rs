@@ -2,7 +2,7 @@
 
 use crate::errors::HttpError;
 use crate::handlers::{
-    AppStateExt, CurrentAdmin,
+    AppStateExt, CurrentAdmin, CurrentAdminOrAuditor,
 };
 use axum::extract::State;
 use axum::response::{Html, IntoResponse, Response};
@@ -17,7 +17,7 @@ use super::with_csrf_cookie;
 
 pub async fn dashboard(
     state_ext: AppStateExt,
-    CurrentAdmin(admin_id): CurrentAdmin,
+    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
     jar: CookieJar,
     axum::extract::Query(q): axum::extract::Query<DashboardQuery>,
 ) -> Result<Response, HttpError> {

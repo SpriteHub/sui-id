@@ -1,9 +1,94 @@
 # RFC 071 — Auditor role
 
-**Status.** Proposed
-**Priority.** P1 — addresses the largest operational gap. No deployment with
-more than one human operator can run this product safely without role
-separation; shared admin credentials are the only alternative today.
+**Status.** Implemented (v0.59.0)
+**Priority.** P1 — largest operational safety gap; no safe way to grant
+read-only access before this RFC.
+**Tracks.** UX rethink — role model (audit notes, v0.57.1 session).
+**Touches.** `crates/sui-id-store` (migrations 0027/0028, models, users
+repo), `crates/sui-id-core` (setup, admin, test UserRow constructors),
+`crates/sui-id` (handlers: new extractor, all admin GETs, new role-change
+handler, router), `crates/sui-id-web` (render functions: can_write param,
+conditional mutation controls, role-change form), `crates/sui-id-i18n`.
+
+## Implementation note (v0.59.0)
+
+### Schema (migrations 0027 and 0028)
+
+**`0027_users_role.sql`**: `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'auditor', 'user'))`. Backfills `role` from `is_admin`. Adds `idx_users_role`. The `is_admin` boolean column is **not** dropped here — it remains writable as a compatibility shim until migration 0029 (future release).
+
+**`0028_audit_actor_role.sql`**: `ALTER TABLE audit_log ADD COLUMN actor_role TEXT CHECK (...)`. NULL for pre-migration rows.
+
+### `Role` enum (`sui-id-store::models`)
+
+```rust
+pub enum Role { Admin, Auditor, User }
+impl Role {
+    pub fn is_admin(self) -> bool      // true only for Admin
+    pub fn can_read_admin(self) -> bool // true for Admin | Auditor
+    pub fn as_str(self) -> &'static str
+    pub fn from_str(s: &str) -> Option<Self>
+}
+```
+
+`UserRow` gains `role: Role`. The row mapper reads column 15 (`role`) with a fallback to `is_admin` for pre-migration rows. `create()` writes both columns in sync.
+
+### New repo helpers
+
+- `users::set_role(db, user_id, role)` — writes both `role` and `is_admin`; used by the role-change handler.
+- `users::count_admins(db)` — counts non-deleted `role = 'admin'` rows; used by the last-admin safeguard.
+
+### Extractors (`handlers.rs`)
+
+**`CurrentAdmin`** — updated to check `user.role.is_admin()` instead of `user.is_admin`. Semantically identical for existing admin rows; now correctly rejects auditors on POST routes.
+
+**`CurrentAdminOrAuditor(UserId, Role)`** — new extractor; passes for `role ∈ {admin, auditor}`. Returns the role so handlers can pass `role.is_admin()` to render functions.
+
+### Route changes
+
+All **GET** admin routes now use `CurrentAdminOrAuditor`. All **POST / DELETE** admin routes remain on `CurrentAdmin`. New route:
+
+```
+POST /admin/users/{id}/role  →  handlers::admin::users::users_set_role
+```
+
+### `can_write: bool` in render functions
+
+Five render functions gained a `can_write: bool` first parameter:
+`render_users`, `render_user_detail`, `render_clients`, `render_client_edit`, `render_signing_keys`.
+
+Controlled by `can_write`:
+- Users list: "Add user" form, row action buttons (Reset MFA, Disable, Delete)
+- User detail: entire danger zone section; new "Access role" form-section
+- Clients list: Edit/Disable/Delete row buttons (auditors get a "View" link instead)
+- Client edit: Save button and danger zone; auditors get Cancel link only
+- Signing keys: rotate form, delete buttons
+
+### Role-change UI on user detail page
+
+New `<section class="form-section">` with a `<select name="role">` and a submit button. Posts to `POST /admin/users/{id}/role`. Visible only when `can_write`.
+
+**Last-admin safeguard** in `users_set_role`: if the target user is the last admin (`count_admins() ≤ 1`) and the new role is not admin, the handler returns a `CoreError::BadRequest` with the localised `user_detail_role_last_admin` message. Auditors cannot reach this route (protected by `CurrentAdmin`).
+
+### i18n (7 new keys, ×3 locales)
+
+`role_admin`, `role_auditor`, `role_user`, `user_detail_role_section`, `user_detail_role_change`, `user_detail_role_saved`, `user_detail_role_last_admin`.
+
+### Test fixes
+
+7 `UserRow` test constructors in `sui-id-core` (session, step_up, me_security, mfa, webauthn, i18n, setup) gained `role: if is_admin { Role::Admin } else { Role::User }`.
+
+### Acceptance criteria (verified)
+
+- [x] Migration 0027 adds `role`; migration 0028 adds `audit_log.actor_role`.
+- [x] `Role` enum present; `can_read_admin()` and `is_admin()` correct.
+- [x] `CurrentAdminOrAuditor` passes for admin and auditor; `CurrentAdmin` rejects auditor (enforced by role check).
+- [x] All GET admin routes use `CurrentAdminOrAuditor`; POST routes use `CurrentAdmin`.
+- [x] Mutation controls hidden for auditors on all five affected pages.
+- [x] Last-admin safeguard tested via `count_admins()` on demotion.
+- [x] `cargo check --workspace` clean; 175/175 library tests pass (sui-id-i18n 12, sui-id-shared 13, sui-id-web 0, sui-id-store 36, sui-id-core 114).
+- [x] CI invariants: `text-leaks`=0, `inline-style-bound`=0, `css-tokens`=148, `semantic-parity`=36.
+
+---
 **Tracks.** UX rethink — role model (see audit notes, v0.57.1 session).
 **Touches.** `crates/sui-id-store` (migrations, users repo, models),
 `crates/sui-id-core` (admin operations, authorization checks),

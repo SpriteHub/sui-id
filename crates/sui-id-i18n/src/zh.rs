@@ -608,6 +608,13 @@ pub static STRINGS_ZH: Strings = Strings {
     user_detail_sessions_th_factors: "认证因素",
     user_detail_activity_section: "近期活动",
     user_detail_danger_zone_body: "这些操作会影响此用户的访问权限，可能无法撤销。每项操作都需要确认步骤。",
+    role_admin: "管理员",
+    role_auditor: "审计员",
+    role_user: "用户",
+    user_detail_role_section: "访问角色",
+    user_detail_role_change: "更改角色",
+    user_detail_role_saved: "角色已更新。",
+    user_detail_role_last_admin: "无法降级最后一位管理员。",
 
     // 设置页面分区键
     settings_page_title_template: "设置",

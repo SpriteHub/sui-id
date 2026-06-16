@@ -190,7 +190,9 @@ where
     }
 }
 
-/// Like [`CurrentUser`] but additionally enforces administrator privilege.
+/// Like [`CurrentUser`] but additionally enforces administrator privilege
+/// (write access). Returns 403 for auditors and plain users.
+/// Used on all POST / DELETE / PUT admin routes.
 pub struct CurrentAdmin(pub UserId);
 
 impl<S> FromRequestParts<S> for CurrentAdmin
@@ -204,10 +206,35 @@ where
         let CurrentUser(uid) = CurrentUser::from_request_parts(parts, state).await?;
         let app: AppState = AppState::from_ref(state);
         let user = users::get(&app.db, uid).await.map_err(|_| HttpError::html(CoreError::Forbidden))?;
-        if !user.is_admin || user.is_disabled || user.is_deleted {
+        // RFC 071: use role.is_admin() — admins only for mutation.
+        if !user.role.is_admin() || user.is_disabled || user.is_deleted {
             return Err(HttpError::html(CoreError::Forbidden));
         }
         Ok(CurrentAdmin(uid))
+    }
+}
+
+/// Admin OR auditor — passes for `role ∈ {admin, auditor}`.
+/// Used on all GET admin routes so auditors can view without mutating.
+/// Returns `(UserId, Role)` so handlers can pass role to render fns.
+pub struct CurrentAdminOrAuditor(pub UserId, pub sui_id_store::models::Role);
+
+impl<S> FromRequestParts<S> for CurrentAdminOrAuditor
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = HttpError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let CurrentUser(uid) = CurrentUser::from_request_parts(parts, state).await?;
+        let app: AppState = AppState::from_ref(state);
+        let user = users::get(&app.db, uid).await
+            .map_err(|_| HttpError::html(CoreError::Forbidden))?;
+        if !user.role.can_read_admin() || user.is_disabled || user.is_deleted {
+            return Err(HttpError::html(CoreError::Forbidden));
+        }
+        Ok(CurrentAdminOrAuditor(uid, user.role))
     }
 }
 

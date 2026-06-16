@@ -7,6 +7,7 @@ use super::audit::audit_row_view;
 use sui_id_shared::api::UserSummary;
 
 fn user_row_view(
+    can_write: bool,
     t: &'static sui_id_i18n::Strings,
     u: UserSummary,
     current_user: String,
@@ -60,12 +61,15 @@ fn user_row_view(
         };
         view! {
             <td>
-                <div class="row gap-1">
-                    {reset_link}
-                    <a href=disable_confirm_url class="button secondary">{action_label}</a>
-                    " "
-                    <a href=delete_confirm_url class="button danger">"Delete"</a>
-                </div>
+                // RFC 071: auditors see no mutation controls.
+                {can_write.then(|| view! {
+                    <div class="row gap-1">
+                        {reset_link}
+                        <a href=disable_confirm_url class="button secondary">{action_label}</a>
+                        " "
+                        <a href=delete_confirm_url class="button danger">"Delete"</a>
+                    </div>
+                })}
             </td>
         }
         .into_any()
@@ -85,6 +89,7 @@ fn user_row_view(
 
 
 pub fn render_users(
+    can_write: bool,
     users: Vec<UserSummary>,
     flash: Option<Flash>,
     current_user: String,
@@ -99,7 +104,7 @@ pub fn render_users(
         let user_count = users.len();
         let rows: Vec<_> = users
             .into_iter()
-            .map(|u| user_row_view(t, u, current_user.clone(), csrf_for_rows.clone()))
+            .map(|u| user_row_view(can_write, t, u, current_user.clone(), csrf_for_rows.clone()))
             .collect();
         view! {
             <Shell title=t.users_title.to_string() show_nav=true current=Some("users".to_string()) dev_mode=dev_mode lang=lang csrf_token=csrf_token.clone()>
@@ -115,39 +120,42 @@ pub fn render_users(
                 </header>
                 {flash_banner(flash)}
 
-                <section>
-                    <h2>{t.users_create_section}</h2>
-                    <div class="card">
-                        <form method="post" action="/admin/users" class="stack">
-                            <input type="hidden" name="_csrf" value=csrf_for_form />
-                            <div class="field">
-                                <label for="u-name" class="field__label">{t.users_label_username}</label>
-                                <input id="u-name" name="username" type="text"
-                                       required=true autocomplete="off" />
-                            </div>
-                            <div class="field">
-                                <label for="u-disp" class="field__label">{t.users_label_display_name}</label>
-                                <input id="u-disp" name="display_name" type="text" autocomplete="off" />
-                            </div>
-                            <div class="field">
-                                <label for="u-email" class="field__label">{t.users_label_email}</label>
-                                <input id="u-email" name="email" type="email" autocomplete="off" />
-                            </div>
-                            <div class="field">
-                                <label for="u-pw" class="field__label">{t.users_label_password}</label>
-                                <input id="u-pw" name="password" type="password"
-                                       required=true minlength="12" autocomplete="new-password" />
-                            </div>
-                            <label class="row gap-2">
-                                <input name="is_admin" type="checkbox" value="true" />
-                                <span>{t.users_is_admin_label}</span>
-                            </label>
-                            <div>
-                                <button type="submit">{t.users_create_button}</button>
-                            </div>
-                        </form>
-                    </div>
-                </section>
+                // RFC 071: only admins can create users; auditors see the table only.
+                {can_write.then(|| view! {
+                    <section>
+                        <h2>{t.users_create_section}</h2>
+                        <div class="card">
+                            <form method="post" action="/admin/users" class="stack">
+                                <input type="hidden" name="_csrf" value=csrf_for_form />
+                                <div class="field">
+                                    <label for="u-name" class="field__label">{t.users_label_username}</label>
+                                    <input id="u-name" name="username" type="text"
+                                           required=true autocomplete="off" />
+                                </div>
+                                <div class="field">
+                                    <label for="u-disp" class="field__label">{t.users_label_display_name}</label>
+                                    <input id="u-disp" name="display_name" type="text" autocomplete="off" />
+                                </div>
+                                <div class="field">
+                                    <label for="u-email" class="field__label">{t.users_label_email}</label>
+                                    <input id="u-email" name="email" type="email" autocomplete="off" />
+                                </div>
+                                <div class="field">
+                                    <label for="u-pw" class="field__label">{t.users_label_password}</label>
+                                    <input id="u-pw" name="password" type="password"
+                                           required=true minlength="12" autocomplete="new-password" />
+                                </div>
+                                <label class="row gap-2">
+                                    <input name="is_admin" type="checkbox" value="true" />
+                                    <span>{t.users_is_admin_label}</span>
+                                </label>
+                                <div>
+                                    <button type="submit">{t.users_create_button}</button>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+                })}
 
                 <section>
                     <h2>{t.users_table_section}</h2>
@@ -187,6 +195,8 @@ pub struct UserDetailData {
     pub display_name: Option<String>,
     pub email: Option<String>,
     pub is_admin: bool,
+    /// RFC 071: explicit role for display and the role-change form.
+    pub role: sui_id_store::models::Role,
     pub is_disabled: bool,
     pub totp_enabled: bool,
     pub passkey_count: usize,
@@ -204,7 +214,8 @@ pub struct UserDetailSession {
 }
 
 
-pub fn render_user_detail(data: UserDetailData, lang: sui_id_i18n::Locale) -> String {
+pub fn render_user_detail(
+    can_write: bool,data: UserDetailData, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let t = lang.strings();
         let badge = if data.is_disabled {
@@ -332,27 +343,59 @@ pub fn render_user_detail(data: UserDetailData, lang: sui_id_i18n::Locale) -> St
                     </div>
                 </section>
 
-                // RFC-MI-051: danger zone — physically and semantically
-                // isolates destructive operations from the read surface.
-                <section class="danger-zone">
-                    <h2 class="danger-zone__title">
-                        "⚠ " {t.danger_zone_title}
-                    </h2>
-                    <p class="danger-zone__body">{t.user_detail_danger_zone_body}</p>
-                    <div class="form-actions">
-                        {data.totp_enabled.then(|| view! {
-                            <a href=reset_mfa_confirm_url class="button secondary">
-                                {t.confirm_reset_mfa_button}
-                            </a>
-                        })}
-                        <a href=disable_confirm_url class="button secondary">
-                            {if data.is_disabled { t.confirm_enable_button } else { t.confirm_disable_button }}
-                        </a>
-                        <a href=delete_confirm_url class="button danger">
-                            {t.button_delete}
-                        </a>
-                    </div>
-                </section>
+                // RFC-MI-051 danger zone; RFC 071: hidden for auditors.
+                {can_write.then(|| {
+                    // RFC 071: role-change section (above the danger zone so the
+                    // flow is: identity → security → access → danger).
+                    let current_role = data.role;
+                    let uid_for_role = uid.clone();
+                    let csrf_for_role = data.csrf_token.clone();
+                    view! {
+                        <section class="form-section">
+                            <h2 class="form-section__title">{t.user_detail_role_section}</h2>
+                            <form method="post"
+                                  action=format!("/admin/users/{}/role", uid_for_role)
+                                  class="form-actions">
+                                <input type="hidden" name="_csrf" value=csrf_for_role />
+                                <select name="role" aria-label=t.user_detail_role_section>
+                                    <option value="admin"
+                                        selected=move || current_role == sui_id_store::models::Role::Admin>
+                                        {t.role_admin}
+                                    </option>
+                                    <option value="auditor"
+                                        selected=move || current_role == sui_id_store::models::Role::Auditor>
+                                        {t.role_auditor}
+                                    </option>
+                                    <option value="user"
+                                        selected=move || current_role == sui_id_store::models::Role::User>
+                                        {t.role_user}
+                                    </option>
+                                </select>
+                                <button type="submit">{t.user_detail_role_change}</button>
+                            </form>
+                        </section>
+
+                        <section class="danger-zone">
+                            <h2 class="danger-zone__title">
+                                "⚠ " {t.danger_zone_title}
+                            </h2>
+                            <p class="danger-zone__body">{t.user_detail_danger_zone_body}</p>
+                            <div class="form-actions">
+                                {data.totp_enabled.then(|| view! {
+                                    <a href=reset_mfa_confirm_url class="button secondary">
+                                        {t.confirm_reset_mfa_button}
+                                    </a>
+                                })}
+                                <a href=disable_confirm_url class="button secondary">
+                                    {if data.is_disabled { t.confirm_enable_button } else { t.confirm_disable_button }}
+                                </a>
+                                <a href=delete_confirm_url class="button danger">
+                                    {t.button_delete}
+                                </a>
+                            </div>
+                        </section>
+                    }
+                })}
             </Shell>
         }
     })

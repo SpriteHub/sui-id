@@ -605,6 +605,13 @@ pub static STRINGS_EN: Strings = Strings {
     user_detail_sessions_th_factors: "Factors",
     user_detail_activity_section: "Recent activity",
     user_detail_danger_zone_body: "These actions affect this user's access and may be permanent. Each leads to a confirmation step.",
+    role_admin: "Admin",
+    role_auditor: "Auditor",
+    role_user: "User",
+    user_detail_role_section: "Access role",
+    user_detail_role_change: "Change role",
+    user_detail_role_saved: "Role updated.",
+    user_detail_role_last_admin: "Cannot demote the last admin.",
 
     // Settings section keys
     settings_page_title_template: "Settings",

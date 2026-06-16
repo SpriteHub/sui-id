@@ -106,6 +106,7 @@ pub fn build_router(app: AppState) -> Router {
         .route("/admin/users/{id}/mfa-reset", post(admin::users_mfa_reset))
         .route("/admin/users/{id}/mfa-reset-confirm",
                get(admin::users_mfa_reset_confirm_get))
+        .route("/admin/users/{id}/role", post(admin::users_set_role))
         .route(
             "/admin/clients",
             get(admin::clients_get).post(admin::clients_create),
