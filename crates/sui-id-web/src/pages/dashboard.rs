@@ -153,7 +153,7 @@ fn render_sparkline(t: &'static sui_id_i18n::Strings, buckets: Vec<DashboardSpar
 }
 
 
-pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: bool, lang: sui_id_i18n::Locale) -> String {
+pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, csrf_token: String, dev_mode: bool, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let t = lang.strings();
         let DashboardData {
@@ -187,7 +187,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, dev_mode: boo
         let svg = render_sparkline(t, sparkline.buckets);
 
         view! {
-            <Shell title=t.dashboard_title.to_string() show_nav=true current=Some("dashboard".to_string()) dev_mode=dev_mode lang=lang>
+            <Shell title=t.dashboard_title.to_string() show_nav=true current=Some("dashboard".to_string()) dev_mode=dev_mode lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.dashboard_title}</h1>

@@ -16,7 +16,7 @@ pub struct SettingsOtherData {
 }
 
 
-pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
+pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, csrf_token: String, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let t = lang.strings();
         let SettingsOtherData {
@@ -30,7 +30,7 @@ pub fn render_settings_other(data: SettingsOtherData, flash: Option<Flash>, lang
         } = data;
         let now_str = clock_now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
         view! {
-            <Shell title=t.settings_title_advanced.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
+            <Shell title=t.settings_title_advanced.to_string() show_nav=true current=Some("settings".to_string()) lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>

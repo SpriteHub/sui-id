@@ -205,7 +205,7 @@ pub async fn authentication_get(
         refresh_theft_detection: true,
     };
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_authentication(data, None, sui_id_i18n::Locale::Ja);
+    let html = sui_id_web::render_settings_authentication(data, None, token.clone(), sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -254,7 +254,7 @@ pub async fn logs_get(
             .map_err(|e| HttpError::html(CoreError::from(e)))?,
     };
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_logs(data, None, sui_id_i18n::Locale::Ja);
+    let html = sui_id_web::render_settings_logs(data, None, token.clone(), sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -284,7 +284,7 @@ pub async fn other_get(
         clock_now: Utc::now(),
     };
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_other(data, None, sui_id_i18n::Locale::Ja);
+    let html = sui_id_web::render_settings_other(data, None, token.clone(), sui_id_i18n::Locale::Ja);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }

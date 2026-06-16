@@ -36,6 +36,7 @@ fn fmt_lifetime(t: &'static sui_id_i18n::Strings, secs: i64) -> String {
 pub fn render_settings_authentication(
     data: SettingsAuthenticationData,
     flash: Option<Flash>,
+    csrf_token: String,
     lang: sui_id_i18n::Locale,
 ) -> String {
     render(move || {
@@ -54,7 +55,7 @@ pub fn render_settings_authentication(
             refresh_theft_detection,
         } = data;
         view! {
-            <Shell title=t.settings_title_authentication.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
+            <Shell title=t.settings_title_authentication.to_string() show_nav=true current=Some("settings".to_string()) lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>

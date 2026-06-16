@@ -40,6 +40,7 @@ pub fn render_audit(
     chain_ok: bool,
     filter_query: Option<String>,
     flash: Option<Flash>,
+    csrf_token: String,
     dev_mode: bool,
     lang: sui_id_i18n::Locale,
 ) -> String {
@@ -68,7 +69,7 @@ pub fn render_audit(
             }.into_any()
         };
         view! {
-            <Shell title=t.audit_title.to_string() show_nav=true current=Some("audit".to_string()) dev_mode=dev_mode lang=lang>
+            <Shell title=t.audit_title.to_string() show_nav=true current=Some("audit".to_string()) dev_mode=dev_mode lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.audit_title}</h1>

@@ -23,7 +23,7 @@ pub struct SettingsChainStatus {
 }
 
 
-pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: sui_id_i18n::Locale) -> String {
+pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, csrf_token: String, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let t = lang.strings();
         let SettingsLogsData {
@@ -47,7 +47,7 @@ pub fn render_settings_logs(data: SettingsLogsData, flash: Option<Flash>, lang: 
         };
 
         view! {
-            <Shell title=t.settings_title_logs.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
+            <Shell title=t.settings_title_logs.to_string() show_nav=true current=Some("settings".to_string()) lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>

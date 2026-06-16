@@ -46,7 +46,7 @@ pub async fn audit_get(
         .collect();
     let token = crate::csrf::ensure_token(&jar);
     let resp = Html(render_audit(
-        dtos, chain_ok, filter, None, app.is_dev_mode, sui_id_i18n::Locale::Ja,
+        dtos, chain_ok, filter, None, token.clone(), app.is_dev_mode, sui_id_i18n::Locale::Ja,
     )).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }

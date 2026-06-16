@@ -105,7 +105,7 @@ pub fn render_clients(
             .map(|c| client_row_view(t, c, csrf_for_rows.clone()))
             .collect();
         view! {
-            <Shell title=t.clients_title.to_string() show_nav=true current=Some("clients".to_string()) dev_mode=dev_mode lang=lang>
+            <Shell title=t.clients_title.to_string() show_nav=true current=Some("clients".to_string()) dev_mode=dev_mode lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.clients_title}</h1>
@@ -247,7 +247,7 @@ pub fn render_client_edit(
         };
 
         view! {
-            <Shell title=t.client_edit_title.to_string() show_nav=true current=Some("clients".to_string()) lang=lang>
+            <Shell title=t.client_edit_title.to_string() show_nav=true current=Some("clients".to_string()) lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.client_edit_title}</h1>

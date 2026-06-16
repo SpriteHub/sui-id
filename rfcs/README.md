@@ -68,18 +68,16 @@ artifacts the rest of the arc references live under
 
 | Order | ID | Title | Phase |
 |------:|----|-------|-------|
-| 1 | [RFC-MI-020](./proposed/RFC-MI-020-shell-layout-integration.md) | Shell Layout Integration | Phase 2 |
-| 2 | [RFC-MI-021](./proposed/RFC-MI-021-server-rendered-csrf-shell.md) | Server-Rendered CSRF for Shell-Level Forms | Phase 2 |
-| 3 | [RFC-MI-022](./proposed/RFC-MI-022-route-based-tab-component.md) | Route-Based Tab Component | Phase 2 |
-| 4 | [RFC-MI-030](./proposed/RFC-MI-030-dashboard-summary.md) | Dashboard and Summary Surface Integration | Phase 3 |
-| 5 | [RFC-MI-031](./proposed/RFC-MI-031-audit-readonly-tables.md) | Audit Log and Read-Only Table Integration | Phase 3 |
-| 6 | [RFC-MI-040](./proposed/RFC-MI-040-setup-wizard-ux.md) | Setup Wizard UX Integration | Phase 4 |
-| 7 | [RFC-MI-041](./proposed/RFC-MI-041-authentication-surfaces.md) | Authentication Surface Integration | Phase 4 |
-| 8 | [RFC-MI-050](./proposed/RFC-MI-050-form-system-validation.md) | Form System and Validation Feedback | Phase 5 |
-| 9 | [RFC-MI-051](./proposed/RFC-MI-051-danger-confirmation.md) | Danger Zone and Confirmation Screen Integration | Phase 5 |
-| 10 | [RFC-MI-060](./proposed/RFC-MI-060-self-service-security-tabs.md) | Self-Service Security Tab Integration | Phase 6 |
-| 11 | [RFC-MI-070](./proposed/RFC-MI-070-oidc-consent-ux.md) | OIDC Consent UX Integration | Phase 7 |
-| 12 | [RFC-MI-080](./proposed/RFC-MI-080-ui-regression-a11y-hardening.md) | UI Regression and Accessibility Hardening | Phase 8 |
+| 1 | [RFC-MI-022](./proposed/RFC-MI-022-route-based-tab-component.md) | Route-Based Tab Component | Phase 2 |
+| 2 | [RFC-MI-030](./proposed/RFC-MI-030-dashboard-summary.md) | Dashboard and Summary Surface Integration | Phase 3 |
+| 3 | [RFC-MI-031](./proposed/RFC-MI-031-audit-readonly-tables.md) | Audit Log and Read-Only Table Integration | Phase 3 |
+| 4 | [RFC-MI-040](./proposed/RFC-MI-040-setup-wizard-ux.md) | Setup Wizard UX Integration | Phase 4 |
+| 5 | [RFC-MI-041](./proposed/RFC-MI-041-authentication-surfaces.md) | Authentication Surface Integration | Phase 4 |
+| 6 | [RFC-MI-050](./proposed/RFC-MI-050-form-system-validation.md) | Form System and Validation Feedback | Phase 5 |
+| 7 | [RFC-MI-051](./proposed/RFC-MI-051-danger-confirmation.md) | Danger Zone and Confirmation Screen Integration | Phase 5 |
+| 8 | [RFC-MI-060](./proposed/RFC-MI-060-self-service-security-tabs.md) | Self-Service Security Tab Integration | Phase 6 |
+| 9 | [RFC-MI-070](./proposed/RFC-MI-070-oidc-consent-ux.md) | OIDC Consent UX Integration | Phase 7 |
+| 10 | [RFC-MI-080](./proposed/RFC-MI-080-ui-regression-a11y-hardening.md) | UI Regression and Accessibility Hardening | Phase 8 |
 
 Phase-1 blockers, restated for visibility:
 
@@ -104,6 +102,8 @@ Phase-1 blockers, restated for visibility:
 
 | ID  | Title                                                          | Shipped in |
 |-----|----------------------------------------------------------------|------------|
+| MI-021 | [Server-Rendered CSRF for Shell-Level Forms](./done/RFC-MI-021-server-rendered-csrf-shell.md) | v0.51.0 |
+| MI-020 | [Shell Layout Integration](./done/RFC-MI-020-shell-layout-integration.md) | v0.51.0 |
 | MI-012 | [Theme Persistence Decision](./done/RFC-MI-012-theme-persistence.md) | v0.50.1 |
 | MI-011 | [Mockup Token Mapping and Visual Primitive Adoption](./done/RFC-MI-011-token-mapping-visual-primitives.md) | v0.50.1 |
 | MI-010 | [Component CSS Sharding and Export Discipline](./done/RFC-MI-010-component-css-sharding.md) | v0.50.0 |

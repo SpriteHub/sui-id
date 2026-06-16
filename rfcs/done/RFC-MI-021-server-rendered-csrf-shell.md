@@ -3,13 +3,63 @@
 ```toml
 id = "RFC-MI-021"
 title = "Server-Rendered CSRF for Shell-Level Forms"
-status = "Proposed"
+status = "Implemented (v0.51.0)"
 phase = "Phase 2"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.51.0** alongside RFC-MI-020.
+
+### What changed
+
+**`layout.rs::Shell`** — Added `csrf_token: String` as a required
+prop. Shell passes it through to `<Nav>`, which renders it directly
+into the sign-out form's hidden `<input name="_csrf">` field.
+Sign-out now works with JavaScript disabled.
+
+**`layout.rs::Nav`** — Removed the fallback logic
+(`if csrf_token.is_empty() { "".into() } else { csrf_token }`)
+and the `<script src="/static/logout-csrf.js">` reference. The
+token is always real; the JS fallback is no longer needed.
+
+**`crates/sui-id/static/logout-csrf.js` deleted.** The file that
+read the `sui_id_csrf` cookie and populated the hidden input at
+submit time is removed. It no longer ships with the product.
+
+**27 Shell call sites updated** across 19 pages/render files.
+Every call passes a real CSRF token:
+- Most files: `csrf_token=csrf_token.clone()` (token already in
+  scope as a render function parameter).
+- `confirm.rs` (5 calls) + `me_security/overview.rs` + `users.rs`
+  (user detail): `csrf_token=data.csrf_token.clone()` (token is a
+  field on the data struct).
+
+**5 render function signatures updated** to accept `csrf_token`:
+`render_dashboard`, `render_audit`, `render_settings_authentication`,
+`render_settings_logs`, `render_settings_other`. Their handlers
+already called `csrf::ensure_token(&jar)` but discarded the result
+after the cookie-set; the token is now also forwarded to the
+render layer.
+
+**`AuthShell`** — not changed. `AuthShell` does not render a nav or
+a sign-out form; its forms (login, setup, password-reset) already
+received CSRF tokens through their per-page `csrf_token` parameters.
+
+### Acceptance criteria
+
+- [x] No `Shell` call site passes an empty CSRF token (all 27 call sites pass a real token; empty-string fallback removed from Nav).
+- [x] Sign-out works with JavaScript disabled (hidden `_csrf` input value is server-rendered into the HTML).
+- [x] Existing POST CSRF validation still passes (all tests pass; no change to `enforce_csrf` / `ensure_token`).
+- [x] `logout-csrf.js` is removed (file deleted from `crates/sui-id/static/`; script tag removed from Nav).
+- [x] No new CSRF bypass introduced (sign-out always requires a valid session-bound token; the server-side path is identical).
+
+---
 
 ## 1. Summary
 

@@ -68,6 +68,7 @@ pub fn render_signing_keys(
                 title=t.signing_keys_title.to_string()
                 show_nav=true
                 current=Some("signing-keys".to_string()) lang=lang
+                csrf_token=csrf_token.clone()
             >
                 <header class="page-header">
                     <div>

@@ -74,7 +74,7 @@ pub fn render_settings_basic(data: SettingsBasicData, flash: Option<Flash>, lang
             trusted_proxies.join(", ")
         };
         view! {
-            <Shell title=t.settings_title_basic.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
+            <Shell title=t.settings_title_basic.to_string() show_nav=true current=Some("settings".to_string()) lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>

@@ -3,14 +3,21 @@
 //! Composes the design tokens (`tokens.rs`) and component styles
 //! (`components.rs`) and adds:
 //!
-//! - External scripts (`/static/theme-init.js`, `/static/copy.js`,
-//!   `/static/logout-csrf.js`) loaded with `defer`. The theme init
-//!   script resolves the user's theme choice from `localStorage`
-//!   *as soon as the DOM is parsed* and sets `data-theme` on
-//!   `<html>` before the visible body is painted, avoiding a
-//!   flash of unthemed content (FOUT). Earlier versions used inline
-//!   `<script>` blocks for this; v0.48.1 moved them to external
-//!   files because CSP `script-src 'self'` blocks inline JS.
+//! - External scripts (`/static/theme-init.js`, `/static/copy.js`)
+//!   loaded with `defer`. The theme init script resolves the user's
+//!   theme choice from `localStorage` *as soon as the DOM is parsed*
+//!   and sets `data-theme` on `<html>` before the visible body is
+//!   painted, avoiding a flash of unthemed content (FOUT). Earlier
+//!   versions used inline `<script>` blocks for this; v0.48.1 moved
+//!   them to external files because CSP `script-src 'self'` blocks
+//!   inline JS.
+//!
+//!   `/static/logout-csrf.js` was a third external script (added in
+//!   v0.48.1) that read the `sui_id_csrf` cookie and populated the
+//!   sign-out form's hidden input at submit time. RFC-MI-021
+//!   (v0.51.0) server-renders the token into the form directly and
+//!   removes both the script and its asset; the file no longer
+//!   ships.
 //! - The footer with the theme toggle (light / dark / auto) and the
 //!   accessibility badges.
 //! - The admin nav (when `show_nav` is true).
@@ -30,6 +37,13 @@ pub fn Shell(
     show_nav: bool,
     current: Option<String>,
     lang: sui_id_i18n::Locale,
+    /// CSRF token for the Shell-internal sign-out form (RFC-MI-021,
+    /// v0.51.0). Required even when `show_nav` is false, so handlers
+    /// have a uniform API; in the `show_nav=false` case the token is
+    /// not rendered to any form. Must be obtained from the request's
+    /// session (e.g. via `crate::csrf::extract_token`) — passing an
+    /// empty string is a contract violation.
+    csrf_token: String,
     /// When true, renders the DEV MODE banner (RFC 032).
     #[prop(optional)] dev_mode: Option<bool>,
     children: Children,
@@ -58,7 +72,7 @@ pub fn Shell(
                 <header class="app-header">
                     <h1 class="app-header__brand">"sui-id"</h1>
                     {show_nav.then(|| view! {
-                        <Nav current=current.clone() lang=lang csrf_token="".to_string() />
+                        <Nav current=current.clone() lang=lang csrf_token=csrf_token.clone() />
                     })}
                 </header>
                 <main class="app-main">{children()}</main>
@@ -120,10 +134,11 @@ fn Nav(current: Option<String>, lang: sui_id_i18n::Locale, csrf_token: String) -
         // uses across the tabbed render_me_* views.
         ("me",           t.nav_security,     "/me/security/overview"),
     ];
-    // The CSRF token for the logout form. If none was passed in by the
-    // handler (the page was rendered without the cookie), fall back to
-    // reading the cookie via JS on the client side.
-    let token_value = if csrf_token.is_empty() { "".into() } else { csrf_token };
+    // RFC-MI-021 (v0.51.0): the CSRF token is now server-rendered
+    // directly into the hidden input. The previous JS fallback
+    // (logout-csrf.js reading the sui_id_csrf cookie at submit time)
+    // is no longer needed and the script reference has been removed.
+    // Sign-out now works with JavaScript disabled.
     view! {
         <nav class="app-nav" aria-label=t.nav_aria_main>
             {items.into_iter().map(|(key, label, href)| {
@@ -133,20 +148,16 @@ fn Nav(current: Option<String>, lang: sui_id_i18n::Locale, csrf_token: String) -
                 }
             }).collect::<Vec<_>>()}
             // Sign out uses POST + CSRF to prevent logout-CSRF attacks.
-            // The CSRF token is read from the sui_id_csrf cookie (not HttpOnly)
-            // and populated by the inline script below if not server-rendered.
+            // The CSRF token is rendered server-side from the session
+            // context — no JavaScript is required (RFC-MI-021).
             <form method="post" action="/admin/logout" class="app-nav__signout-form"
                   id="logout-form">
-                <input type="hidden" name="_csrf" id="logout-csrf" value=token_value />
+                <input type="hidden" name="_csrf" id="logout-csrf" value=csrf_token />
                 <button type="submit" class="app-nav__link app-nav__signout"
                         aria-label=t.nav_aria_signout>
                     {t.nav_logout}
                 </button>
             </form>
-            // CSP-safe replacement (v0.48.1) for the previously
-            // inline injector. Populates the hidden #logout-csrf
-            // input from the `sui_id_csrf` cookie before submit.
-            <script src="/static/logout-csrf.js" defer></script>
         </nav>
     }
 }

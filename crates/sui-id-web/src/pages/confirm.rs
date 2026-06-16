@@ -186,7 +186,7 @@ pub fn render_confirm_disable_user(
         }, lang);
         view! {
             <Shell title=title.to_string() show_nav=true
-                   current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
+                   current=Some("users".to_string()) dev_mode=dev_mode lang=lang csrf_token=data.csrf_token.clone()>
                 {body}
             </Shell>
         }
@@ -224,7 +224,7 @@ pub fn render_confirm_delete_user(
         }, lang);
         view! {
             <Shell title=t.confirm_delete_user_title.to_string() show_nav=true
-                   current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
+                   current=Some("users".to_string()) dev_mode=dev_mode lang=lang csrf_token=data.csrf_token.clone()>
                 {body}
             </Shell>
         }
@@ -262,7 +262,7 @@ pub fn render_confirm_reset_mfa(
         }, lang);
         view! {
             <Shell title=t.confirm_reset_mfa_title.to_string() show_nav=true
-                   current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
+                   current=Some("users".to_string()) dev_mode=dev_mode lang=lang csrf_token=data.csrf_token.clone()>
                 {body}
             </Shell>
         }
@@ -300,7 +300,7 @@ pub fn render_confirm_delete_client(
         }, lang);
         view! {
             <Shell title=t.confirm_delete_client_title.to_string() show_nav=true
-                   current=Some("clients".to_string()) dev_mode=dev_mode lang=lang>
+                   current=Some("clients".to_string()) dev_mode=dev_mode lang=lang csrf_token=data.csrf_token.clone()>
                 {body}
             </Shell>
         }
@@ -339,7 +339,7 @@ pub fn render_confirm_delete_signing_key(
         }, lang);
         view! {
             <Shell title=t.confirm_delete_signing_key_title.to_string() show_nav=true
-                   current=Some("signing_keys".to_string()) dev_mode=dev_mode lang=lang>
+                   current=Some("signing_keys".to_string()) dev_mode=dev_mode lang=lang csrf_token=data.csrf_token.clone()>
                 {body}
             </Shell>
         }

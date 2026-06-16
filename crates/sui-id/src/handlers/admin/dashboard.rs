@@ -114,7 +114,7 @@ pub async fn dashboard(
     };
     let token = crate::csrf::ensure_token(&jar);
     let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
-    let resp = Html(render_dashboard(data, None, app.is_dev_mode, lang)).into_response();
+    let resp = Html(render_dashboard(data, None, token.clone(), app.is_dev_mode, lang)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 

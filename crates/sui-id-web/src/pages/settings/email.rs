@@ -52,7 +52,7 @@ pub fn render_settings_email(
         let tls_starttls = if tls_mode == "starttls" { Some("selected") } else { None };
 
         view! {
-            <Shell title=t.settings_email_page_title.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
+            <Shell title=t.settings_email_page_title.to_string() show_nav=true current=Some("settings".to_string()) lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>

@@ -5,6 +5,64 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.0] — Unreleased
+
+**Phase 2 of the Mockup Integration arc opens with `RFC-MI-020`
+(Shell Layout — decision record) and `RFC-MI-021` (Server-Rendered
+CSRF).** The primary security improvement in this release is that
+the admin sign-out form now works **with JavaScript disabled**.
+
+---
+
+### Shell layout decision (`RFC-MI-020`)
+
+The product keeps its **top-nav model**. No structural shell code
+changes. Decision recorded: the current seven-item horizontal nav +
+Shell / AuthShell split satisfies all IA requirements from the
+Phase-0 screen-map; a sidebar was not proven necessary. The
+`ShellCurrent` enum (replacing `current: Option<String>`) is
+deferred to RFC-MI-022, which touches the same call sites.
+
+### Server-rendered CSRF for sign-out (`RFC-MI-021`)
+
+- **`Shell` now requires `csrf_token: String`** — the token is
+  threaded from every authenticated GET handler into the Shell's
+  sign-out form as a server-rendered hidden field.
+- **`logout-csrf.js` removed.** The script that read the
+  `sui_id_csrf` cookie and injected it into the form before submit
+  is deleted. `crates/sui-id/static/logout-csrf.js` no longer
+  ships.
+- **27 Shell call sites updated** across 19 page files; every call
+  passes a real session-bound CSRF token.
+- **5 render function signatures updated:** `render_dashboard`,
+  `render_audit`, `render_settings_authentication`,
+  `render_settings_logs`, `render_settings_other` — all now accept
+  `csrf_token: String` (their handlers already issued the token and
+  set the cookie; they now also forward it to the render layer).
+- **`AuthShell` unchanged** — its pages pass CSRF tokens through
+  their own per-page parameters; no Shell-level change needed.
+- Sign-out remains a standard `<form method="post">` button;
+  keyboard accessible; no JS dependency; CSRF contract unchanged.
+
+### Tests, CI, and compatibility
+
+- `cargo check --workspace` passes clean.
+- **228/228 library tests pass**.
+- All four CI invariants unchanged: `text-leaks` = 0,
+  `css-tokens` = 148, `semantic-palette-parity` = 36,
+  `inline-style-bound` = 17.
+- No route changes; no handler contract changes; no data struct
+  changes visible to callers of `render_*` functions in the public
+  API of `sui-id-web` except the additional `csrf_token` parameter
+  on 5 render functions.
+
+### Version bumps
+
+Workspace, all six crate `Cargo.toml`, and `Cargo.lock`:
+`0.50.1` → `0.51.0`.
+
+---
+
 ## [0.50.1] — Unreleased
 
 **Phase 1 of the Mockup Integration arc completes.** `RFC-MI-011`

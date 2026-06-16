@@ -88,7 +88,7 @@ pub fn render_settings_security(data: SettingsSecurityData, flash: Option<Flash>
             </section>
         };
         view! {
-            <Shell title=t.settings_title_security.to_string() show_nav=true current=Some("settings".to_string()) lang=lang>
+            <Shell title=t.settings_title_security.to_string() show_nav=true current=Some("settings".to_string()) lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.settings_title}</h1>

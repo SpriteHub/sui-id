@@ -135,7 +135,7 @@ pub fn render_mfa_setup(
         let t = lang.strings();
         let MfaSetupData { otpauth_uri, qr_svg, secret_b32 } = data;
         view! {
-            <Shell title=t.mfa_setup_shell_title.to_string() show_nav=true current=Some("me".to_string()) lang=lang>
+            <Shell title=t.mfa_setup_shell_title.to_string() show_nav=true current=Some("me".to_string()) lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.mfa_setup_title}</h1>
@@ -213,7 +213,7 @@ pub fn render_password_change(
         } = data;
         let revoke_attr = if revoke_others_default { Some("") } else { None };
         view! {
-            <Shell title=t.password_change_title.to_owned() show_nav=false current=None lang=lang>
+            <Shell title=t.password_change_title.to_owned() show_nav=false current=None lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.password_change_title}</h1>
@@ -308,7 +308,7 @@ pub fn render_step_up(
             view! { <></> }.into_any()
         };
         view! {
-            <Shell title=t.step_up_title.to_string() show_nav=false current=None lang=lang>
+            <Shell title=t.step_up_title.to_string() show_nav=false current=None lang=lang csrf_token=csrf_token.clone()>
                 <div class="auth-page">
                     <div class="auth-card">
                         <h1>{t.step_up_title}</h1>

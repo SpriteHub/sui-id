@@ -102,7 +102,7 @@ pub fn render_users(
             .map(|u| user_row_view(t, u, current_user.clone(), csrf_for_rows.clone()))
             .collect();
         view! {
-            <Shell title=t.users_title.to_string() show_nav=true current=Some("users".to_string()) dev_mode=dev_mode lang=lang>
+            <Shell title=t.users_title.to_string() show_nav=true current=Some("users".to_string()) dev_mode=dev_mode lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.users_title}</h1>
@@ -249,7 +249,8 @@ pub fn render_user_detail(data: UserDetailData, lang: sui_id_i18n::Locale) -> St
         view! {
             <Shell title=username.clone() show_nav=true
                    current=Some("users".to_string())
-                   dev_mode=data.dev_mode lang=lang>
+                   dev_mode=data.dev_mode lang=lang
+                   csrf_token=data.csrf_token.clone()>
                 <div class="mb-3">
                     <a href="/admin/users" class="muted">{t.user_detail_back}</a>
                 </div>

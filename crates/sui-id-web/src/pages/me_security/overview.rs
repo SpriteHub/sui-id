@@ -39,7 +39,7 @@ pub fn render_me_overview(
             }
         }).collect();
         view! {
-            <Shell title=t.me_tab_overview.to_string() show_nav=true current=Some("me".to_string()) lang=lang>
+            <Shell title=t.me_tab_overview.to_string() show_nav=true current=Some("me".to_string()) lang=lang csrf_token=data.csrf_token.clone()>
                 <header class="page-header"><h1 class="page-header__title">{t.me_tab_overview}</h1></header>
                 {tabs}
                 <div class="stack mt-4">

@@ -68,10 +68,11 @@ migration plan, codebase handoff, and mockup handoff package.
 | Phase | Target version | Theme                                                   | RFCs                          |
 |-------|----------------|---------------------------------------------------------|-------------------------------|
 | **0** | v0.49.0        | RFCs + planning artifacts introduced                    | RFC-MI-000 → `done/`          |
-| **0** | v0.49.1        | Baseline delta inventory; RFC-MI-000 → `done/`          | RFC-MI-000 → `done/`          |
-| **1** | v0.50.0        | CSS sharding (D-01 blocker resolved)                    | RFC-MI-010 → `done/`          |
-| **1** | **v0.50.1**    | **Token mapping + primitives; theme decision (this release; Phase 1 complete)** | RFC-MI-011, 012 → `done/` |
-| **2** | v0.51.0        | Shell layout, server-rendered CSRF, route-based tabs    | RFC-MI-020, 021, 022          |
+| **0** | v0.49.1        | Baseline delta inventory                                | RFC-MI-000 → `done/`          |
+| **1** | v0.50.0        | CSS sharding (D-01 resolved)                            | RFC-MI-010 → `done/`          |
+| **1** | v0.50.1        | Token mapping + primitives; theme decision              | RFC-MI-011, 012 → `done/`     |
+| **2** | **v0.51.0**    | **Shell decision + server-rendered CSRF (this release)**| RFC-MI-020, 021 → `done/`     |
+| **2** | v0.51.1        | Route-based tab component                               | RFC-MI-022                    |
 | **3** | v0.52.0        | Read-only admin: dashboard, audit, tables               | RFC-MI-030, 031               |
 | **4** | v0.53.0        | Setup wizard + authentication surfaces                  | RFC-MI-040, 041               |
 | **5** | v0.54.0        | Form system + danger-zone / confirmation                | RFC-MI-050, 051               |
@@ -92,6 +93,7 @@ deferred (verification phase, spec §22).
 
 | Version | What shipped |
 |---|---|
+| v0.51.0 | **Phase 2 opens: RFC-MI-020 (Shell Layout decision) + RFC-MI-021 (Server-Rendered CSRF).** Shell: keep top-nav decision recorded; no structural code change. CSRF: Shell now requires `csrf_token: String`; Nav renders token directly into sign-out form hidden field; `logout-csrf.js` removed. 27 Shell call sites updated; 5 render function signatures updated. Sign-out works with JS disabled. **228/228 tests PASS; 0 warnings; all 4 CI invariants unchanged.** |
 | v0.50.1 | **Phase 1 complete: RFC-MI-011 (Token Mapping + Visual Primitives) + RFC-MI-012 (Theme Persistence).** Zero new CSS tokens (mockup vocabulary is a strict subset of the product's). Three CSS primitives adopted: `.callout` + tone variants (→ `cards.rs`), `.field__error` + `.field--invalid` (→ `forms.rs`), `.dl-grid` (→ `utilities.rs`). Theme persistence: **Option A chosen** (preserve `localStorage` model, no code change). Phase-1 blockers D-01/D-02/D-03 status: D-01 resolved (v0.50.0); D-02 and D-03 owned by Phase 2 (RFC-MI-022 and RFC-MI-021). **228/228 tests PASS; 0 warnings; all 4 CI invariants unchanged.** |
 | v0.50.0 | **Phase 1 opens: RFC-MI-010 (Component CSS Sharding).** `components.rs` (1094 lines) split into 11 bounded shards under `components/` (badges, banners, buttons, cards, chrome, confirm, forms, setup, tables, tabs, utilities). `StatusKind` + `status_badge` moved to `badges.rs`; re-exported from `components.rs` for backward compatibility. `components_css()` fn (OnceLock-cached) replaces the former `COMPONENTS_CSS` const — produces a byte-identical CSS body to v0.49.x. Phase-1 blocker `D-01` (CSS sharding) resolved. **228/228 tests PASS; 0 warnings; all 4 CI invariants unchanged.** |
 | v0.49.1 | **Phase 0 of the Mockup Integration arc completes.** The six baseline-inventory documents specified by `RFC-MI-000` (`screen-map.md`, `dangerous-action-map.md`, `tab-routing-delta.md`, `token-delta-draft.md`, `i18n-copy-delta-draft.md`, `route-render-handler-map.md` + a `README.md` index) ship under `docs/mockup-integration/inventory/`. Headline findings: zero new CSS tokens (mockup vocabulary is a strict subset of the product's), 18 dangerous-action values reduce to 9 link-rewrites + 5 do-not-implement + 3 step-up-policy-deltas + 1 inline-only, the 382 mockup-only i18n keys are mostly renames (~58 net-new keys × 3 locales = ~174 translation entries). `RFC-MI-000` moves to `rfcs/done/` with `Status = Implemented (v0.49.1)`. **No runtime code change**; CI invariants unchanged; 228/228 library tests PASS. |
@@ -130,29 +132,24 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-**Phase 1 of the Mockup Integration arc is complete.**
+The project is in **Phase 2 of the Mockup Integration arc**. Two
+Phase-2 RFCs ship in v0.51.0:
 
-v0.50.0 resolved Phase-1 blocker `D-01` (CSS sharding);
-v0.50.1 (this release) ships the token-mapping confirmation (zero
-new tokens) and three CSS primitives (`.callout`, `.field__error`,
-`.dl-grid`), and formally records the theme persistence decision
-(Option A — `localStorage` model, no change).
+- **RFC-MI-020** (Shell Layout): keep top-nav decision recorded;
+  no structural code change required.
+- **RFC-MI-021** (Server-Rendered CSRF): Shell sign-out form now
+  server-renders the CSRF token. `logout-csrf.js` removed. Sign-out
+  works without JavaScript.
 
-**Phase 2** (`v0.51.0`) is now unblocked. The three Phase-2 RFCs
-are ready to begin:
+**Remaining Phase 2 work: RFC-MI-022** (Route-Based Tab Component,
+`v0.51.1`). This introduces the `route_tabs()` helper and migrates
+both tab groups (`/me/security/*`, `/admin/settings/*`) to use it.
+Blockers D-02 (route-based tabs) and D-03 (CSRF threading) are now
+both met — D-02 unblocked by this release, D-03 met here.
 
-- **RFC-MI-020** (Shell Layout Integration) — adopt the mockup's
-  page-header and sidebar layout adjustments.
-- **RFC-MI-021** (Server-Rendered CSRF for Shell) — Phase-2 blocker
-  `D-03`. Thread the CSRF token through the `Shell` component so
-  every form on any page receives it without per-handler plumbing.
-- **RFC-MI-022** (Route-Based Tab Component) — Phase-2 blocker
-  `D-02`. Implement the tab-helper API forward-declared in
-  `docs/mockup-integration/inventory/tab-routing-delta.md`.
-
-The project remains in **verification phase**. A v1.0 designation
-continues to be deferred until sufficient soak and external
-review. **No release will start with v1 until that bar is met.**
+The project remains in **verification phase**. No v1.0 designation
+is scheduled. **No release will start with v1 until the bar is
+met.**
 
 ---
 

@@ -30,7 +30,7 @@ pub fn render_me_language(
         let cur3 = cur.clone();
         let cur4 = cur.clone();
         view! {
-            <Shell title=t.me_language_title.to_string() show_nav=true current=Some("me".to_string()) lang=lang>
+            <Shell title=t.me_language_title.to_string() show_nav=true current=Some("me".to_string()) lang=lang csrf_token=csrf_token.clone()>
                 <header class="page-header"><h1 class="page-header__title">{t.me_language_title}</h1></header>
                 {tabs}
                 {flash_banner(flash)}

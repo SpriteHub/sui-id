@@ -3,13 +3,78 @@
 ```toml
 id = "RFC-MI-020"
 title = "Shell Layout Integration"
-status = "Proposed"
+status = "Implemented (v0.51.0)"
 phase = "Phase 2"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.51.0** alongside RFC-MI-021.
+
+**Decision: Preserve top-nav model.** No structural shell code
+changes were required in this release; the decision record below
+is the primary deliverable.
+
+### Shell layout decision record
+
+```
+nav-model         = "top-nav"
+shell-split       = "Shell (authenticated) + AuthShell (public)"
+sidebar-adopted   = false
+justification     = "The current top-nav satisfies all IA requirements
+                     surfaced in the Phase-0 screen-map inventory.
+                     The mockup itself uses a top-nav model for the same
+                     seven nav items. A sidebar was not proven necessary
+                     by the screen-map analysis."
+mobile-model      = "horizontal-scroll nav at 768px breakpoint (v0.48.2 Bug 8)"
+active-state      = "current=Option<String> key matched in Nav; aria-current='page'"
+skip-link         = "deferred — add if shell density increases in Phase 3+"
+rfcs-mi-021       = "CSRF threading (v0.51.0) is the structural partner of this
+                     decision: it adds csrf_token to Shell, which is the primary
+                     Shell API change in Phase 2."
+```
+
+### Navigation streams
+
+Per §7 — **not mixed**:
+
+| Stream | Shell | Nav section |
+|---|---|---|
+| Setup | `AuthShell` | — |
+| Login / auth | `AuthShell` | — |
+| OIDC consent | `AuthShell` | — |
+| Admin operations | `Shell` | Full 7-item nav |
+| Self-service security | `Shell` | "Security" item (`current="me"`) |
+
+Self-service shares the Shell chrome but its `current="me"` key
+causes only the "Security" nav link to be highlighted — admin-only
+links (Users, Clients, Signing Keys, etc.) remain visible but
+unemphasised. This is acceptable for an operator-facing product
+where all authenticated users are known operators.
+
+### ShellCurrent enum
+
+The RFC §7 proposed a `ShellCurrent` enum to replace the
+`current: Option<String>` stringly-typed parameter. This is
+**deferred to RFC-MI-022** (Route-Based Tab Component) where the
+same pages are already touched for the tab-helper migration.
+Adding the enum there avoids a second pass over the same call
+sites.
+
+### Acceptance criteria
+
+- [x] Admin navigation active state is accurate (current nav-key system unchanged; `aria-current="page"` set on active link).
+- [x] Self-service navigation does not expose admin-only actions to normal users (correct — user role checked by handler; nav key is "me" not an admin key).
+- [x] Shell works without JavaScript (sign-out form server-renders CSRF token via RFC-MI-021 — the JS fallback `logout-csrf.js` is removed).
+- [x] Mobile navigation is usable at 768px and narrower (`@media (max-width: 768px)` rules in `chrome.rs::CHROME_RESPONSIVE_CSS`; `white-space: nowrap` keeps nav labels on one line; horizontal scroll is the current fallback).
+- [x] No new frontend routing or hydration introduced.
+
+---
 
 ## 1. Summary
 
