@@ -3,13 +3,78 @@
 ```toml
 id = "RFC-MI-041"
 title = "Authentication Surface Integration"
-status = "Proposed"
+status = "Implemented (v0.53.0)"
 phase = "Phase 4"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.53.0** — the first Phase-4 release. Shipped
+**ahead of RFC-MI-040** because the auth surfaces are tighter in
+scope and security-sensitive; the setup wizard work (RFC-MI-040)
+follows in v0.53.1.
+
+### Security guarantee
+
+**Zero copy changed. Zero i18n keys changed.** A line-level diff
+of `pages/auth.rs` and the entire `sui-id-i18n` crate against
+v0.52.0 (excluding `class=`/`style=` attributes) is empty.
+Anti-enumeration wording, MFA failure copy, step-up purpose copy,
+and reset-token failure copy are byte-identical to v0.52.0. No
+backend auth logic is touched.
+
+### Changes made
+
+**Three inline styles eliminated in `pages/auth.rs`:**
+
+| Site | Before | After |
+|---|---|---|
+| Login "Forgot password?" link | `<p class="muted" style="margin-top:…;text-align:center;font-size:…">` | `<p class="muted auth-meta-link">` |
+| MFA setup TOTP QR code | `<div inner_html=qr_svg style="max-width:240px;margin-bottom:…">` | `<div inner_html=qr_svg class="qr-display">` |
+| Password change card | `<div class="card" style="max-width:var(--content-narrow-width)">` | `<div class="card card--narrow">` |
+
+**Two new CSS classes in `components/setup.rs`:**
+
+- `.auth-meta-link` — muted, caption-size, centered, top-margined.
+  For "Forgot password?", "Back to sign-in", and similar meta links
+  below auth forms.
+- `.qr-display` — bounded TOTP QR-code container
+  (`max-width: 240px; margin-bottom: --space-3`).
+
+**One new CSS variant in `components/cards.rs`:**
+
+- `.card--narrow` — constrains card to `--content-narrow-width`.
+  Used by the password-change form and any other isolated
+  single-action card.
+
+**ABDD: flash banner role per kind (`pages/common.rs`).**
+`FlashKind::aria_role()` returns `"alert"` for `Error` and
+`"status"` for `Info`/`Warn`. Error banners now interrupt
+assistive tech immediately (login failure, MFA failure, step-up
+failure, reset-token failure) while informational banners stay
+polite. The helper change is transparent to every caller.
+
+### Acceptance criteria
+
+- [x] Login failure remains generic — wording unchanged from v0.52.0.
+- [x] Forgot-password request does not disclose account existence —
+  the existing neutral confirmation page is preserved.
+- [x] MFA failure wording remains safe — unchanged.
+- [x] Step-up purpose is clearly explained — unchanged.
+- [x] All text localised — no new visible strings introduced.
+- [x] No-JS form submission still works (no script change; forms
+  remain plain `method="post"` with hidden `_csrf` server-rendered
+  per RFC-MI-021).
+- [x] `inline-style-bound` decreases (10 → 7 in this release).
+- [x] Errors are announced with `role="alert"` (FlashKind::Error
+  now maps to `role="alert"`; non-error flashes keep `role="status"`).
+
+---
 
 ## 1. Summary
 

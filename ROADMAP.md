@@ -70,8 +70,9 @@ migration plan, codebase handoff, and mockup handoff package.
 | **0** | v0.49.0–0.49.1 | Planning + baseline inventory                           | RFC-MI-000 → `done/`          |
 | **1** | v0.50.0–0.50.1 | CSS sharding; token mapping; theme decision             | RFC-MI-010–012 → `done/`      |
 | **2** | v0.51.0–0.51.1 | Shell decision; CSRF; route-based tabs                  | RFC-MI-020–022 → `done/`      |
-| **3** | **v0.52.0**    | **Dashboard + audit read-only screens (this release; Phase 3 complete)** | RFC-MI-030, 031 → `done/` |
-| **4** | v0.53.0        | Setup wizard + authentication surfaces                  | RFC-MI-040, 041               |
+| **3** | v0.52.0        | Dashboard + audit read-only screens                     | RFC-MI-030, 031 → `done/`     |
+| **4** | **v0.53.0**    | **Authentication surfaces (this release; ships ahead of MI-040)** | RFC-MI-041 → `done/` |
+| **4** | v0.53.1        | Setup wizard UX                                         | RFC-MI-040                    |
 | **5** | v0.54.0        | Form system + danger-zone / confirmation                | RFC-MI-050, 051               |
 | **6** | v0.55.0        | Self-service `/me/security/*` integration               | RFC-MI-060                    |
 | **7** | v0.56.0        | OIDC consent UX                                         | RFC-MI-070                    |
@@ -90,6 +91,7 @@ deferred (verification phase, spec §22).
 
 | Version | What shipped |
 |---|---|
+| v0.53.0 | **Phase 4 opens: RFC-MI-041 (Authentication Surfaces).** Ships ahead of MI-040 at user request. Three inline styles eliminated in `pages/auth.rs` (login forgot-password link, MFA QR code, password-change card). Three new CSS classes: `.auth-meta-link`, `.qr-display`, `.card--narrow`. ABDD: `FlashKind::aria_role()` added to `common.rs` — `Error` → `role="alert"`, `Info`/`Warn` → `role="status"`. **Zero copy / zero i18n changes** (security review confirms anti-enumeration wording byte-identical). `inline-style-bound` **10 → 7**. 10/16 MI RFCs in `done/`. **228/228 tests PASS.** |
 | v0.52.0 | **Phase 3 complete: RFC-MI-030 (Dashboard) + RFC-MI-031 (Audit + Tables).** Dashboard: warning callout migrates to `.callout--warning`; 4 sparkline inline styles eliminated via `.sparkline-{container,header,title,legend}` classes. Audit: `.cell-id`, `.cell-nowrap`, `.cell-actions` added to `tables.rs`; applied to `audit_row_view`; filter row inline style eliminated via `.filter-bar` class. Total: **6 inline styles eliminated; `inline-style-bound` 16 → 10**. 9/16 MI RFCs in `done/`. **228/228 tests PASS.** |
 | v0.51.1 | **Phase 2 complete: RFC-MI-022 (Route-Based Tab Component).** `.route-tabs` + `.route-tabs__link` CSS added. `RouteTab` + `route_tabs()` fn. `MeTab::Password` added. Both tab helpers migrated. `inline-style-bound` 17 → 16. **228/228 tests PASS.** |
 | v0.51.0 | **Phase 2 opens: RFC-MI-020 (Shell Layout decision) + RFC-MI-021 (Server-Rendered CSRF).** Shell: keep top-nav decision recorded; no structural code change. CSRF: Shell now requires `csrf_token: String`; Nav renders token directly into sign-out form hidden field; `logout-csrf.js` removed. 27 Shell call sites updated; 5 render function signatures updated. Sign-out works with JS disabled. **228/228 tests PASS; 0 warnings; all 4 CI invariants unchanged.** |
@@ -131,25 +133,25 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-**Phase 3 of the Mockup Integration arc is complete.**
+The project is in **Phase 4 of the Mockup Integration arc**.
+v0.53.0 ships `RFC-MI-041` (Authentication Surface Integration)
+**ahead of `RFC-MI-040`** at user request — the auth surfaces are
+tighter in scope and security-sensitive, so they land first.
 
-v0.52.0 ships RFC-MI-030 (dashboard callout migration and sparkline
-CSS cleanup) and RFC-MI-031 (audit column discipline and filter-bar
-utility class). `inline-style-bound` has now been reduced from its
-v0.48.4 baseline of 16 to **10** over the MI arc, with 6 more
-remaining across auth, OIDC, and setup pages (owned by Phases 4–5).
+**Remaining Phase 4 work: RFC-MI-040** (Setup Wizard UX, `v0.53.1`).
 
-9 of the original 16 MI RFCs are in `rfcs/done/`. 7 remain.
+10 of the original 16 MI RFCs are in `rfcs/done/`. 6 remain:
+- RFC-MI-040 (Setup wizard, v0.53.1)
+- RFC-MI-050 (Form system, v0.54.0)
+- RFC-MI-051 (Danger zone / confirmation, v0.54.0)
+- RFC-MI-060 (Self-service security tabs, v0.55.0)
+- RFC-MI-070 (OIDC consent UX, v0.56.0)
+- RFC-MI-080 (Responsive + a11y hardening, v0.57.0)
 
-**Phase 4** (`v0.53.0`) is the next step — setup wizard UX and
-authentication surface integration:
-
-- **RFC-MI-040** (Setup Wizard UX) — gate-state display on the
-  `/setup` welcome page; combine or keep the lang/HIBP split per
-  screen-D1 default.
-- **RFC-MI-041** (Authentication Surface Integration) — login, MFA
-  challenge, password-reset, step-up visual alignment with the
-  mockup. Non-negotiable: anti-enumeration wording preserved.
+`inline-style-bound` has now been reduced from baseline 17 to **7**
+over the MI arc. The remaining 7 inline styles are distributed
+across `pages/oidc.rs` (×4), `pages/setup.rs` (×2), and
+`pages/users.rs` (×1) — each owned by its respective upcoming RFC.
 
 The project remains in **verification phase**. No v1.0 designation
 is scheduled. **No release will start with v1 until the bar is

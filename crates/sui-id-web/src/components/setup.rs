@@ -37,8 +37,7 @@ pub const SETUP_AUTH_CARD_CSS: &str = r#"
 
 "#;
 
-pub const SETUP_LANG_PICKER_CSS: &str = r#"
-/* v0.48.2 — setup wizard language picker.
+pub const SETUP_LANG_PICKER_CSS: &str = r#"/* v0.48.2 — setup wizard language picker.
  * Recessive horizontal toggle group shown at the top of the
  * welcome screen. The "active" link gets a subtle outline so
  * it reads as the current state without competing visually
@@ -67,6 +66,21 @@ pub const SETUP_LANG_PICKER_CSS: &str = r#"
   color: var(--accent-default);
   border-color: var(--accent-default);
   background: var(--accent-subtle);
+}
+
+/* ── Auth surface helpers (RFC-MI-041, v0.53.0) ─────────────────────── */
+/* .auth-meta-link — the muted, caption-size, centered "Forgot password?" */
+/*                   link below the login form. Lives in setup.rs shard   */
+/*                   because the auth-card centred layout sits here.      */
+/* .qr-display      — bounded TOTP QR-code container (RFC-MI-041).        */
+.auth-meta-link {
+  margin-top: var(--space-3);
+  text-align: center;
+  font-size: var(--font-size-caption);
+}
+.qr-display {
+  max-width: 240px;
+  margin-bottom: var(--space-3);
 }
 
 "#;

@@ -42,7 +42,7 @@ pub fn render_login(
                     </div>
                     <button type="submit">{t.login_submit}</button>
                 </form>
-                <p class="muted" style="margin-top:var(--space-3);text-align:center;font-size:var(--font-size-caption)">
+                <p class="muted auth-meta-link">
                     <a href="/forgot-password">{t.login_forgot_password_link}</a>
                 </p>
                 {show_passkey_option.then(|| view! {
@@ -155,7 +155,7 @@ pub fn render_mfa_setup(
 
                 <div class="card">
                     <h3 class="card__title">{t.mfa_setup_qr_card_title}</h3>
-                    <div inner_html=qr_svg style="max-width:240px;margin-bottom:var(--space-3)"></div>
+                    <div inner_html=qr_svg class="qr-display"></div>
                     <p>{t.mfa_setup_secret_label}<span class="code ml-1">{secret_b32}</span></p>
                     <details>
                         <summary class="muted">{t.mfa_setup_otpauth_summary}</summary>
@@ -224,7 +224,7 @@ pub fn render_password_change(
                 </header>
                 {flash_banner(flash)}
 
-                <div class="card" style="max-width:var(--content-narrow-width)">
+                <div class="card card--narrow">
                     <form method="post" action="/me/security/password"
                           autocomplete="off" class="stack">
                         <input type="hidden" name="_csrf" value=csrf_token />

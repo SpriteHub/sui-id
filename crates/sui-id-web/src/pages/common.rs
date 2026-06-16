@@ -34,6 +34,19 @@ impl FlashKind {
             Self::Error => "flash error",
         }
     }
+
+    /// ARIA live-region role per kind (RFC-MI-041 §8 ABDD).
+    /// `Error` uses `role="alert"` to interrupt assistive tech
+    /// immediately for failures (login failure, MFA failure,
+    /// step-up failure, reset-token errors). `Info`/`Warn` use
+    /// `role="status"` to be announced politely without
+    /// interrupting the user's current activity.
+    fn aria_role(self) -> &'static str {
+        match self {
+            Self::Info | Self::Warn => "status",
+            Self::Error => "alert",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -43,7 +56,7 @@ pub struct Flash {
 }
 
 pub(super) fn flash_banner(flash: Option<Flash>) -> Option<impl IntoView> {
-    flash.map(|f| view! { <div class=f.kind.class() role="status">{f.text}</div> })
+    flash.map(|f| view! { <div class=f.kind.class() role=f.kind.aria_role()>{f.text}</div> })
 }
 
 pub(super) fn fmt_time(t: DateTime<Utc>) -> String {

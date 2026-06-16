@@ -140,4 +140,12 @@ pub const CARDS_CSS: &str = r#"
   margin: 0 0 var(--space-2);
 }
 
+/* ── Card width variant (RFC-MI-041, v0.53.0) ───────────────────────── */
+/* .card--narrow constrains the card to the content-narrow width,        */
+/* used for the password-change form on /me/security/password and any    */
+/* other isolated single-action form that should not stretch wide.       */
+.card--narrow {
+  max-width: var(--content-narrow-width);
+}
+
 "#;

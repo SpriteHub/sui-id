@@ -5,6 +5,74 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.0] — Unreleased
+
+**Phase 4 opens with `RFC-MI-041` (Authentication Surface
+Integration).** Shipped **ahead of `RFC-MI-040`** at user request —
+auth surfaces are tighter in scope and security-sensitive, so they
+land first; the setup wizard work (`RFC-MI-040`) follows in
+v0.53.1.
+
+---
+
+### Security guarantee
+
+**Zero copy changed. Zero i18n keys changed.** A line-level diff
+of `pages/auth.rs` and the entire `sui-id-i18n` crate against
+v0.52.0 (excluding `class=` / `style=` attributes) is empty.
+Anti-enumeration wording, MFA failure copy, step-up purpose copy,
+and reset-token failure copy are byte-identical to v0.52.0. No
+backend auth logic is touched.
+
+### Three inline styles eliminated in `pages/auth.rs`
+
+| Site | Before | After |
+|---|---|---|
+| Login "Forgot password?" link | `style="margin-top:…;text-align:center;font-size:…"` | `class="muted auth-meta-link"` |
+| MFA setup TOTP QR code | `style="max-width:240px;margin-bottom:…"` | `class="qr-display"` |
+| Password change card | `style="max-width:var(--content-narrow-width)"` | `class="card card--narrow"` |
+
+### Three new CSS classes
+
+- **`.auth-meta-link`** (→ `components/setup.rs`) — muted,
+  caption-size, centered, top-margined. For "Forgot password?",
+  "Back to sign-in", and similar meta links below auth forms.
+- **`.qr-display`** (→ `components/setup.rs`) — bounded TOTP
+  QR-code container (`max-width: 240px; margin-bottom: --space-3`).
+- **`.card--narrow`** (→ `components/cards.rs`) — constrains a
+  `.card` to `--content-narrow-width`. Used by the password-change
+  form and any other isolated single-action card.
+
+### ABDD improvement: flash banner role per kind
+
+`FlashKind::aria_role()` added to `pages/common.rs`:
+- `FlashKind::Error` → `role="alert"` (interrupts assistive tech
+  immediately for login failure, MFA failure, step-up failure,
+  reset-token failure)
+- `FlashKind::Info` / `FlashKind::Warn` → `role="status"` (polite
+  announcement for benign messages like "Settings saved")
+
+The helper change is transparent to every caller. No `flash_banner`
+call site needs updating.
+
+### Tests, CI, and compatibility
+
+- `cargo check -p sui-id-web` clean.
+- **228/228 library tests pass** (12 + 13 + 0 + 36 + 114 + 53).
+- `text-leaks` = 0, `css-tokens` = 148, `semantic-parity` = 36,
+  **`inline-style-bound` = 7** (was 10; −3 this release).
+- No-JS form submission still works (no script change; forms remain
+  plain `method="post"` with hidden `_csrf` server-rendered per
+  RFC-MI-021).
+
+### Version bumps
+
+`0.52.0` → `0.53.0` across workspace, all six crates, and `Cargo.lock`.
+
+10 of 16 MI RFCs now in `rfcs/done/`. 6 remain.
+
+---
+
 ## [0.52.0] — Unreleased
 
 **Phase 3 complete: read-only admin screens.** `RFC-MI-030`

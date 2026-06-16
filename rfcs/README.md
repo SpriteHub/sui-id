@@ -69,12 +69,11 @@ artifacts the rest of the arc references live under
 | Order | ID | Title | Phase |
 |------:|----|-------|-------|
 | 1 | [RFC-MI-040](./proposed/RFC-MI-040-setup-wizard-ux.md) | Setup Wizard UX Integration | Phase 4 |
-| 2 | [RFC-MI-041](./proposed/RFC-MI-041-authentication-surfaces.md) | Authentication Surface Integration | Phase 4 |
-| 3 | [RFC-MI-050](./proposed/RFC-MI-050-form-system-validation.md) | Form System and Validation Feedback | Phase 5 |
-| 4 | [RFC-MI-051](./proposed/RFC-MI-051-danger-confirmation.md) | Danger Zone and Confirmation Screen Integration | Phase 5 |
-| 5 | [RFC-MI-060](./proposed/RFC-MI-060-self-service-security-tabs.md) | Self-Service Security Tab Integration | Phase 6 |
-| 6 | [RFC-MI-070](./proposed/RFC-MI-070-oidc-consent-ux.md) | OIDC Consent UX Integration | Phase 7 |
-| 7 | [RFC-MI-080](./proposed/RFC-MI-080-ui-regression-a11y-hardening.md) | UI Regression and Accessibility Hardening | Phase 8 |
+| 2 | [RFC-MI-050](./proposed/RFC-MI-050-form-system-validation.md) | Form System and Validation Feedback | Phase 5 |
+| 3 | [RFC-MI-051](./proposed/RFC-MI-051-danger-confirmation.md) | Danger Zone and Confirmation Screen Integration | Phase 5 |
+| 4 | [RFC-MI-060](./proposed/RFC-MI-060-self-service-security-tabs.md) | Self-Service Security Tab Integration | Phase 6 |
+| 5 | [RFC-MI-070](./proposed/RFC-MI-070-oidc-consent-ux.md) | OIDC Consent UX Integration | Phase 7 |
+| 6 | [RFC-MI-080](./proposed/RFC-MI-080-ui-regression-a11y-hardening.md) | UI Regression and Accessibility Hardening | Phase 8 |
 
 Phase-1 blockers, restated for visibility:
 
@@ -99,6 +98,7 @@ Phase-1 blockers, restated for visibility:
 
 | ID  | Title                                                          | Shipped in |
 |-----|----------------------------------------------------------------|------------|
+| MI-041 | [Authentication Surface Integration](./done/RFC-MI-041-authentication-surfaces.md) | v0.53.0 |
 | MI-031 | [Audit Log and Read-Only Table Integration](./done/RFC-MI-031-audit-readonly-tables.md) | v0.52.0 |
 | MI-030 | [Dashboard and Summary Surface Integration](./done/RFC-MI-030-dashboard-summary.md) | v0.52.0 |
 | MI-022 | [Route-Based Tab Component](./done/RFC-MI-022-route-based-tab-component.md) | v0.51.1 |
