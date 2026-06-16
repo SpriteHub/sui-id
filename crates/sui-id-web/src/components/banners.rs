@@ -108,4 +108,45 @@ pub const BANNERS_DEVMODE_CSS: &str = r#"
   font-weight: var(--font-weight-medium);
 }
 
+/* ── Dashboard action items + checklist (RFC 073, v0.58.0) ──────────── */
+/* .action-items-list — flat list of conditional warnings. Each row is */
+/*   a single line: severity dot + message + link.                       */
+/* .checklist         — Getting Started: text-prefixed checkboxes        */
+/*   (☐ / ✓), no colour-only state.                                      */
+.action-items-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.action-items-list > li {
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width-default) solid var(--border-muted);
+  font-size: var(--font-size-body);
+}
+.action-items-list > li:last-child {
+  border-bottom: 0;
+}
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.checklist > li {
+  padding: var(--space-1) 0;
+  font-size: var(--font-size-body);
+}
+.checklist > li::before {
+  font-family: monospace;
+  margin-right: var(--space-2);
+  color: var(--fg-muted);
+  content: "\2610";       /* ☐ ballot box */
+}
+.checklist > li.done {
+  color: var(--fg-muted);
+}
+.checklist > li.done::before {
+  content: "\2713";       /* ✓ check mark */
+  color: var(--success-default);
+}
+
 "#;

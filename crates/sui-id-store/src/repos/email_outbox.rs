@@ -316,3 +316,24 @@ mod tests {
         assert!(claimed.is_some());
     }
 }
+
+/// RFC 073: Count rows that have been pending in `queued` state for
+/// longer than `stuck_threshold`. Used by the dashboard to surface
+/// "outbox stuck" warnings — typically when SMTP credentials are wrong
+/// or the SMTP host is unreachable.
+pub async fn count_stuck_pending(
+    db: &Database,
+    stuck_threshold: chrono::Duration,
+    now: chrono::DateTime<chrono::Utc>,
+) -> StoreResult<usize> {
+    let cutoff = (now - stuck_threshold).to_rfc3339();
+    db.with_conn(move |conn| {
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM email_outbox \
+             WHERE state = 'queued' AND created_at < ?1",
+            rusqlite::params![cutoff],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }).await
+}

@@ -147,3 +147,22 @@ pub async fn count_active_for_user(
         Ok(n)
     }).await
 }
+
+/// RFC 073: Count password-reset tokens that have been issued but not
+/// consumed and have not expired. A high number means many resets
+/// requested but not completed — possibly worth admin attention.
+pub async fn count_outstanding(
+    db: &Database,
+    now: chrono::DateTime<chrono::Utc>,
+) -> StoreResult<usize> {
+    let now_str = now.to_rfc3339();
+    db.with_conn(move |conn| {
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM password_reset_tokens \
+             WHERE consumed_at IS NULL AND expires_at > ?1",
+            params![now_str],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }).await
+}

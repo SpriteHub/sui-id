@@ -79,6 +79,22 @@ Phase-1 blockers resolved:
 | 070 | [ureq → reqwest migration](./done/070-ureq-to-reqwest.md) | v0.57.1 |
 | 069 | [rand 0.10 migration](./done/069-rand-0.10-migration.md) | v0.57.1 |
 
+### Implemented — UX rethink
+
+| RFC | Title | Release |
+|-----|-------|---------|
+| 073 | [Dashboard action items](./done/073-dashboard-action-items.md) | v0.58.0 |
+
+### Proposed — UX rethink (v0.58.x candidates)
+
+These three RFCs follow from the post-MI-arc UX audit (v0.57.1 session)
+and target gaps the MI arc did not address.
+
+| RFC | Title | Priority | Scope |
+|-----|-------|----------|-------|
+| 071 | [Auditor role](./proposed/071-auditor-role.md) | P1 | Schema + middleware + per-page UI conditional rendering |
+| 072 | [End-user app-access surface](./proposed/072-end-user-app-access.md) | P1 | New `/me/apps` page + token-endpoint touchpoint |
+
 ### Proposed — maintenance / dependency refresh
 
 All maintenance RFCs from this category are implemented. See the

@@ -367,3 +367,45 @@ pub async fn resolve_usernames(
         Ok(map)
     }).await
 }
+
+/// RFC 073: Count admin users (role = 'admin' OR is_admin = 1, since the
+/// role column may not yet exist) who have NEITHER an enabled TOTP secret
+/// NOR any WebAuthn credential. A user with no MFA factor at all is the
+/// one we want to surface in the dashboard action items.
+pub async fn count_admins_without_mfa(db: &Database) -> StoreResult<usize> {
+    db.with_conn(move |conn| {
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM users u \
+             WHERE u.is_admin = 1 \
+               AND u.is_disabled = 0 \
+               AND u.is_deleted = 0 \
+               AND NOT EXISTS (\
+                   SELECT 1 FROM user_totp t \
+                   WHERE t.user_id = u.id AND t.enabled = 1\
+               ) \
+               AND NOT EXISTS (\
+                   SELECT 1 FROM user_webauthn_credentials c \
+                   WHERE c.user_id = u.id\
+               )",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }).await
+}
+
+/// RFC 073: True if the user has at least one MFA factor enrolled
+/// (enabled TOTP secret OR any WebAuthn credential).
+pub async fn has_mfa(db: &Database, user_id: &UserId) -> StoreResult<bool> {
+    let uid = user_id.to_string();
+    db.with_conn(move |conn| {
+        let n: i64 = conn.query_row(
+            "SELECT \
+                (SELECT COUNT(*) FROM user_totp WHERE user_id = ?1 AND enabled = 1) \
+              + (SELECT COUNT(*) FROM user_webauthn_credentials WHERE user_id = ?1)",
+            params![uid],
+            |row| row.get(0),
+        )?;
+        Ok(n > 0)
+    }).await
+}

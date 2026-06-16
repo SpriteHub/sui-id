@@ -5,6 +5,62 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.58.0] — Unreleased
+
+**RFC 073 — Dashboard action items.** The admin dashboard now surfaces
+operational concerns rather than just vanity counts.
+
+---
+
+### Getting Started checklist (new, fresh instances only)
+
+A `.callout--info` section at the top of the dashboard lists three items
+for new deployments — Configure SMTP, Add first app, Enable admin MFA.
+Each shows a `☐` or `✓` text indicator (ABDD-compliant; no colour-only
+state). Disappears automatically once all three items are done.
+
+### Action items section (expanded from RFC 031)
+
+The previous three-item RFC 031 warning section is replaced by a unified
+`.callout--warning` "Action items" list that includes four new signals:
+
+| Condition | Trigger |
+|---|---|
+| Admins without MFA | ≥ 1 admin account has no TOTP or WebAuthn |
+| Old signing key | Oldest active key ≥ 330 days (rotation due before 12-month sunset) |
+| Outbox stuck | ≥ 1 queued email older than 1 hour |
+| Pending resets | ≥ 5 unconsumed, unexpired password-reset tokens |
+
+All conditions are best-effort aggregates on existing, indexed tables;
+a single failing query falls back to zero (dashboard never breaks).
+
+### Four new repo helpers
+
+- `users::count_admins_without_mfa()`
+- `users::has_mfa(user_id)`
+- `email_outbox::count_stuck_pending(threshold, now)`
+- `password_reset_tokens::count_outstanding(now)`
+
+### New i18n keys
+
+8 keys added in en/ja/zh. 4 are parameterised (`fn(usize)/fn(i64) -> String`); 4 are static strings for the Getting Started checklist.
+
+### CSS
+
+`.action-items-list` and `.checklist` added to `components/banners.rs`.
+
+### Tests and CI
+
+- **228/228 library tests pass.**
+- `text-leaks` = 0, `inline-style-bound` = 0, `css-tokens` = 148, `semantic-parity` = 36.
+
+### RFC planning documents
+
+RFC 071 (Auditor role) and RFC 072 (End-user app-access surface) added
+to `rfcs/proposed/` — the next two items in the UX rethink arc.
+
+---
+
 ## [0.57.1] — Unreleased
 
 **Dependency refresh: RFC 069 (rand 0.10) + RFC 070 (ureq → reqwest).**

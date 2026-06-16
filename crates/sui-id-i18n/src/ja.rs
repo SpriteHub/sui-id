@@ -462,6 +462,14 @@ pub static STRINGS_JA: Strings = Strings {
     dashboard_warn_smtp: "パスワードリセットメールが無効です。設定 → メール で SMTP を設定してください。",
     dashboard_warn_hibp: "パスワード漏洩チェックがオフです。設定 → 認証 で有効にすることを推奨します。",
     dashboard_warn_cookie_insecure: "Cookie Secure フラグがオフです。本番環境では設定 → セキュリティ で有効にしてください。",
+    dashboard_warn_admins_no_mfa: |n| format!("管理者{n}名にMFA未設定。"),
+    dashboard_warn_old_signing_key: |age| format!("最も古い署名鍵は{age}日経過 — ローテーション推奨。"),
+    dashboard_warn_outbox_stuck: |n| format!("{n}件のメールが1時間以上送信待ち。"),
+    dashboard_warn_pending_resets: |n| format!("未使用のパスワードリセットリンク{n}件。"),
+    dashboard_getting_started_title: "はじめに",
+    dashboard_getting_started_smtp: "SMTPを設定 — パスワードリセットメール送信に必要",
+    dashboard_getting_started_first_app: "最初のOIDCアプリケーションを追加",
+    dashboard_getting_started_admin_mfa: "管理者アカウントにMFAを有効化",
 
     // Admin: ユーザー管理 (RFC 029)
     users_title: "ユーザー管理",

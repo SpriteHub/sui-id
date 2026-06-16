@@ -78,6 +78,29 @@ pub async fn dashboard(
     let smtp_configured = sui_id_store::repos::smtp_config::get(&app.db)
         .await.map(|o| o.is_some()).unwrap_or(false);
 
+    // RFC 073 action items (v0.58.0). Each is a small read-only
+    // aggregate; total added latency is well under 20ms on indexed
+    // columns. All conditions fail open (best-effort) so a single
+    // failing query never breaks the whole dashboard.
+    let admins_without_mfa = sui_id_store::repos::users::count_admins_without_mfa(&app.db)
+        .await.unwrap_or(0);
+    let oldest_active_key_age_days = sui_id_store::repos::signing_keys::list_active(&app.db)
+        .await.ok()
+        .and_then(|keys| keys.iter().map(|k| k.created_at).min())
+        .map(|oldest| (app.clock.now() - oldest).num_days());
+    let outbox_stuck_count = sui_id_store::repos::email_outbox::count_stuck_pending(
+        &app.db, chrono::Duration::hours(1), app.clock.now()
+    ).await.unwrap_or(0);
+    let pending_password_resets = sui_id_store::repos::password_reset_tokens::count_outstanding(
+        &app.db, app.clock.now()
+    ).await.unwrap_or(0);
+
+    // Getting Started checklist (RFC 073).
+    let gs_smtp_configured = smtp_configured;
+    let gs_first_app_added = clients_n > 0;
+    let gs_admin_mfa = sui_id_store::repos::users::has_mfa(&app.db, &admin_id)
+        .await.unwrap_or(false);
+
     // RFC 043: fetch last 5 important audit events for the dashboard card.
     let audit_rows = sui_id_store::repos::audit::recent_important(&app.db, 5)
         .await.unwrap_or_default();
@@ -110,6 +133,13 @@ pub async fn dashboard(
         warn_smtp_not_configured: !smtp_configured,
         warn_hibp_off: hibp_is_off,
         warn_cookie_insecure: !app.config.server.cookie_secure,
+        admins_without_mfa,
+        oldest_active_key_age_days,
+        outbox_stuck_count,
+        pending_password_resets,
+        gs_smtp_configured,
+        gs_first_app_added,
+        gs_admin_mfa,
         recent_important,
     };
     let token = crate::csrf::ensure_token(&jar);

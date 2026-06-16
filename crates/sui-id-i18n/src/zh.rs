@@ -465,6 +465,14 @@ pub static STRINGS_ZH: Strings = Strings {
     dashboard_warn_smtp: "密码重置邮件已禁用，请在设置 → 邮件中配置 SMTP。",
     dashboard_warn_hibp: "密码泄露检查已关闭，建议在设置 → 认证中启用。",
     dashboard_warn_cookie_insecure: "Cookie Secure 标志已关闭，生产环境请在设置 → 安全中启用。",
+    dashboard_warn_admins_no_mfa: |n| format!("{n}个管理员账户未启用MFA。"),
+    dashboard_warn_old_signing_key: |age| format!("最早的签名密钥已存在{age}天 — 建议轮换。"),
+    dashboard_warn_outbox_stuck: |n| format!("{n}封邮件已排队超过一小时。"),
+    dashboard_warn_pending_resets: |n| format!("{n}个未使用的密码重置链接。"),
+    dashboard_getting_started_title: "快速入门",
+    dashboard_getting_started_smtp: "配置SMTP — 用户接收密码重置邮件所需",
+    dashboard_getting_started_first_app: "添加您的第一个OIDC应用",
+    dashboard_getting_started_admin_mfa: "为管理员账户启用MFA",
 
     // Admin: 用户管理 (RFC 029)
     users_title: "用户管理",

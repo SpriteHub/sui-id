@@ -76,7 +76,8 @@ migration plan, codebase handoff, and mockup handoff package.
 | **6** | v0.55.0        | Self-service `/me/security/*`                           | RFC-MI-060 → `done/`          |
 | **7** | **v0.56.0**    | **OIDC consent UX (this release; Phase 7 complete)**    | RFC-MI-070 → `done/`          |
 | **8** | v0.57.0        | Responsive + a11y hardening (MI arc done)               | RFC-MI-080 → `done/`          |
-| —     | **v0.57.1**    | **Dependency refresh: rand 0.10 + reqwest (this release)** | RFC 069, 070 → `done/`     |
+| —     | v0.57.1        | Dependency refresh: rand 0.10 + reqwest                 | RFC 069, 070 → `done/`        |
+| —     | **v0.58.0**    | **Dashboard action items (this release)**               | RFC 073 → `done/`             |
 
 Phase-1 blockers (`D-01` / `D-02` / `D-03` in the migration plan)
 must be resolved before any code-level visual replacement starts:
@@ -91,6 +92,7 @@ deferred (verification phase, spec §22).
 
 | Version | What shipped |
 |---|---|
+| v0.58.0 | **RFC 073 (Dashboard action items).** Getting Started checklist (3 items, ☐/✓ ABDD-safe text indicators) + 4 new action items (admins without MFA, old signing key, stuck outbox, pending resets). 4 new read-only repo helpers. 8 i18n keys (×3 locales). `.action-items-list` and `.checklist` CSS. **228/228 tests PASS; all CI invariants unchanged.** |
 | v0.57.1 | **Dependency refresh: RFC 069 (rand 0.10) + RFC 070 (ureq → reqwest).** rand 0.8→0.10 via getrandom; `OsRng.fill_bytes` (×10), `SaltString::generate`, `SigningKey::generate` (Option B: Zeroizing + from_bytes) all migrated. ureq removed; `HibpClient` trait made async via async-trait; `HttpHibpClient` rebuilt on reqwest 0.12. Bug fixed: enforce_hibp now properly awaits the check instead of blocking the tokio thread. **228/228 tests PASS; all CI invariants unchanged.** |
 | v0.57.0 | **Phase 8 complete — MI arc fully closed: RFC-MI-080 (UI Regression + A11y Hardening).** Skip link added to Shell and AuthShell (WCAG 2.4.1). `<header role="banner">`, `<main id="main-content">`. `@media (max-width: 480px)` and `(max-width: 360px)` breakpoints added. New i18n key `a11y_skip_to_main`. Six verification matrices committed (`docs/src/mockup-integration/`). **16/16 MI RFCs in `done/`. `inline-style-bound` = 0. 228/228 tests PASS.** |
 | v0.56.0 | **Phase 7 complete: RFC-MI-070 (OIDC Consent UX). `inline-style-bound` reaches 0.** Four inline styles in `pages/oidc.rs` eliminated via `.consent-card`, `.consent-intro`, `.consent-scope-list`, `.consent-scope-item` classes. Scope item structure improved. PKCE/redirect validation unchanged. 15/16 MI RFCs in `done/`. **228/228 tests PASS.** |
@@ -139,16 +141,12 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-**The Mockup Integration arc is fully closed as of v0.57.0.**
-**v0.57.1** (this release) ships two dependency-refresh RFCs:
+**v0.58.0** ships RFC 073 (Dashboard action items), the first of three
+UX-rethink RFCs identified in the post-MI-arc audit.
 
-- **RFC 069** (rand 0.10): all `OsRng` / `rand_core 0.6` usage
-  replaced with `getrandom 0.4`; `SigningKey` key generation uses
-  Option B (`Zeroizing` + `from_bytes`); JWT tests use deterministic
-  seeds.
-- **RFC 070** (ureq → reqwest): `HibpClient` trait made async;
-  `HttpHibpClient` rebuilt on `reqwest 0.12`; inadvertent blocking
-  of the tokio runtime by the former sync ureq call is fixed.
+Two RFC planning documents are in `rfcs/proposed/`:
+- **RFC 071** — Auditor role (P1; schema + middleware)
+- **RFC 072** — End-user app-access surface (P1; `/me/apps` page)
 
 All 16 MI RFCs across Phases 0–8 are implemented and in
 `rfcs/done/`. The arc spanned v0.49.0 through v0.57.0.

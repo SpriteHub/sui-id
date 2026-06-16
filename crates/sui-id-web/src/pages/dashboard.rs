@@ -46,8 +46,38 @@ pub struct DashboardData {
     pub warn_smtp_not_configured: bool,
     pub warn_hibp_off: bool,
     pub warn_cookie_insecure: bool,
+    // RFC 073: additional action items (v0.58.0)
+    pub admins_without_mfa: usize,
+    pub oldest_active_key_age_days: Option<i64>,
+    pub outbox_stuck_count: usize,
+    pub pending_password_resets: usize,
+    // RFC 073: getting-started checklist (v0.58.0). All five fields
+    // visible only on a fresh instance; the checklist disappears
+    // entirely once every field is `true`.
+    pub gs_smtp_configured: bool,
+    pub gs_first_app_added: bool,
+    pub gs_admin_mfa: bool,
     // RFC 043: last N important audit events shown on dashboard
     pub recent_important: Vec<DashboardEventRow>,
+}
+
+impl DashboardData {
+    /// True iff at least one Getting-Started item is incomplete.
+    /// When false, the checklist disappears from the dashboard.
+    pub fn getting_started_visible(&self) -> bool {
+        !(self.gs_smtp_configured && self.gs_first_app_added && self.gs_admin_mfa)
+    }
+    /// True iff any RFC-073 action item should render. Used to decide
+    /// whether to draw the "Action items" section header at all.
+    pub fn has_action_items(&self) -> bool {
+        self.warn_smtp_not_configured
+            || self.warn_hibp_off
+            || self.warn_cookie_insecure
+            || self.admins_without_mfa > 0
+            || self.oldest_active_key_age_days.map_or(false, |d| d >= 330)
+            || self.outbox_stuck_count > 0
+            || self.pending_password_resets >= 5
+    }
 }
 
 /// Render the inline SVG sparkline.
@@ -156,6 +186,10 @@ fn render_sparkline(t: &'static sui_id_i18n::Strings, buckets: Vec<DashboardSpar
 pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, csrf_token: String, dev_mode: bool, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let t = lang.strings();
+        // RFC 073: compute visibility flags before destructuring so we
+        // do not need to keep `data` around or borrow it after move.
+        let getting_started_visible = data.getting_started_visible();
+        let has_action_items = data.has_action_items();
         let DashboardData {
             admin_username,
             user_count,
@@ -166,6 +200,13 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, csrf_token: S
             warn_smtp_not_configured,
             warn_hibp_off,
             warn_cookie_insecure,
+            admins_without_mfa,
+            oldest_active_key_age_days,
+            outbox_stuck_count,
+            pending_password_resets,
+            gs_smtp_configured,
+            gs_first_app_added,
+            gs_admin_mfa,
             recent_important,
         } = data;
 
@@ -200,19 +241,56 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, csrf_token: S
                 </header>
                 {flash_banner(flash)}
 
-                {(warn_smtp_not_configured || warn_hibp_off || warn_cookie_insecure).then(|| view! {
-                    // RFC-MI-030: use .callout--warning (introduced in v0.50.1) instead
-                    // of .card.card--warn; removes the inline style on the h2.
-                    <section class="callout callout--warning mb-4" aria-label=t.dashboard_aria_action_required>
-                        <h2 class="callout__title">
-                            "⚠ " {t.dashboard_action_required_title}
-                        </h2>
-                        <ul class="ul-indent">
-                            {warn_smtp_not_configured.then(|| view! { <li>{t.dashboard_warn_smtp}</li> })}
-                            {warn_hibp_off.then(|| view! { <li>{t.dashboard_warn_hibp}</li> })}
-                            {warn_cookie_insecure.then(|| view! { <li>{t.dashboard_warn_cookie_insecure}</li> })}
+                // RFC 073: Getting Started checklist for fresh instances.
+                // Disappears entirely once all three items are done.
+                {getting_started_visible.then(|| view! {
+                    <section class="callout callout--info mb-4" aria-label=t.dashboard_getting_started_title>
+                        <h2 class="callout__title">{t.dashboard_getting_started_title}</h2>
+                        <ul class="checklist">
+                            <li class=if gs_smtp_configured { "done" } else { "" }>
+                                {t.dashboard_getting_started_smtp}
+                            </li>
+                            <li class=if gs_first_app_added { "done" } else { "" }>
+                                {t.dashboard_getting_started_first_app}
+                            </li>
+                            <li class=if gs_admin_mfa { "done" } else { "" }>
+                                {t.dashboard_getting_started_admin_mfa}
+                            </li>
                         </ul>
                     </section>
+                })}
+
+                // RFC 073: Action items — appears when any condition is true.
+                // Sorted within the list by severity (danger first), then info.
+                {has_action_items.then(|| {
+                    let old_key_warning = oldest_active_key_age_days
+                        .filter(|d| *d >= 330);
+                    view! {
+                        <section class="callout callout--warning mb-4" aria-label=t.dashboard_aria_action_required>
+                            <h2 class="callout__title">
+                                "⚠ " {t.dashboard_action_required_title}
+                            </h2>
+                            <ul class="action-items-list">
+                                // From RFC 031 (existing): danger-level config gaps
+                                {warn_smtp_not_configured.then(|| view! { <li>{t.dashboard_warn_smtp}</li> })}
+                                {warn_hibp_off.then(|| view! { <li>{t.dashboard_warn_hibp}</li> })}
+                                {warn_cookie_insecure.then(|| view! { <li>{t.dashboard_warn_cookie_insecure}</li> })}
+                                // RFC 073 (new): operational signals
+                                {(outbox_stuck_count > 0).then(|| view! {
+                                    <li>{(t.dashboard_warn_outbox_stuck)(outbox_stuck_count)}</li>
+                                })}
+                                {(admins_without_mfa > 0).then(|| view! {
+                                    <li>{(t.dashboard_warn_admins_no_mfa)(admins_without_mfa)}</li>
+                                })}
+                                {old_key_warning.map(|age| view! {
+                                    <li>{(t.dashboard_warn_old_signing_key)(age)}</li>
+                                })}
+                                {(pending_password_resets >= 5).then(|| view! {
+                                    <li>{(t.dashboard_warn_pending_resets)(pending_password_resets)}</li>
+                                })}
+                            </ul>
+                        </section>
+                    }
                 })}
 
                 // RFC 043 (promoted by RFC 063): Recent important events.

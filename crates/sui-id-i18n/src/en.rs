@@ -462,6 +462,14 @@ pub static STRINGS_EN: Strings = Strings {
     dashboard_warn_smtp: "Forgot-password email is disabled. Configure SMTP in Settings → Email to enable it.",
     dashboard_warn_hibp: "Password breach checking is off. Enable it in Settings → Authentication.",
     dashboard_warn_cookie_insecure: "Cookie Secure flag is off. Set cookie_secure = true in production (Settings → Security).",
+    dashboard_warn_admins_no_mfa: |n| format!("{n} admin account(s) without MFA."),
+    dashboard_warn_old_signing_key: |age| format!("Oldest signing key is {age} days old — rotation recommended."),
+    dashboard_warn_outbox_stuck: |n| format!("{n} email(s) have been queued for over an hour."),
+    dashboard_warn_pending_resets: |n| format!("{n} password-reset link(s) outstanding."),
+    dashboard_getting_started_title: "Getting Started",
+    dashboard_getting_started_smtp: "Configure SMTP so users can receive password-reset emails",
+    dashboard_getting_started_first_app: "Add your first OIDC application",
+    dashboard_getting_started_admin_mfa: "Enable MFA on your admin account",
 
     // Admin: Users (RFC 029)
     users_title: "Users",
