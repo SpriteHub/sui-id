@@ -4,6 +4,7 @@
 //! domain rules ("only an admin may suspend a user", "client deletion must
 //! also revoke its outstanding refresh tokens") and emit audit log entries.
 
+use zeroize::Zeroizing;
 use crate::errors::{CoreError, CoreResult};
 use crate::hibp::{self, HibpClient, HibpEnforcement};
 use crate::password::{check_password_policy, hash_password};
@@ -628,15 +629,18 @@ pub async fn rotate_signing_key(
     caches: &Caches,
 ) -> CoreResult<sui_id_shared::ids::SigningKeyId> {
     use ed25519_dalek::SigningKey;
-    use rand::rngs::OsRng;
     use sui_id_shared::ids::SigningKeyId;
     use sui_id_store::repos::signing_keys;
 
     require_admin(db, actor).await?;
 
     // Generate the new key material first (outside the DB lock).
-    let mut rng = OsRng;
-    let sk = SigningKey::generate(&mut rng);
+    // RFC 069: getrandom + from_bytes replaces SigningKey::generate(&mut OsRng).
+        // Semantically equivalent: secret key material from OS RNG; memory
+        // zeroized on drop via Zeroizing<>.
+    let mut secret = Zeroizing::new([0u8; 32]);
+    getrandom::fill(secret.as_mut()).expect("system RNG unavailable");
+    let sk = SigningKey::from_bytes(&secret);
     let pk = sk.verifying_key();
     let new_id = SigningKeyId::new();
 

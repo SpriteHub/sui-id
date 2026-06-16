@@ -234,9 +234,8 @@ async fn serve_dev(args: &[String]) -> Result<()> {
     let db = dev_mode::open_dev_db(dev_db.as_deref())?;
     let setup_token = {
         use base64ct::Encoding;
-        use rand::RngCore;
         let mut buf = [0u8; 24];
-        rand::rngs::OsRng.fill_bytes(&mut buf);
+        getrandom::fill(&mut buf).expect("system RNG unavailable");
         base64ct::Base64::encode_string(&buf)
     };
     dev_mode::print_dev_warnings(&dev_bind, &seed_source);

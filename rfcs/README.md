@@ -72,6 +72,18 @@ Phase-1 blockers resolved:
 - **`D-02`** (RFC-MI-022 v0.51.1) — Path-based route tabs; query-parameter model rejected. ✅
 - **`D-03`** (RFC-MI-021 v0.51.0) — CSRF threaded through `Shell` server-side. ✅
 
+### Implemented — maintenance / dependency refresh
+
+| RFC | Title | Release |
+|-----|-------|---------|
+| 070 | [ureq → reqwest migration](./done/070-ureq-to-reqwest.md) | v0.57.1 |
+| 069 | [rand 0.10 migration](./done/069-rand-0.10-migration.md) | v0.57.1 |
+
+### Proposed — maintenance / dependency refresh
+
+All maintenance RFCs from this category are implemented. See the
+Implemented table above.
+
 ### Proposed — post-1.0 candidates (open for review)
 
 | ID  | Title                                                          | Priority |

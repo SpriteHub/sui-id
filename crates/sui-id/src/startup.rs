@@ -2,14 +2,13 @@
 //! database, generate (or print) the setup token, and hand back a ready-to-
 //! mount [`AppState`] plus the listen address.
 
+use getrandom;
 use crate::config::Config;
 use crate::keyring::{self, KeyOrigin};
 use crate::AppState;
 use sui_id_core::time::system_clock;
 use anyhow::{Context, Result};
 use base64ct::{Base64, Encoding};
-use rand::rngs::OsRng;
-use rand::RngCore;
 use std::sync::Once;
 use sui_id_store::repos::state;
 use sui_id_store::Database;
@@ -220,7 +219,7 @@ pub async fn prepare(cfg: Config) -> Result<Startup> {
 
 fn generate_setup_token() -> String {
     let mut buf = [0u8; 24];
-    OsRng.fill_bytes(&mut buf);
+    getrandom::fill(&mut buf).expect("system RNG unavailable");
     let mut out = vec![0u8; 64];
     let n = Base64::encode(&buf, &mut out)
         .map(str::len)

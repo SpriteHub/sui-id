@@ -5,12 +5,12 @@
 //! layer. Once the first admin is created we mark the system initialized;
 //! subsequent calls to that endpoint must fail.
 
+use zeroize::Zeroizing;
 use crate::errors::{CoreError, CoreResult};
 use crate::password::{check_password_policy, hash_password};
 use crate::time::SharedClock;
 use chrono::Utc;
 use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
 use sui_id_shared::ids::{SigningKeyId, UserId};
 use sui_id_store::models::{CredentialRow, UserRow};
 use sui_id_store::repos::{audit, credentials, signing_keys, state, users};
@@ -94,8 +94,12 @@ pub async fn create_initial_admin(
 
     // 3. Bootstrap an Ed25519 signing key if one isn't there yet.
     if signing_keys::active(db).await.is_err() {
-        let mut rng = OsRng;
-        let sk = SigningKey::generate(&mut rng);
+        // RFC 069: getrandom + from_bytes replaces SigningKey::generate(&mut OsRng).
+        // Semantically equivalent: secret key material from OS RNG; memory
+        // zeroized on drop via Zeroizing<>.
+        let mut secret = Zeroizing::new([0u8; 32]);
+        getrandom::fill(secret.as_mut()).expect("system RNG unavailable");
+        let sk = SigningKey::from_bytes(&secret);
         let pk = sk.verifying_key();
         signing_keys::insert_with_plaintext(
             db,

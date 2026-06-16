@@ -67,69 +67,75 @@ pub enum HibpCheckOutcome {
     Unavailable,
 }
 
-/// Object-safe trait so the production HTTP-backed implementation
-/// can be swapped for a deterministic in-memory mock in tests.
-/// One method, called from a `tokio::task::spawn_blocking` at
-/// the call site (the production impl issues a synchronous HTTP
-/// request via `ureq`).
+/// Object-safe async trait so the production reqwest-backed
+/// implementation can be swapped for a deterministic in-memory
+/// mock in tests (RFC 070, v0.57.1).
+#[async_trait::async_trait]
 pub trait HibpClient: Send + Sync {
-    /// Look up `password` in the Pwned Passwords range API. The
-    /// implementation is responsible for handling its own
-    /// timeouts and converting any I/O / parse failure into
-    /// `HibpCheckOutcome::Unavailable` rather than propagating
-    /// errors — the fail-open policy lives in the implementation,
-    /// not the caller.
-    fn check(&self, password: &str) -> HibpCheckOutcome;
+    /// Look up `password` in the Pwned Passwords range API.
+    /// The implementation must handle its own timeouts and
+    /// convert I/O / parse failures into `Unavailable` — the
+    /// fail-open policy lives in the implementation, not the caller.
+    async fn check(&self, password: &str) -> HibpCheckOutcome;
 }
 
-// ---------- Production: HttpHibpClient (ureq) ----------
+// ---------- Production: HttpHibpClient (reqwest) ----------
 
-/// HTTP-backed `HibpClient` talking to the public Pwned Passwords
-/// API. The endpoint, User-Agent and timeouts can be overridden
-/// via [`HttpHibpClient::builder`] but the defaults are right for
-/// production use against `api.pwnedpasswords.com`.
+/// Async HTTP-backed `HibpClient` talking to the public Pwned
+/// Passwords API via `reqwest`. The `reqwest::Client` is shared
+/// and cloned from the one stored in `AppState`.
+///
+/// RFC 070 (v0.57.1): replaced ureq 2 (synchronous,
+/// `spawn_blocking`-wrapped) with reqwest 0.12 (async, no wrapper
+/// needed). The `HibpClient` trait is now `async fn check`.
 pub struct HttpHibpClient {
+    client: reqwest::Client,
     endpoint: String,
     user_agent: String,
     timeout: Duration,
 }
 
-impl Default for HttpHibpClient {
-    fn default() -> Self {
-        Self {
-            endpoint: "https://api.pwnedpasswords.com/range".to_owned(),
-            // The Pwned Passwords API documentation requires a
-            // descriptive User-Agent. We send a stable token
-            // identifying sui-id and the version that issued the
-            // request — useful for HIBP's analytics, harmless to
-            // sui-id privacy.
-            user_agent: format!("sui-id/{}", env!("CARGO_PKG_VERSION")),
-            // Short by design. HIBP is fast (<200ms typical)
-            // when reachable; if it isn't, we don't want to
-            // stall a setup-wizard POST any longer than this.
-            timeout: Duration::from_secs(5),
-        }
-    }
-}
-
 impl HttpHibpClient {
     pub fn new() -> Self {
-        Self::default()
+        let timeout = Duration::from_secs(5);
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .expect("failed to build reqwest client for HIBP");
+        Self {
+            client,
+            endpoint: "https://api.pwnedpasswords.com/range".to_owned(),
+            user_agent: format!("sui-id/{}", env!("CARGO_PKG_VERSION")),
+            timeout,
+        }
     }
+
     pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = endpoint.into();
         self
     }
+
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        // Rebuild client with new timeout
+        self.client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .expect("failed to build reqwest client for HIBP");
         self
     }
 }
 
+impl Default for HttpHibpClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait::async_trait]
 impl HibpClient for HttpHibpClient {
-    fn check(&self, password: &str) -> HibpCheckOutcome {
-        // 1. SHA-1 the candidate. The hash sits on the stack
-        // briefly and is zeroed before return.
+    async fn check(&self, password: &str) -> HibpCheckOutcome {
+        // 1. SHA-1 the candidate.
         let mut hasher = Sha1::new();
         hasher.update(password.as_bytes());
         let digest = hasher.finalize();
@@ -140,25 +146,19 @@ impl HibpClient for HttpHibpClient {
         }
         // 2. Split into 5-char prefix + 35-char suffix.
         let (prefix, suffix) = hex.split_at(5);
-
         let url = format!("{}/{}", self.endpoint, prefix);
-        let agent = ureq::AgentBuilder::new()
-            .timeout_connect(self.timeout)
-            .timeout_read(self.timeout)
-            .build();
-        let result = agent
+
+        let result = self.client
             .get(&url)
-            .set("User-Agent", &self.user_agent)
-            // The "Add-Padding" header asks HIBP to pad
-            // responses to a uniform size — defends against
-            // traffic-analysis attacks that infer the queried
-            // prefix from response length. Documented at
-            // <https://haveibeenpwned.com/API/v3#PwnedPasswordsPadding>.
-            .set("Add-Padding", "true")
-            .call();
+            .header("User-Agent", &self.user_agent)
+            // Add-Padding defends against traffic-analysis attacks that
+            // infer the queried prefix from response length.
+            .header("Add-Padding", "true")
+            .send()
+            .await;
 
         let body = match result {
-            Ok(resp) => match resp.into_string() {
+            Ok(resp) => match resp.text().await {
                 Ok(s) => s,
                 Err(_) => {
                     hex.zeroize();
@@ -171,13 +171,10 @@ impl HibpClient for HttpHibpClient {
             }
         };
 
-        // 3. Parse `<suffix>:<count>` lines, ignoring blank
-        // padding lines (added by Add-Padding).
+        // 3. Parse `<suffix>:<count>` lines.
         let outcome = parse_response(&body, suffix);
 
-        // 4. Zero the hash before return — a debugger watching
-        // the stack should not see this lying around longer than
-        // necessary.
+        // 4. Zero the hash before return.
         hex.zeroize();
         outcome
     }
@@ -246,7 +243,7 @@ pub async fn enforce_hibp(
     let Some(client) = client else {
         return HibpEnforcement::Allowed;
     };
-    match client.check(password) {
+    match client.check(password).await {
         HibpCheckOutcome::NotBreached | HibpCheckOutcome::Unavailable => {
             HibpEnforcement::Allowed
         }
@@ -329,8 +326,9 @@ pub mod test_support {
         }
     }
 
+    #[async_trait::async_trait]
     impl HibpClient for InMemoryHibpClient {
-        fn check(&self, password: &str) -> HibpCheckOutcome {
+        async fn check(&self, password: &str) -> HibpCheckOutcome {
             match self
                 .plan
                 .lock()
@@ -350,20 +348,23 @@ mod tests {
     use super::*;
 
     struct StubBreached(u64);
+    #[async_trait::async_trait]
     impl HibpClient for StubBreached {
-        fn check(&self, _password: &str) -> HibpCheckOutcome {
+        async fn check(&self, _password: &str) -> HibpCheckOutcome {
             HibpCheckOutcome::Breached { count: self.0 }
         }
     }
     struct StubClean;
+    #[async_trait::async_trait]
     impl HibpClient for StubClean {
-        fn check(&self, _password: &str) -> HibpCheckOutcome {
+        async fn check(&self, _password: &str) -> HibpCheckOutcome {
             HibpCheckOutcome::NotBreached
         }
     }
     struct StubUnavailable;
+    #[async_trait::async_trait]
     impl HibpClient for StubUnavailable {
-        fn check(&self, _password: &str) -> HibpCheckOutcome {
+        async fn check(&self, _password: &str) -> HibpCheckOutcome {
             HibpCheckOutcome::Unavailable
         }
     }

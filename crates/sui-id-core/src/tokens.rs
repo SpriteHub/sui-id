@@ -10,13 +10,12 @@
 //! * **Refresh Token** — opaque random string; stored sealed in the database.
 //!   Lifetime defaults to 14 days; rotates on each use.
 
+use getrandom;
 use crate::errors::{CoreError, CoreResult};
 use crate::jwt;
 use crate::time::SharedClock;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sui_id_shared::ids::{ClientId, UserId};
@@ -191,7 +190,7 @@ pub async fn issue_token_set(
 /// Cryptographically random URL-safe token string.
 pub fn random_token(byte_len: usize) -> String {
     let mut buf = vec![0u8; byte_len];
-    OsRng.fill_bytes(&mut buf);
+    getrandom::fill(&mut buf).expect("system RNG unavailable");
     let mut out = vec![0u8; byte_len * 2 + 4];
     let n = Base64UrlUnpadded::encode(&buf, &mut out)
         .map(str::len)

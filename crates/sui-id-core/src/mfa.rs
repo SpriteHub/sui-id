@@ -16,6 +16,7 @@
 //!    against a TOTP code (or a recovery code), creating a real session
 //!    and deleting the pending row.
 
+use getrandom;
 use crate::errors::{CoreError, CoreResult};
 use crate::password::{hash_password, verify_password};
 use crate::time::SharedClock;
@@ -23,7 +24,6 @@ use crate::tokens::random_token;
 use crate::totp;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use chrono::Duration;
-use rand::{rngs::OsRng, RngCore};
 use sui_id_shared::ids::{PendingMfaId, SessionId, UserId};
 use sui_id_store::models::{LoginPendingMfaRow, SessionRow};
 use sui_id_store::repos::{login_pending_mfa, sessions, user_totp};
@@ -79,7 +79,7 @@ pub async fn start_enrollment(
         }
     }
     let mut secret = vec![0u8; TOTP_SECRET_LEN];
-    OsRng.fill_bytes(&mut secret);
+    getrandom::fill(&mut secret).expect("system RNG unavailable");
     user_totp::upsert_pending(db, user_id, &secret).await?;
     let uri = totp::otpauth_uri(issuer, username, &secret).await;
     Ok(EnrollmentTicket {
@@ -361,7 +361,7 @@ pub(crate) async fn consume_recovery_code(
 fn generate_recovery_code() -> String {
     let _ = random_token; // signal we considered the existing helper.
     let mut bytes = [0u8; RECOVERY_CODE_BYTES];
-    OsRng.fill_bytes(&mut bytes);
+    getrandom::fill(&mut bytes).expect("system RNG unavailable");
     let mut buf = [0u8; 32];
     let n = Base64UrlUnpadded::encode(&bytes, &mut buf)
         .map(str::len)

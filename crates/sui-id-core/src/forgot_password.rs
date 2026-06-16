@@ -36,6 +36,7 @@
 //! The handler always shows a generic "if an account exists, we've
 //! sent the link" page.
 
+use getrandom;
 use crate::errors::{CoreError, CoreResult};
 use crate::hibp::{self, HibpClient, HibpEnforcement};
 use crate::events::{self, Context, SecurityEvent};
@@ -44,7 +45,6 @@ use crate::password;
 use crate::time::SharedClock;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use chrono::Duration;
-use rand::{rngs::OsRng, RngCore};
 use sha2::{Digest, Sha256};
 use sui_id_shared::ids::{PasswordResetTokenId, UserId};
 use sui_id_store::models::{CredentialRow, HibpMode, PasswordResetTokenRow};
@@ -62,7 +62,7 @@ const MAX_OUTSTANDING_TOKENS_PER_USER: i64 = 3;
 
 fn mint_random_token() -> (String, Vec<u8>) {
     let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    getrandom::fill(&mut bytes).expect("system RNG unavailable");
     let plaintext = Base64UrlUnpadded::encode_string(&bytes);
     let hash = Sha256::digest(plaintext.as_bytes()).to_vec();
     (plaintext, hash)

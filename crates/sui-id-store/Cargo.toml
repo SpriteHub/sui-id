@@ -16,7 +16,7 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-sui-id-shared = { version = "0.57.0", path = "../sui-id-shared" }
+sui-id-shared = { version = "0.57.1", path = "../sui-id-shared" }
 
 rusqlite = { workspace = true }
 serde = { workspace = true }
@@ -29,7 +29,7 @@ secrecy = { workspace = true }
 zeroize = { workspace = true }
 chacha20poly1305 = { workspace = true }
 rand = { workspace = true }
-rand_core = { workspace = true }
+getrandom = { workspace = true }
 base64ct = { workspace = true }
 sha2 = { workspace = true }
 subtle = { workspace = true }

@@ -51,12 +51,11 @@
 //! build can run. Both are reversible operator failures: rebuild
 //! with the right binary version.
 
+use getrandom;
 use crate::config::Config;
 use anyhow::{bail, Context, Result};
 use chacha20poly1305::aead::Aead;
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
-use rand::rngs::OsRng;
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -390,9 +389,9 @@ fn check_manifest_compatibility(m: &Manifest) -> Result<()> {
 
 fn encrypt_envelope(passphrase: &str, plaintext: &[u8]) -> Result<Vec<u8>> {
     let mut salt = [0u8; 16];
-    OsRng.fill_bytes(&mut salt);
+    getrandom::fill(&mut salt).expect("system RNG unavailable");
     let mut nonce = [0u8; 24];
-    OsRng.fill_bytes(&mut nonce);
+    getrandom::fill(&mut nonce).expect("system RNG unavailable");
     let key = derive_key(passphrase, &salt)?;
     let cipher = XChaCha20Poly1305::new((&key).into());
     let ciphertext = cipher
@@ -499,7 +498,7 @@ fn tempfile_dir() -> Result<PathBuf> {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let mut rand_byte = [0u8; 4];
-    OsRng.fill_bytes(&mut rand_byte);
+    getrandom::fill(&mut rand_byte).expect("system RNG unavailable");
     let suffix = u32::from_le_bytes(rand_byte);
     let unique = format!(
         "sui-id-backup-{}-{}-{:08x}",

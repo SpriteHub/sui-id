@@ -8,13 +8,13 @@
 //! The master key is provided externally and must be exactly 32 bytes. It
 //! never touches the database.
 
+use getrandom;
 use crate::errors::{StoreError, StoreResult};
 use base64ct::{Base64, Encoding};
 use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
     XChaCha20Poly1305, XNonce,
 };
-use rand::RngCore;
 use secrecy::{ExposeSecret, SecretBox};
 use zeroize::Zeroize;
 
@@ -46,7 +46,7 @@ impl MasterKey {
     /// Generate a new random 32-byte key from the OS RNG.
     pub fn generate() -> Self {
         let mut k = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut k);
+        getrandom::fill(&mut k).expect("system RNG unavailable");
         let out = Self::from_bytes(k);
         k.zeroize();
         out
@@ -76,7 +76,7 @@ const NONCE_LEN: usize = 24;
 pub fn seal(key: &MasterKey, plaintext: &[u8], aad: &[u8]) -> StoreResult<Vec<u8>> {
     let cipher = key.cipher();
     let mut nonce = [0u8; NONCE_LEN];
-    rand::rngs::OsRng.fill_bytes(&mut nonce);
+    getrandom::fill(&mut nonce).expect("system RNG unavailable");
     let xnonce = XNonce::from_slice(&nonce);
     let ct = cipher
         .encrypt(xnonce, Payload { msg: plaintext, aad })

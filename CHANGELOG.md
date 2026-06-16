@@ -5,6 +5,60 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.1] — Unreleased
+
+**Dependency refresh: RFC 069 (rand 0.10) + RFC 070 (ureq → reqwest).**
+No user-visible behaviour changes; test suite unchanged (228/228 pass).
+
+---
+
+### rand 0.10 migration (RFC 069)
+
+The `rand 0.8` / `rand_core 0.6` ecosystem is replaced by `rand 0.10`
+/ `rand_core 0.10` / `getrandom 0.4`.
+
+**Option B** used for the ed25519-dalek blocker
+(`SigningKey::generate(&mut OsRng)` cannot use rand_core 0.10 while
+ed25519-dalek 2.x pins rand_core 0.6): secret key bytes now generated
+via `getrandom::fill` into a `Zeroizing<[u8; 32]>`, then passed to
+`SigningKey::from_bytes`. Cryptographically equivalent; memory-safe.
+
+All other `OsRng.fill_bytes(...)` call sites (10 total across
+`forgot_password`, `mfa`, `tokens`, `backup`, `csrf`, `startup`,
+`main`, `crypto`) replaced with `getrandom::fill(...).expect(...)`.
+
+`SaltString::generate(&mut OsRng)` in `password.rs` replaced with
+`SaltString::encode_b64(&raw_16_bytes)` from a `getrandom::fill` call.
+
+JWT unit tests: `SigningKey::generate(&mut OsRng)` →
+`SigningKey::from_bytes(&[1u8; 32])` (deterministic seed; correct for
+tests).
+
+`rand_core` removed as a direct dependency from three crate
+`Cargo.toml` files; `getrandom = "0.4"` added in its place.
+
+### ureq → reqwest migration (RFC 070)
+
+The `HibpClient` trait becomes `async fn check` via `async-trait`.
+`HttpHibpClient` is rebuilt on `reqwest::Client` (stored internally,
+constructed at server start). All test stubs updated.
+
+**Bug fixed as a side-effect:** the previous `enforce_hibp` called
+`client.check(password)` synchronously inside an `async fn`, blocking
+the tokio runtime thread during the ureq HTTP request. This is now
+correct: `client.check(password).await`.
+
+`ureq` is fully removed from the workspace. `reqwest 0.12`
+(`rustls-tls` feature) and `async-trait 0.1` added.
+
+### Tests and CI
+
+- **228/228 library tests pass** (175 from 5 crates + 53 from `sui-id`).
+- All four CI invariants unchanged: `text-leaks` = 0, `css-tokens` = 148,
+  `semantic-parity` = 36, `inline-style-bound` = 0.
+
+---
+
 ## [0.57.0] — Unreleased
 
 **Phase 8 complete: `RFC-MI-080` (UI Regression and Accessibility

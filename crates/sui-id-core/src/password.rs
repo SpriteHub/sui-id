@@ -9,7 +9,6 @@ use argon2::password_hash::{
     PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
 };
 use argon2::{Algorithm, Argon2, Params, Version};
-use rand::rngs::OsRng;
 
 fn argon2() -> Argon2<'static> {
     let params = Params::new(64 * 1024, 2, 1, None).unwrap_or_else(|_| Params::default());
@@ -18,7 +17,12 @@ fn argon2() -> Argon2<'static> {
 
 /// Hash a password and return its PHC-encoded string.
 pub fn hash_password(password: &str) -> CoreResult<String> {
-    let salt = SaltString::generate(&mut OsRng);
+    // RFC 069: generate salt via getrandom (16 bytes = 128 bits, then B64-encode
+    // for argon2/password-hash). Replaces SaltString::generate(&mut OsRng) which
+    // required rand_core 0.6's CryptoRng trait, incompatible with rand_core 0.10.
+    let mut salt_bytes = [0u8; 16];
+    getrandom::fill(&mut salt_bytes).expect("system RNG unavailable");
+    let salt = SaltString::encode_b64(&salt_bytes).map_err(|_| CoreError::Password)?;
     let phc = argon2()
         .hash_password(password.as_bytes(), &salt)
         .map_err(|_| CoreError::Password)?;

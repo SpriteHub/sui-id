@@ -30,11 +30,11 @@
 //! `SameSite=Lax` is set on both. `Secure` follows the operator's
 //! `cookie_secure` config, the same as the session cookie.
 
+use getrandom;
 use crate::handlers::AppStateExt;
 use axum::http::HeaderMap;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use base64ct::{Base64UrlUnpadded, Encoding};
-use rand::{rngs::OsRng, RngCore};
 use subtle::ConstantTimeEq;
 
 /// Cookie name used to carry the CSRF token alongside the session.
@@ -46,7 +46,7 @@ pub const CSRF_FIELD: &str = "_csrf";
 /// Generate a fresh 32-byte URL-safe token.
 pub fn new_token() -> String {
     let mut buf = [0u8; 32];
-    OsRng.fill_bytes(&mut buf);
+    getrandom::fill(&mut buf).expect("system RNG unavailable");
     let mut out = vec![0u8; 64];
     let n = Base64UrlUnpadded::encode(&buf, &mut out)
         .map(str::len)

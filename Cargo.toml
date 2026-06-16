@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.57.0"
+version = "0.57.1"
 edition = "2024"
 rust-version = "1.91"
 license = "Apache-2.0"
@@ -26,7 +26,7 @@ readme = "README.md"
 # Async runtime / web
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "signal", "fs", "sync", "time"] }
 axum = { version = "0.8", features = ["macros"] }
-axum-extra = { version = "0.10", features = ["cookie"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "compression-gzip", "set-header"] }
 hyper = "1.4"
@@ -37,12 +37,13 @@ serde_json = "1.0"
 toml = "0.8"
 
 # Storage
-rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
+rusqlite = { version = "0.39", features = ["bundled", "chrono"] }
 
 # Crypto / hashing
 argon2 = "0.5"
-rand = "0.8"
-rand_core = { version = "0.6", features = ["std"] }
+getrandom = "0.4"
+rand = "0.10"
+rand_core = { version = "0.10" }
 chacha20poly1305 = "0.10"
 ed25519-dalek = { version = "2.1", features = ["rand_core", "pkcs8"] }
 sha2 = "0.10"
@@ -71,7 +72,7 @@ base64ct = { version = "1.6", features = ["alloc"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 tracing-appender = "0.2"
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
 # Misc
@@ -99,16 +100,11 @@ wasm-smtp-tokio = "0.9"
 mail-builder = "0.4"
 
 # Outbound HTTP — used for the optional Pwned Passwords (HIBP)
-# breach check. We pick `ureq` over `reqwest` here for three
-# reasons: the call site is a cold path (one GET per password
-# set, only at setup-wizard time as of v0.24.0), the request is
-# trivial enough that the synchronous API is more readable than
-# an async one, and `ureq` brings in `rustls` already in our
-# tree (via wasm-smtp-tokio) without pulling tokio's networking
-# stack a second time. The blocking call is wrapped in
-# `tokio::task::spawn_blocking` at the call site so it doesn't
-# stall the axum runtime.
-ureq = { version = "2.10", default-features = false, features = ["tls"] }
+# breach check. reqwest (async, rustls) replaces the former ureq
+# (sync, spawn_blocking) after RFC 070 (v0.57.1). The HIBP handler
+# is now a plain async fn; reqwest::Client is stored in AppState.
+async-trait = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 # UI (Leptos used in SSR-only mode for the admin panel; no WASM/JS bundle is shipped
 #  in line with the project's minimal-runtime philosophy).

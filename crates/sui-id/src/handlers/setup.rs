@@ -202,12 +202,8 @@ pub async fn admin_post(
     // Pwned Passwords (HIBP) check — see migration 0017.
     //
     // The setup wizard runs once at install time, so this is the
-    // single entry point at v0.24.0 (other password-set entry
-    // points are scheduled in the ROADMAP scope-expansion entry).
-    // The check is short-circuited when mode is `off`. The HTTP
-    // request is synchronous via `ureq`; we wrap it in
-    // `spawn_blocking` so the axum runtime is not stalled on
-    // network I/O.
+    // RFC 070 (v0.57.1): HIBP check is now async via reqwest;
+    // the former spawn_blocking wrapper is no longer needed.
     let hibp_settings = sui_id_store::repos::server_settings::get(&app.db).await
         .map_err(|e| HttpError::html(sui_id_core::errors::CoreError::from(e)))?;
     let hibp_mode = hibp_settings.hibp_mode;
