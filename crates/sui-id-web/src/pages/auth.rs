@@ -3,6 +3,10 @@
 use leptos::prelude::*;
 use crate::layout::Shell;
 use super::common::*;
+// RFC-MI-060: import the me_security tab helpers so render_password_change
+// can render the route-tab strip that the other five /me/security/* pages
+// already carry (deferred from RFC-MI-022).
+use super::me_security::{me_security_tabs, MeTab};
 
 pub fn render_login(
     flash: Option<Flash>,
@@ -213,7 +217,10 @@ pub fn render_password_change(
         } = data;
         let revoke_attr = if revoke_others_default { Some("") } else { None };
         view! {
-            <Shell title=t.password_change_title.to_owned() show_nav=false current=None lang=lang csrf_token=csrf_token.clone()>
+            // RFC-MI-060: show_nav=true + current="me" so the admin nav
+            // highlights "Security". Tab strip added (deferred from RFC-MI-022).
+            <Shell title=t.password_change_title.to_owned() show_nav=true current=Some("me".to_string()) lang=lang csrf_token=csrf_token.clone()>
+                {me_security_tabs(MeTab::Password, lang)}
                 <header class="page-header">
                     <div>
                         <h1 class="page-header__title">{t.password_change_title}</h1>
@@ -257,9 +264,9 @@ pub fn render_password_change(
                             <span class="field__hint">{t.password_change_revoke_others_hint}</span>
                         </div>
 
-                        <div class="row">
+                        <div class="form-actions">
                             <button type="submit">{t.password_change_submit}</button>
-                            <a href="/me/security" class="button secondary">{t.button_cancel}</a>
+                            <a href="/me/security/overview" class="button secondary">{t.button_cancel}</a>
                         </div>
                     </form>
                 </div>

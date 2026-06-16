@@ -3,13 +3,83 @@
 ```toml
 id = "RFC-MI-060"
 title = "Self-Service Security Tab Integration"
-status = "Proposed"
+status = "Implemented (v0.55.0)"
 phase = "Phase 6"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.55.0**.
+
+### Primary change: password tab now has the tab strip
+
+`render_password_change` in `pages/auth.rs` was the only one of
+the six `/me/security/*` routes that did not show the route-based
+tab strip. This was explicitly deferred from RFC-MI-022.
+
+Changes made:
+- `show_nav=false` → `show_nav=true` (admin nav now visible)
+- `current=None` → `current=Some("me")` (Security nav item highlighted)
+- `{me_security_tabs(MeTab::Password, lang)}` inserted above the
+  page header
+- Import `use super::me_security::{me_security_tabs, MeTab}` added
+  to `pages/auth.rs`
+- Cancel link updated from `/me/security` to `/me/security/overview`
+  (the new canonical overview route from v0.51.1)
+- Form submit/cancel buttons migrated to `.form-actions` class
+  (using the RFC-MI-050 primitive)
+
+All six `/me/security/*` routes now consistently show:
+1. The route-based tab strip (`.route-tabs`)
+2. `aria-current="page"` on the active tab
+3. `show_nav=true current="me"` so the top-nav "Security" link
+   is highlighted
+
+### MFA enable/disable decision record
+
+**Option 2 chosen:** self-service MFA enable (TOTP setup via
+`/me/security/mfa`) + admin-initiated reset (via
+`/admin/users/{id}/mfa-reset-confirm`).
+
+- Users can enrol TOTP at any time from the MFA tab.
+- Users can delete their own TOTP via the confirmation flow
+  on the MFA tab.
+- Admins can forcibly reset a user's MFA via the user detail
+  page's danger zone (RFC-MI-051 v0.54.0).
+- Step-up (`/me/step-up`) is required before any TOTP change
+  (enforced since v0.45.0, RFC 058).
+- No additional code changes were needed; the existing product
+  already implements this model.
+
+### Recovery code warnings
+
+Existing recovery-code countdown on the MFA tab already uses
+a text count ("N remaining") alongside a `.badge--danger` pill
+when the count is low. Non-colour indicator (text count) satisfies
+ABDD §8 "recovery code warnings are not color-only".
+
+### Session revocation labels
+
+Existing session labels already distinguish "This device" from
+other sessions, and the revoke-all-others button is labelled
+`me_security_sessions_revoke_all_others` (i18n key). Meets
+RFC §8 "session revocation labels identify scope".
+
+### Acceptance criteria
+
+- [x] All self-service tabs remain path-based (`aria-current="page"`).
+- [x] MFA state is clear and safe (MFA decision documented above).
+- [x] Session revocation scope is unambiguous (existing labels).
+- [x] Passkey actions preserve existing constraints (unchanged).
+- [x] All new text is localised — no new i18n keys needed;
+  existing `me_tab_password` key from v0.51.1 is used.
+
+---
 
 ## 1. Summary
 

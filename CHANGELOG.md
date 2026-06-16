@@ -5,6 +5,64 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.0] — Unreleased
+
+**Phase 6 complete: `RFC-MI-060` (Self-Service Security Tab Integration).**
+The last deferred item from RFC-MI-022 is resolved.
+
+---
+
+### Password tab now has the route-tab strip
+
+`render_password_change` in `pages/auth.rs` was the only one of the
+six `/me/security/*` routes that did not show the tab strip. That
+inconsistency is now resolved.
+
+Changes:
+- `show_nav=false` → `show_nav=true` — the admin nav is now visible
+  on the password-change page.
+- `current=None` → `current=Some("me")` — "Security" nav link is
+  highlighted.
+- `me_security_tabs(MeTab::Password, lang)` added above the page
+  header.
+- Import `use super::me_security::{me_security_tabs, MeTab}` added
+  to `pages/auth.rs`.
+- Cancel link updated from `/me/security` (deprecated) to
+  `/me/security/overview`.
+- Form submit/cancel buttons migrated from `.row` to `.form-actions`
+  (RFC-MI-050 primitive from v0.54.0).
+
+All six `/me/security/*` routes now consistently show the
+`.route-tabs` strip with `aria-current="page"` on the active tab
+and `show_nav=true current="me"` in the Shell.
+
+### MFA enable/disable decision documented
+
+**Option 2: self-service enable + admin reset.** Users can enrol
+and remove their own TOTP from the MFA tab; admins can forcibly
+reset via the user detail danger zone. Step-up is required before
+TOTP changes (enforced since v0.45.0). No code changes needed —
+the existing product already implements this model. Decision
+committed to `rfcs/done/RFC-MI-060`.
+
+### Tests, CI, and compatibility
+
+- `cargo check --workspace` clean.
+- **228/228 library tests pass**.
+- `text-leaks` = 0, `css-tokens` = 148, `semantic-parity` = 36,
+  `inline-style-bound` = 4 (unchanged — all 4 remaining are in
+  `oidc.rs`, owned by RFC-MI-070).
+- No i18n keys added (the `me_tab_password` key from v0.51.1 was
+  already in place).
+- No handler or route changes.
+
+### Version bumps
+
+`0.54.0` → `0.55.0` across workspace, all six crates, and
+`Cargo.lock`. 14 of 16 MI RFCs now in `rfcs/done/`. 2 remain.
+
+---
+
 ## [0.54.0] — Unreleased
 
 **Phase 5 complete: `RFC-MI-050` (Form System + Validation) and

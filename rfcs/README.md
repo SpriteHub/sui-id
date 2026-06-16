@@ -68,9 +68,8 @@ artifacts the rest of the arc references live under
 
 | Order | ID | Title | Phase |
 |------:|----|-------|-------|
-| 1 | [RFC-MI-060](./proposed/RFC-MI-060-self-service-security-tabs.md) | Self-Service Security Tab Integration | Phase 6 |
-| 2 | [RFC-MI-070](./proposed/RFC-MI-070-oidc-consent-ux.md) | OIDC Consent UX Integration | Phase 7 |
-| 3 | [RFC-MI-080](./proposed/RFC-MI-080-ui-regression-a11y-hardening.md) | UI Regression and Accessibility Hardening | Phase 8 |
+| 1 | [RFC-MI-070](./proposed/RFC-MI-070-oidc-consent-ux.md) | OIDC Consent UX Integration | Phase 7 |
+| 2 | [RFC-MI-080](./proposed/RFC-MI-080-ui-regression-a11y-hardening.md) | UI Regression and Accessibility Hardening | Phase 8 |
 
 Phase-1 blockers, restated for visibility:
 
@@ -95,6 +94,7 @@ Phase-1 blockers, restated for visibility:
 
 | ID  | Title                                                          | Shipped in |
 |-----|----------------------------------------------------------------|------------|
+| MI-060 | [Self-Service Security Tab Integration](./done/RFC-MI-060-self-service-security-tabs.md) | v0.55.0 |
 | MI-051 | [Danger Zone and Confirmation Screen Integration](./done/RFC-MI-051-danger-confirmation.md) | v0.54.0 |
 | MI-050 | [Form System and Validation Feedback](./done/RFC-MI-050-form-system-validation.md) | v0.54.0 |
 | MI-040 | [Setup Wizard UX Integration](./done/RFC-MI-040-setup-wizard-ux.md) | v0.53.1 |
