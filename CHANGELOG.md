@@ -5,6 +5,77 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.0] — Unreleased
+
+**Phase 7 complete: `RFC-MI-070` (OIDC Consent UX Integration).**
+
+**`inline-style-bound` reaches 0.** The last four inline styles in
+the codebase — all in `pages/oidc.rs` — are eliminated. The MI
+arc's inline-style discipline target is fully met.
+
+---
+
+### Four CSS classes for the consent screen
+
+Added to `components/setup.rs` (which owns the auth-card centred
+layout — the natural home for consent-screen styles):
+
+- **`.consent-card`** — `max-width: 32rem` modifier on top of
+  `.auth-card`. Consent needs 512px vs login's 448px
+  (`--content-narrow-width`) to fit the scope list comfortably.
+- **`.consent-intro`** — `margin: var(--space-3) 0` for the intro
+  paragraph.
+- **`.consent-scope-list`** — no-bullet flex column list with
+  `gap: var(--space-1)` and `margin-bottom: var(--space-4)`.
+- **`.consent-scope-item`** — flex row (`align-items: baseline; gap:
+  var(--space-2)`) for badge + description pairing.
+
+### `render_consent` rewritten
+
+The four inline `style=` attributes in `pages/oidc.rs` are replaced
+with the four classes above. **Each scope now renders as a vertical
+stack:** bold label (`.consent-scope-item__title`), muted description
+sentence (`.consent-scope-item__desc`), and a `<code>` element with
+the raw scope slug for developer context.
+
+**Four scope description keys added** (×3 locales — en/ja/zh):
+`consent_scope_openid_desc`, `consent_scope_profile_desc`,
+`consent_scope_email_desc`, `consent_scope_offline_access_desc`.
+Unmapped scopes fall back to `"—"` as title with no description.
+
+### Protocol guarantees preserved
+
+Authorization Code + PKCE flow, redirect URI validation, and
+Approve / Deny POST forms with CSRF are all unchanged. Both actions
+are `<button>` elements with equal keyboard access.
+
+### `inline-style-bound` = 0
+
+| Release | Bound |
+|---|---|
+| v0.48.4 (baseline) | 17 |
+| v0.50.1 (Phase 1) | 17 → 16 |
+| v0.51.1 (Phase 2) | 16 → 16 |
+| v0.52.0 (Phase 3) | 16 → 10 |
+| v0.53.0 (Phase 4a) | 10 → 7 |
+| v0.53.1 (Phase 4b) | 7 → 5 |
+| v0.54.0 (Phase 5) | 5 → 4 |
+| v0.56.0 (Phase 7) | 4 → **0** |
+
+### Tests, CI, and compatibility
+
+- `cargo check --workspace` clean.
+- **228/228 library tests pass**.
+- `text-leaks` = 0, `css-tokens` = 148, `semantic-parity` = 36,
+  **`inline-style-bound` = 0**.
+- 4 new i18n keys (×3 locales). No handler or route changes.
+
+### Version bumps
+
+`0.55.0` → `0.56.0`. 15 of 16 MI RFCs now in `rfcs/done/`. 1 remains.
+
+---
+
 ## [0.55.0] — Unreleased
 
 **Phase 6 complete: `RFC-MI-060` (Self-Service Security Tab Integration).**

@@ -73,8 +73,8 @@ migration plan, codebase handoff, and mockup handoff package.
 | **3** | v0.52.0        | Dashboard + audit read-only screens                     | RFC-MI-030, 031 → `done/`     |
 | **4** | v0.53.0–0.53.1 | Auth surfaces + setup wizard                            | RFC-MI-041, 040 → `done/`     |
 | **5** | v0.54.0        | Form system + danger zone                               | RFC-MI-050, 051 → `done/`     |
-| **6** | **v0.55.0**    | **Self-service `/me/security/*` (this release; Phase 6 complete)** | RFC-MI-060 → `done/` |
-| **7** | v0.56.0        | OIDC consent UX                                         | RFC-MI-070                    |
+| **6** | v0.55.0        | Self-service `/me/security/*`                           | RFC-MI-060 → `done/`          |
+| **7** | **v0.56.0**    | **OIDC consent UX (this release; Phase 7 complete)**    | RFC-MI-070 → `done/`          |
 | **8** | v0.57.0        | Responsive + a11y regression hardening                  | RFC-MI-080                    |
 
 Phase-1 blockers (`D-01` / `D-02` / `D-03` in the migration plan)
@@ -90,6 +90,7 @@ deferred (verification phase, spec §22).
 
 | Version | What shipped |
 |---|---|
+| v0.56.0 | **Phase 7 complete: RFC-MI-070 (OIDC Consent UX). `inline-style-bound` reaches 0.** Four inline styles in `pages/oidc.rs` eliminated via `.consent-card`, `.consent-intro`, `.consent-scope-list`, `.consent-scope-item` classes. Scope item structure improved. PKCE/redirect validation unchanged. 15/16 MI RFCs in `done/`. **228/228 tests PASS.** |
 | v0.55.0 | **Phase 6 complete: RFC-MI-060 (Self-Service Security Tab Integration).** Password-change page (`render_password_change`) updated: `show_nav=true`, `current="me"`, tab strip added. All six `/me/security/*` routes now consistently render `.route-tabs` with `aria-current="page"`. MFA enable/disable decision documented (Option 2: self-service + admin reset). Cancel link updated to `/me/security/overview`. Form actions migrated to `.form-actions`. No i18n changes. `inline-style-bound` = 4 (unchanged). 14/16 MI RFCs in `done/`. **228/228 tests PASS.** |
 | v0.54.0 | **Phase 5 complete: RFC-MI-050 (Form System) + RFC-MI-051 (Danger Zone).** Two new form CSS primitives (`.field--required`, `.review-summary`) added to `forms.rs`. User detail page restructured: action buttons moved from header into a `.danger-zone` section at the bottom. New i18n key `user_detail_danger_zone_body` (×3 locales). All confirmation routes unchanged. `inline-style-bound` **5 → 4**. 14/16 MI RFCs in `done/`. **228/228 tests PASS.** |
 | v0.53.1 | **Phase 4 complete: RFC-MI-040 (Setup Wizard UX).** `StepState` enum + `SetupStep` struct added to `components/setup.rs` (re-exported from `components.rs`). `.setup-steps` nav container class and `.setup-step__label--{current,done,upcoming}` classes replace the two inline style= attributes in `setup_step_indicator()`. `inline-style-bound` **7 → 5**. 12/16 MI RFCs in `done/`. **228/228 tests PASS.** |
@@ -135,20 +136,18 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-**Phase 6 of the Mockup Integration arc is complete.**
+**Phase 7 of the Mockup Integration arc is complete.**
 
-v0.55.0 ships RFC-MI-060 (self-service security tab integration —
-the password-change page now shows the tab strip, completing the
-six-tab `/me/security/*` surface). `inline-style-bound` remains
-at **4** — all four remaining are in `pages/oidc.rs`, owned by
-RFC-MI-070 (Phase 7).
+v0.56.0 ships RFC-MI-070 (OIDC consent UX). **`inline-style-bound`
+reaches 0** — every inline `style=` attribute removed across the
+entire MI arc (17 total, from baseline). 15 of the original 16 MI
+RFCs are in `rfcs/done/`.
 
-14 of the original 16 MI RFCs are in `rfcs/done/`. 2 remain:
-
-| RFC | Phase | Target |
-|---|---|---|
-| RFC-MI-070 (OIDC consent UX) | 7 | v0.56.0 |
-| RFC-MI-080 (Responsive + a11y hardening) | 8 | v0.57.0 |
+**1 RFC remains: RFC-MI-080** (Phase 8 — UI Regression and
+Accessibility Hardening, `v0.57.0`). This is the final RFC in the
+Mockup Integration arc. It covers responsive layout stress-tests,
+keyboard navigation checks, and any remaining ABDD gaps identified
+during the arc.
 
 The project remains in **verification phase**. No v1.0 designation
 is scheduled. **No release will start with v1 until the bar is

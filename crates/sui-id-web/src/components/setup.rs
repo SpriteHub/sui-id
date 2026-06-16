@@ -142,5 +142,38 @@ pub const SETUP_LANG_PICKER_CSS: &str = r#"/* v0.48.2 — setup wizard language 
   color: var(--fg-subtle);
 }
 
+/* ── Consent screen (RFC-MI-070, v0.56.0) ───────────────────────────── */
+/* .consent-card   — OIDC consent card; slightly wider than .auth-card   */
+/* .consent-intro  — "App X wants access to:" intro paragraph.           */
+/* .consent-scope-list — ul of readable scope explanations.              */
+/* .consent-scope-item — one scope explanation row (badge + description) */
+.consent-card {
+  max-width: 32rem;   /* 512px — wider than --content-narrow-width (28rem) */
+}
+.consent-intro {
+  margin: var(--space-3) 0;
+}
+.consent-scope-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.consent-scope-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.consent-scope-item__title {
+  font-weight: var(--font-weight-medium);
+  color: var(--fg-default);
+}
+.consent-scope-item__desc {
+  font-size: var(--font-size-caption);
+  color: var(--fg-muted);
+}
+
 "#;
 

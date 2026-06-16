@@ -14,19 +14,26 @@ pub fn render_consent(data: ConsentData, lang: sui_id_i18n::Locale) -> String {
     render(move || {
         let t = lang.strings();
         let client_name = data.client_name.clone();
-        let scope_labels: Vec<_> = data.requested_scopes.iter().map(|s| {
-            let label: &'static str = match s.as_str() {
-                "openid"         => t.consent_scope_openid,
-                "profile"        => t.consent_scope_profile,
-                "email"          => t.consent_scope_email,
-                "offline_access" => t.consent_scope_offline_access,
-                _                => "—",
+        // RFC-MI-070: each scope item renders as a .consent-scope-item block
+        // with a bold short label and a muted description sentence.
+        // The raw scope slug is kept as a <code> tag for developer context.
+        // Unmapped scopes fall back to the raw slug with no description.
+        let scope_items: Vec<_> = data.requested_scopes.iter().map(|s| {
+            let (label, desc): (&'static str, Option<&'static str>) = match s.as_str() {
+                "openid"         => (t.consent_scope_openid,         Some(t.consent_scope_openid_desc)),
+                "profile"        => (t.consent_scope_profile,        Some(t.consent_scope_profile_desc)),
+                "email"          => (t.consent_scope_email,          Some(t.consent_scope_email_desc)),
+                "offline_access" => (t.consent_scope_offline_access, Some(t.consent_scope_offline_access_desc)),
+                _                => ("—",                            None),
             };
             let scope_str = s.clone();
             view! {
-                <li style="margin:var(--space-1) 0">
-                    <span class="badge">{scope_str}</span>
-                    " — " {label}
+                <li class="consent-scope-item">
+                    <span class="consent-scope-item__title">{label}</span>
+                    {desc.map(|d| view! {
+                        <span class="consent-scope-item__desc">{d}</span>
+                    })}
+                    <code class="text-caption muted">{scope_str}</code>
                 </li>
             }
         }).collect();
@@ -34,15 +41,21 @@ pub fn render_consent(data: ConsentData, lang: sui_id_i18n::Locale) -> String {
         let csrf = data.csrf_token.clone();
         view! {
             <crate::layout::AuthShell title=t.consent_title.to_string() lang=lang>
-                <div class="auth-card" style="max-width:32rem">
+                // RFC-MI-070: .consent-card overrides the auth-card max-width to
+                // give the scope list comfortable reading room (32rem vs 28rem).
+                // The four inline styles present before this RFC are eliminated.
+                <div class="auth-card consent-card">
                     <h1>{t.consent_title}</h1>
-                    <p style="margin:var(--space-3) 0">
+                    <p class="consent-intro">
                         <strong>{client_name}</strong>
                         " " {t.consent_app_wants_access}
                     </p>
-                    <ul style="list-style:none;padding:0;margin-bottom:var(--space-4)">
-                        {scope_labels}
+                    <ul class="consent-scope-list">
+                        {scope_items}
                     </ul>
+                    // RFC: deny must not be a small text link — both Approve and
+                    // Deny are POST forms with equal-weight buttons, so the user
+                    // can make an informed choice using the keyboard.
                     <div class="row gap-2">
                         <form method="post" action="/oauth2/consent">
                             <input type="hidden" name="_csrf" value=csrf.clone() />
