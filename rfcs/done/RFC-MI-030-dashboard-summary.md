@@ -3,13 +3,54 @@
 ```toml
 id = "RFC-MI-030"
 title = "Dashboard and Summary Surface Integration"
-status = "Proposed"
+status = "Implemented (v0.52.0)"
 phase = "Phase 3"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.52.0** alongside RFC-MI-031.
+
+### Changes made
+
+**Warning callout migration** — The operator warning section
+(SMTP not configured, HIBP off, insecure cookie) was rendered as
+`<section class="card card--warn">` with an inline-styled `<h2>`.
+It now uses `<section class="callout callout--warning">` (the
+neutral callout primitive introduced in v0.50.1) with `<h2
+class="callout__title">`. The `.callout__title` rule was added to
+`cards.rs` (`font-size: body; font-weight: medium; margin: 0 0 space-2`).
+
+**Sparkline layout classes** — Four inline styles in the sparkline
+section replaced with CSS classes added to `utilities.rs`:
+`.sparkline-container` (SVG dimensions), `.sparkline-header`
+(flex row), `.sparkline-title` (h3 reset), `.sparkline-legend`
+(legend row).
+
+**No DashboardData struct changes.** The existing fields
+(`user_count`, `client_count`, `active_session_count`, warning
+flags, sparkline) are sufficient for Phase 3. `DashboardMetric`
+and `RecentActivityItem` structs from §7 are deferred.
+
+**Metric card links** — The existing metric cards (users, clients,
+sessions) already render as `.card > .stat` with nearby `<a>`
+links. No structural change needed; the existing links suffice.
+
+### Acceptance criteria
+
+- [x] Dashboard warning section uses `.callout--warning` primitive.
+- [x] No inline `style=` attributes on the dashboard page's warning
+  section or sparkline section.
+- [x] No destructive action on the dashboard (unchanged).
+- [x] All text localised (unchanged — no new i18n keys needed).
+- [x] Mobile layout unchanged (`.grid-cards` CSS unchanged).
+
+---
 
 ## 1. Summary
 

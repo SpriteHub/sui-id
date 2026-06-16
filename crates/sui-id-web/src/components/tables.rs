@@ -1,9 +1,23 @@
 //! Tables.
 //!
-//! Owns: `.app-table` base, the `.cell-wrap` opt-out class (v0.48.2,
-//! Bug 8), and copy-cell affordances. Wide-table responsive overrides
-//! sit in `chrome.rs::CHROME_RESPONSIVE_CSS` to keep the
+//! Owns: the `table` base styles, the `.table-wrap` scrollable
+//! container, the `.cell-wrap` opt-in wrapping class (v0.48.2 Bug 8),
+//! and the extended cell-discipline classes added by RFC-MI-031
+//! (v0.52.0): `.cell-nowrap`, `.cell-id`, `.cell-actions`.
+//!
+//! Wide-table responsive overrides sit in
+//! `chrome.rs::CHROME_RESPONSIVE_CSS` to keep the
 //! `@media (max-width: 768px)` block contiguous.
+//!
+//! ## Column discipline (RFC-MI-031)
+//!
+//! | Class          | Use                                       |
+//! |----------------|-------------------------------------------|
+//! | (default)      | `white-space: nowrap` for stable layout   |
+//! | `.cell-wrap`   | Free-form text that may legitimately wrap |
+//! | `.cell-nowrap` | Explicit nowrap for documentation/intent  |
+//! | `.cell-id`     | Monospace; suitable for UUIDs / hashes    |
+//! | `.cell-actions`| Right-align; never wraps                 |
 
 pub const TABLES_CSS: &str = r#"
 /* ------------------------------------------------------------------ */
@@ -53,5 +67,28 @@ thead th.cell-wrap {
 }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--state-hover); }
+
+/* ── Extended cell discipline (RFC-MI-031, v0.52.0) ─────────────────── */
+/* .cell-nowrap  — explicit no-wrap (the default; use for documentation). */
+/* .cell-id      — for UUID, hash, or any machine-readable opaque ID.    */
+/*                 Monospace; truncates gracefully in narrow viewports.  */
+/* .cell-actions — right-align action buttons; never wraps.              */
+tbody td.cell-nowrap,
+thead th.cell-nowrap { white-space: nowrap; }
+
+tbody td.cell-id {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  /* Prevent ID from widening table beyond scroll container. */
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+tbody td.cell-actions,
+thead th.cell-actions {
+  text-align: right;
+  white-space: nowrap;
+}
 
 "#;

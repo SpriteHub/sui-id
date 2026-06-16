@@ -142,7 +142,7 @@ fn render_sparkline(t: &'static sui_id_i18n::Strings, buckets: Vec<DashboardSpar
              preserveAspectRatio="none"
              role="img"
              aria-label=t.dashboard_sparkline_aria
-             style="width:100%;height:80px;display:block">
+             class="sparkline-container">
             <line x1="0" y1=format!("{:.2}", HEIGHT - PAD_BOTTOM)
                   x2=format!("{WIDTH}") y2=format!("{:.2}", HEIGHT - PAD_BOTTOM)
                   stroke="var(--border-muted)"
@@ -201,8 +201,10 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, csrf_token: S
                 {flash_banner(flash)}
 
                 {(warn_smtp_not_configured || warn_hibp_off || warn_cookie_insecure).then(|| view! {
-                    <section class="card card--warn mb-4" aria-label=t.dashboard_aria_action_required>
-                        <h2 style="font-size:var(--font-size-body);margin:0 0 var(--space-2)">
+                    // RFC-MI-030: use .callout--warning (introduced in v0.50.1) instead
+                    // of .card.card--warn; removes the inline style on the h2.
+                    <section class="callout callout--warning mb-4" aria-label=t.dashboard_aria_action_required>
+                        <h2 class="callout__title">
                             "⚠ " {t.dashboard_action_required_title}
                         </h2>
                         <ul class="ul-indent">
@@ -291,11 +293,11 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, csrf_token: S
                 </section>
 
                 <section>
-                    <div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:var(--space-3)">
+                    <div class="sparkline-header">
                         // RFC 063: dashboard sparkline is reference, not action.
                         // h3 (was h2) + dim opacity nudges it into the
                         // "background trend" register.
-                        <h3 style="margin:0;font-weight:var(--font-weight-medium);opacity:0.85">
+                        <h3 class="sparkline-title">
                             {t.dashboard_activity_title}
                         </h3>
                         <nav class="app-nav flex-0-auto" aria-label=t.dashboard_activity_period>
@@ -303,7 +305,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, csrf_token: S
                         </nav>
                     </div>
                     <div class="card">
-                        <div class="row" style="gap:var(--space-5);margin-bottom:var(--space-3)">
+                        <div class="sparkline-legend">
                             <div class="stat">
                                 <span class="stat__value color-accent">
                                     {total_success.to_string()}

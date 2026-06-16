@@ -22,14 +22,17 @@ pub(super) fn audit_row_view(t: &'static sui_id_i18n::Strings, e: AuditLogEntryD
         e.target.clone().unwrap_or_default(),
     );
     let actor_str = e.actor.map(|a| a.to_string()).unwrap_or_else(|| "-".into());
+    // RFC-MI-031: cell-nowrap on time/actor (stable columns),
+    // cell-id on target (opaque UUID or resource slug),
+    // cell-actions on the copy button (right-align).
     view! {
         <tr>
-            <td class="muted">{fmt_time(e.at)}</td>
-            <td><span class="code">{actor_str}</span></td>
-            <td>{e.action}</td>
-            <td><span class="code">{e.target.unwrap_or_default()}</span></td>
-            <td>{result_badge}</td>
-            <td>{copy_btn(t, row_id, t.copy_noun_audit_row_id)}</td>
+            <td class="muted cell-nowrap">{fmt_time(e.at)}</td>
+            <td class="cell-nowrap"><span class="code">{actor_str}</span></td>
+            <td class="cell-wrap">{e.action}</td>
+            <td class="cell-id"><span class="code">{e.target.unwrap_or_default()}</span></td>
+            <td class="cell-nowrap">{result_badge}</td>
+            <td class="cell-actions">{copy_btn(t, row_id, t.copy_noun_audit_row_id)}</td>
         </tr>
     }
 }
@@ -82,7 +85,7 @@ pub fn render_audit(
                 </header>
                 {flash_banner(flash)}
                 {chain_banner_view}
-                <div class="row" style="gap:var(--space-3);margin-bottom:var(--space-3);align-items:flex-end;flex-wrap:wrap">
+                <div class="filter-bar">
                     <form method="get" action="/admin/audit" class="row row-gap2-center">
                         <label for="audit-q" class="fw-500">{t.audit_filter_label}</label>
                         <input id="audit-q" name="q" type="search"
@@ -97,16 +100,17 @@ pub fn render_audit(
                     <table>
                         <thead>
                             <tr>
-                                <th>{t.audit_col_when}</th>
-                                <th>{t.audit_col_actor}</th>
+                                <th class="cell-nowrap">{t.audit_col_when}</th>
+                                <th class="cell-nowrap">{t.audit_col_actor}</th>
                                 <th>{t.audit_col_action}</th>
                                 <th>{t.audit_col_target}</th>
-                                <th>{t.audit_col_outcome}</th>
+                                <th class="cell-nowrap">{t.audit_col_outcome}</th>
+                                <th class="cell-actions" aria-hidden="true"></th>
                             </tr>
                         </thead>
                         {if rows.is_empty() {
                             view! {
-                                <tbody><tr><td colspan="5" class="muted center-pad-6">
+                                <tbody><tr><td colspan="6" class="muted center-pad-6">
                                     "(no matching entries)"
                                 </td></tr></tbody>
                             }.into_any()

@@ -3,13 +3,73 @@
 ```toml
 id = "RFC-MI-031"
 title = "Audit Log and Read-Only Table Integration"
-status = "Proposed"
+status = "Implemented (v0.52.0)"
 phase = "Phase 3"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.52.0** alongside RFC-MI-030.
+
+### Changes made
+
+**Extended cell discipline in `tables.rs`** — Three new CSS classes
+added alongside the existing `tbody td.cell-wrap`:
+
+- `.cell-nowrap` — explicit no-wrap (documents intent; matches
+  the default `white-space: nowrap`).
+- `.cell-id` — monospace, caption-size, `max-width: 16rem`,
+  text-overflow ellipsis. For UUID / hash / opaque identifier
+  columns.
+- `.cell-actions` — `text-align: right; white-space: nowrap`.
+  For copy-button and action columns.
+
+**Audit page column classes** — Applied to `audit_row_view()`:
+- `muted cell-nowrap` on the timestamp cell.
+- `cell-nowrap` on the actor cell.
+- `cell-wrap` on the action name cell (free-form vocabulary word).
+- `cell-id` on the target cell (UUID or resource slug).
+- `cell-nowrap` on the outcome badge cell.
+- `cell-actions` on the copy-button cell.
+
+**Audit page filter row** — The inline-styled `<div class="row"
+style="...">` is replaced with `<div class="filter-bar">`. The
+`.filter-bar` class is added to `utilities.rs` (flex row,
+`gap: space-3`, `margin-bottom: space-3`, `align-items: flex-end`,
+`flex-wrap: wrap`). This eliminates the last inline style on the
+audit page.
+
+**Audit table header** — The bare `<table>` and the 5-column
+`<thead>` are updated to 6 columns (added `<th aria-hidden="true">`
+for the copy-button column). Column `<th>` cells receive cell
+discipline classes matching their body counterparts.
+
+**`DashboardData` and `AuditLogEntryDto` unchanged.** No struct
+changes; all improvements are rendering-layer only.
+
+**`copy.js` and `data-copy` pattern preserved.** The copy button
+continues to emit `data-copy="…"` attributes; `copy.js` handles
+them. No mechanism change.
+
+### Acceptance criteria
+
+- [x] Audit table preserves copy behaviour (`data-copy` attribute
+  unchanged, `copy.js` unchanged).
+- [x] Free-text columns wrap (`.cell-wrap` on action column);
+  ID/timestamp columns are stable (`.cell-id`, `.cell-nowrap`).
+- [x] Empty state readable and localised (existing `"(no matching
+  entries)"` string; `colspan="6"` updated to match new column count).
+- [x] No audit hash-chain logic changes.
+- [x] No client-side filtering added.
+- [x] `inline-style-bound` decreases (16 → 10 after combining both
+  Phase 3 RFC eliminations).
+
+---
 
 ## 1. Summary
 

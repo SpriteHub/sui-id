@@ -133,5 +133,11 @@ pub const CARDS_CSS: &str = r#"
   background: var(--danger-subtle);
   border-color: var(--danger-default);
 }
+/* Heading inside a callout — body-size, no extra margin. */
+.callout__title {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+  margin: 0 0 var(--space-2);
+}
 
 "#;

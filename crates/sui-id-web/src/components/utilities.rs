@@ -237,4 +237,37 @@ pub const UTILITIES_ADDITIONAL_CSS: &str = r#"
   word-break: break-word;
 }
 
+/* ── Phase 3 layout helpers (RFC-MI-030 + RFC-MI-031, v0.52.0) ───────── */
+/* .filter-bar       — filter row on list/audit pages (flex, wraps).     */
+/* .sparkline-header, .sparkline-title, .sparkline-legend,               */
+/*   .sparkline-container — dashboard sparkline section layout pieces.   */
+.filter-bar {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.sparkline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: var(--space-3);
+}
+.sparkline-title {
+  margin: 0;
+  font-weight: var(--font-weight-medium);
+  opacity: 0.85;
+}
+.sparkline-legend {
+  display: flex;
+  gap: var(--space-5);
+  margin-bottom: var(--space-3);
+}
+.sparkline-container {
+  width: 100%;
+  height: 80px;
+  display: block;
+}
+
 "#;

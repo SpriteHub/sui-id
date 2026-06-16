@@ -5,6 +5,81 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.0] — Unreleased
+
+**Phase 3 complete: read-only admin screens.** `RFC-MI-030`
+(Dashboard) and `RFC-MI-031` (Audit + Tables) ship together.
+`inline-style-bound` drops from 16 to **10** — the largest
+single-release improvement in the MI arc so far.
+
+---
+
+### Dashboard warning section: `.callout--warning` (`RFC-MI-030`)
+
+The operator warning block (SMTP not configured, HIBP off, insecure
+cookie) migrates from `<section class="card card--warn">` to
+`<section class="callout callout--warning">` — using the neutral
+callout primitive introduced in v0.50.1. The `<h2>` moves from an
+inline `style="font-size:…;margin:…"` to `class="callout__title"`.
+A new `.callout__title` rule is added to `components/cards.rs`.
+
+### Sparkline layout: four new CSS classes (`RFC-MI-030`)
+
+Four inline styles in the dashboard sparkline section are replaced
+by CSS classes added to `components/utilities.rs`:
+
+- `.sparkline-container` — SVG dimensions (`width:100%; height:80px; display:block`)
+- `.sparkline-header` — flex row for title + period nav
+- `.sparkline-title` — h3 reset (margin: 0, medium weight, dimmed opacity)
+- `.sparkline-legend` — legend flex row with `gap: --space-5`
+
+### Audit page: cell discipline and filter row (`RFC-MI-031`)
+
+**New CSS in `components/tables.rs`:**
+- `.cell-nowrap` — explicit no-wrap (documents intent)
+- `.cell-id` — monospace, caption size, max-width 16rem, text-overflow ellipsis
+- `.cell-actions` — right-align, never wraps
+
+**Applied to `audit_row_view()`:**  timestamp → `muted cell-nowrap`;
+actor → `cell-nowrap`; action → `cell-wrap`; target → `cell-id`;
+outcome → `cell-nowrap`; copy button → `cell-actions`.
+
+**Filter bar:** `<div class="row" style="…">` replaced with
+`<div class="filter-bar">`. The `.filter-bar` class is added to
+`components/utilities.rs`.
+
+**Audit `<thead>` expanded** to 6 columns (added `<th
+aria-hidden="true">` for the copy button); `colspan="5"` empty
+state updated to `colspan="6"`.
+
+### Summary: 6 inline styles eliminated
+
+| Page | Before | After |
+|---|---|---|
+| `dashboard.rs` (warning h2) | `style="font-size:…;margin:…"` | `.callout__title` |
+| `dashboard.rs` (SVG) | `style="width:100%;height:80px;display:block"` | `.sparkline-container` |
+| `dashboard.rs` (sparkline header) | `style="justify-content:…"` | `.sparkline-header` |
+| `dashboard.rs` (sparkline h3) | `style="margin:0;font-weight:…;opacity:0.85"` | `.sparkline-title` |
+| `dashboard.rs` (sparkline legend) | `style="gap:var(--space-5);…"` | `.sparkline-legend` |
+| `audit.rs` (filter row) | `style="gap:var(--space-3);…"` | `.filter-bar` |
+
+**`inline-style-bound`: 16 → 10.**
+
+### Tests, CI, and compatibility
+
+- `cargo check --workspace` clean.
+- **228/228 library tests pass**.
+- `text-leaks` = 0, `css-tokens` = 148, `semantic-parity` = 36,
+  **`inline-style-bound` = 10** (was 16; improved by 6).
+- No handler changes; no data struct changes; no route changes;
+  copy.js and `data-copy` pattern unchanged.
+
+### Version bumps
+
+`0.51.1` → `0.52.0` across workspace, crates, and Cargo.lock.
+
+---
+
 ## [0.51.1] — Unreleased
 
 **Phase 2 complete.** `RFC-MI-022` (Route-Based Tab Component)
