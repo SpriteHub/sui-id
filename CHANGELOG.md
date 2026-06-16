@@ -5,6 +5,66 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.0] — Unreleased
+
+**Phase 8 complete: `RFC-MI-080` (UI Regression and Accessibility
+Hardening). The Mockup Integration arc is fully closed.**
+
+All 16 MI RFCs — spanning Phases 0 through 8 across versions v0.49.0
+through v0.57.0 — are now in `rfcs/done/`.
+
+---
+
+### Blocker fix: skip link (WCAG 2.4.1 Level A)
+
+`<a class="skip-link" href="#main-content">` added as the first
+focusable element in both `Shell` and `AuthShell`. Both layouts gain
+`<main id="main-content">` as the skip target. `<header
+role="banner">` added to both shells. CSS `.skip-link` class in
+`chrome.rs::CHROME_RESPONSIVE_CSS` — off-screen normally, slides in
+on `:focus`.
+
+New i18n key `a11y_skip_to_main` (en: "Skip to main content",
+ja: "メインコンテンツへスキップ", zh: "跳转到主要内容").
+
+### Narrow breakpoints added (WCAG 1.4.10)
+
+Two new breakpoints in `chrome.rs::CHROME_RESPONSIVE_CSS`:
+
+- **`≤ 480px`** — auth-card full-bleed, smaller `.stat__value`,
+  reduced route-tab padding, `.danger-zone` tighter padding.
+- **`≤ 360px`** — `.form-actions` stacks vertically (buttons
+  full-width, centred); `.grid-cards` collapses to single column.
+
+All content reflows to a single column at 360px without horizontal
+scrolling (WCAG 1.4.10). Nav and table horizontal scroll at 360px
+is acceptable under the 2D-content exception.
+
+### Verification matrices committed
+
+Six documents under `docs/src/mockup-integration/`:
+
+- `accessibility-matrix.md` — ABDD attributes per screen
+- `no-js-matrix.md` — no-JS coverage (all core flows pass)
+- `keyboard-navigation-matrix.md` — keyboard reachability (all pass)
+- `responsive-matrix.md` — 768px / 480px / 360px
+- `i18n-copy-review.md` — localisation audit (0 leaks)
+- `security-sensitive-copy-review.md` — anti-enumeration, OIDC scope accuracy, confirmations
+
+### MI arc final state
+
+- **16 / 16 MI RFCs in `rfcs/done/`** ✅
+- **`inline-style-bound` = 0** ✅ (met in v0.56.0; maintained here)
+- **228/228 library tests pass** ✅
+- All four CI invariants: `text-leaks` = 0, `css-tokens` = 148,
+  `semantic-parity` = 36, `inline-style-bound` = 0
+
+### Version bumps
+
+`0.56.0` → `0.57.0` across workspace, all six crates, `Cargo.lock`.
+
+---
+
 ## [0.56.0] — Unreleased
 
 **Phase 7 complete: `RFC-MI-070` (OIDC Consent UX Integration).**

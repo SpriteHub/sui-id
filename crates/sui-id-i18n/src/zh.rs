@@ -80,6 +80,7 @@ pub static STRINGS_ZH: Strings = Strings {
     nav_profile: "个人资料",
     nav_security: "安全",
     nav_logout: "退出登录",
+    a11y_skip_to_main: "跳转到主要内容",
     nav_aria_main: "主导航",
     nav_aria_signout: "退出登录",
 

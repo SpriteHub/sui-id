@@ -77,6 +77,7 @@ pub static STRINGS_JA: Strings = Strings {
     nav_profile: "プロフィール",
     nav_security: "セキュリティ",
     nav_logout: "サインアウト",
+    a11y_skip_to_main: "メインコンテンツへスキップ",
     nav_aria_main: "メインナビゲーション",
     nav_aria_signout: "サインアウト",
 

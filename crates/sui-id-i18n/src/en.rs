@@ -77,6 +77,7 @@ pub static STRINGS_EN: Strings = Strings {
     nav_profile: "Profile",
     nav_security: "Security",
     nav_logout: "Sign out",
+    a11y_skip_to_main: "Skip to main content",
     nav_aria_main: "Main navigation",
     nav_aria_signout: "Sign out",
 

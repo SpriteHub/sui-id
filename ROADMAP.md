@@ -75,7 +75,7 @@ migration plan, codebase handoff, and mockup handoff package.
 | **5** | v0.54.0        | Form system + danger zone                               | RFC-MI-050, 051 → `done/`     |
 | **6** | v0.55.0        | Self-service `/me/security/*`                           | RFC-MI-060 → `done/`          |
 | **7** | **v0.56.0**    | **OIDC consent UX (this release; Phase 7 complete)**    | RFC-MI-070 → `done/`          |
-| **8** | v0.57.0        | Responsive + a11y regression hardening                  | RFC-MI-080                    |
+| **8** | **v0.57.0**    | **Responsive + a11y hardening (this release; Phase 8 complete; MI arc done)** | RFC-MI-080 → `done/` |
 
 Phase-1 blockers (`D-01` / `D-02` / `D-03` in the migration plan)
 must be resolved before any code-level visual replacement starts:
@@ -90,6 +90,7 @@ deferred (verification phase, spec §22).
 
 | Version | What shipped |
 |---|---|
+| v0.57.0 | **Phase 8 complete — MI arc fully closed: RFC-MI-080 (UI Regression + A11y Hardening).** Skip link added to Shell and AuthShell (WCAG 2.4.1). `<header role="banner">`, `<main id="main-content">`. `@media (max-width: 480px)` and `(max-width: 360px)` breakpoints added. New i18n key `a11y_skip_to_main`. Six verification matrices committed (`docs/src/mockup-integration/`). **16/16 MI RFCs in `done/`. `inline-style-bound` = 0. 228/228 tests PASS.** |
 | v0.56.0 | **Phase 7 complete: RFC-MI-070 (OIDC Consent UX). `inline-style-bound` reaches 0.** Four inline styles in `pages/oidc.rs` eliminated via `.consent-card`, `.consent-intro`, `.consent-scope-list`, `.consent-scope-item` classes. Scope item structure improved. PKCE/redirect validation unchanged. 15/16 MI RFCs in `done/`. **228/228 tests PASS.** |
 | v0.55.0 | **Phase 6 complete: RFC-MI-060 (Self-Service Security Tab Integration).** Password-change page (`render_password_change`) updated: `show_nav=true`, `current="me"`, tab strip added. All six `/me/security/*` routes now consistently render `.route-tabs` with `aria-current="page"`. MFA enable/disable decision documented (Option 2: self-service + admin reset). Cancel link updated to `/me/security/overview`. Form actions migrated to `.form-actions`. No i18n changes. `inline-style-bound` = 4 (unchanged). 14/16 MI RFCs in `done/`. **228/228 tests PASS.** |
 | v0.54.0 | **Phase 5 complete: RFC-MI-050 (Form System) + RFC-MI-051 (Danger Zone).** Two new form CSS primitives (`.field--required`, `.review-summary`) added to `forms.rs`. User detail page restructured: action buttons moved from header into a `.danger-zone` section at the bottom. New i18n key `user_detail_danger_zone_body` (×3 locales). All confirmation routes unchanged. `inline-style-bound` **5 → 4**. 14/16 MI RFCs in `done/`. **228/228 tests PASS.** |
@@ -136,22 +137,27 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-**Phase 7 of the Mockup Integration arc is complete.**
+**The Mockup Integration arc is fully closed as of v0.57.0.**
 
-v0.56.0 ships RFC-MI-070 (OIDC consent UX). **`inline-style-bound`
-reaches 0** — every inline `style=` attribute removed across the
-entire MI arc (17 total, from baseline). 15 of the original 16 MI
-RFCs are in `rfcs/done/`.
+All 16 MI RFCs across Phases 0–8 are implemented and in
+`rfcs/done/`. The arc spanned v0.49.0 through v0.57.0.
 
-**1 RFC remains: RFC-MI-080** (Phase 8 — UI Regression and
-Accessibility Hardening, `v0.57.0`). This is the final RFC in the
-Mockup Integration arc. It covers responsive layout stress-tests,
-keyboard navigation checks, and any remaining ABDD gaps identified
-during the arc.
+Final metrics against v0.48.4 baseline:
 
-The project remains in **verification phase**. No v1.0 designation
-is scheduled. **No release will start with v1 until the bar is
-met.**
+| Metric | v0.48.4 baseline | v0.57.0 |
+|---|---|---|
+| `inline-style-bound` | 17 | **0** |
+| MI RFCs completed | 0 | **16 / 16** |
+| CSS shards | 1 monolith | **11 bounded shards** |
+| Skip link | absent | **present (WCAG 2.4.1)** |
+| No-JS sign-out | JS required | **server-rendered** |
+| Responsive breakpoints | 768px only | **768 / 480 / 360px** |
+| `inline-style-bound` ceiling | 119 (pre-v0.48.0) → 16 (v0.48.4) → 20 (MI arc limit) | **0** |
+
+The project remains in **verification phase**. The MI arc
+completion is a quality milestone, not a v1.0 gate.
+**No release will start with v1 until sufficient soak, external
+review, and integration verification have occurred.**
 
 ---
 

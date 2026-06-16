@@ -3,13 +3,61 @@
 ```toml
 id = "RFC-MI-080"
 title = "UI Regression and Accessibility Hardening"
-status = "Proposed"
+status = "Implemented (v0.57.0)"
 phase = "Phase 8"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.57.0** — the final release in the MI arc.
+
+### Blocker fixes
+
+**Skip link added** (WCAG 2.4.1 Level A) — `<a class="skip-link"
+href="#main-content">` added as the first focusable element in both
+`Shell` and `AuthShell`. The target `<main id="main-content">` was
+added to both layouts. CSS `.skip-link` rule added to
+`chrome.rs::CHROME_RESPONSIVE_CSS` (off-screen until focused, then
+slides into view at `top: var(--space-2)`). Localised via new
+`a11y_skip_to_main` i18n key (en: "Skip to main content",
+ja: "メインコンテンツへスキップ", zh: "跳转到主要内容").
+
+`role="banner"` added to `<header class="app-header">` in both
+Shell and AuthShell for explicit landmark declaration.
+
+**Narrow breakpoints added** (WCAG 1.4.10 reflow):
+- `@media (max-width: 480px)` — auth-card full-bleed, smaller
+  stat values, tighter route-tab padding, `.danger-zone` padding.
+- `@media (max-width: 360px)` — `.form-actions` stacks vertically;
+  `.grid-cards` collapses to single column.
+
+### Verification matrices committed
+
+Six documents under `docs/src/mockup-integration/`:
+
+- `accessibility-matrix.md` — per-screen ABDD verification (all pass)
+- `no-js-matrix.md` — no-JS operation coverage (all core flows pass)
+- `keyboard-navigation-matrix.md` — keyboard reachability (all pass)
+- `responsive-matrix.md` — 768px / 480px / 360px (all pass)
+- `i18n-copy-review.md` — localisation audit (0 leaks, all keys present)
+- `security-sensitive-copy-review.md` — anti-enumeration, OIDC consent,
+  confirmation accuracy (all pass)
+
+### Acceptance criteria
+
+- [x] All migration RFC acceptance criteria rechecked (no new failures found).
+- [x] Keyboard matrix has no blocker items.
+- [x] No-JS matrix has no blocker items for core flows.
+- [x] Responsive matrix covers 768px, 480px, and 360px.
+- [x] Security-sensitive copy review is complete.
+- [x] CHANGELOG and ROADMAP are updated.
+
+---
 
 ## 1. Summary
 

@@ -57,26 +57,20 @@ slot is `069`). One **parallel namespace** also exists:
 
 ### Proposed — Mockup Integration epic (Phase 0 → Phase 8)
 
-The mockup integration arc opens in v0.49.0 and is expected to span
-eight phases. Read the
-[migration plan](../docs/mockup-integration/migration-plan.md) and
-[codebase handoff](../docs/mockup-integration/codebase-handoff.md)
-first; then implement RFCs in dependency order (the leftmost column
-is the **implementation order**). The Phase-0 baseline inventory
-artifacts the rest of the arc references live under
-[`docs/mockup-integration/inventory/`](../docs/mockup-integration/inventory/).
+**The mockup integration arc is complete as of v0.57.0.**
 
-| Order | ID | Title | Phase |
-|------:|----|-------|-------|
-| 1 | [RFC-MI-080](./proposed/RFC-MI-080-ui-regression-a11y-hardening.md) | UI Regression and Accessibility Hardening | Phase 8 |
+All 16 MI RFCs have been implemented across Phases 0–8.
+See the Implemented table above for the full list with release versions.
 
-Phase-1 blockers, restated for visibility:
+The migration plan (`docs/mockup-integration/migration-plan.md`) and
+verification matrices (`docs/src/mockup-integration/`) document the
+complete arc.
 
-- **`D-01`** (RFC-MI-010) — Split `components.rs` into bounded shards.
-- **`D-02`** (RFC-MI-022) — Preserve path-based tabs; reject the
-  mockup's query-parameter tab model.
-- **`D-03`** (RFC-MI-021) — Thread CSRF through `Shell` server-side
-  before any interactive shell adoption proceeds (Phase 2 blocker).
+Phase-1 blockers resolved:
+
+- **`D-01`** (RFC-MI-010 v0.50.0) — `components.rs` split into 11 bounded shards. ✅
+- **`D-02`** (RFC-MI-022 v0.51.1) — Path-based route tabs; query-parameter model rejected. ✅
+- **`D-03`** (RFC-MI-021 v0.51.0) — CSRF threaded through `Shell` server-side. ✅
 
 ### Proposed — post-1.0 candidates (open for review)
 
@@ -93,6 +87,7 @@ Phase-1 blockers, restated for visibility:
 
 | ID  | Title                                                          | Shipped in |
 |-----|----------------------------------------------------------------|------------|
+| MI-080 | [UI Regression and Accessibility Hardening](./done/RFC-MI-080-ui-regression-a11y-hardening.md) | v0.57.0 |
 | MI-070 | [OIDC Consent UX Integration](./done/RFC-MI-070-oidc-consent-ux.md) | v0.56.0 |
 | MI-060 | [Self-Service Security Tab Integration](./done/RFC-MI-060-self-service-security-tabs.md) | v0.55.0 |
 | MI-051 | [Danger Zone and Confirmation Screen Integration](./done/RFC-MI-051-danger-confirmation.md) | v0.54.0 |

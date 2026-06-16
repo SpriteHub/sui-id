@@ -97,6 +97,7 @@ pub struct Strings {
     /// pointed to the legacy `/admin/profile` single page.
     pub nav_security: &'static str,
     pub nav_logout: &'static str,
+    pub a11y_skip_to_main: &'static str,
     pub nav_aria_main: &'static str,
     pub nav_aria_signout: &'static str,
 

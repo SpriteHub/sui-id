@@ -307,13 +307,35 @@ pub const CHROME_THEME_TOGGLE_CSS: &str = r#"
 "#;
 
 pub const CHROME_RESPONSIVE_CSS: &str = r#"
+/* ── Skip link (RFC-MI-080, v0.57.0) ────────────────────────────────── */
+/* Renders off-screen until focused, then jumps into view.               */
+/* Must be the first focusable element in the document (WCAG 2.4.1).    */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: var(--space-2);
+  z-index: 9999;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-elevated);
+  color: var(--fg-default);
+  border: var(--border-width-emphasis) solid var(--accent-default);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.skip-link:focus {
+  top: var(--space-2);
+}
+
 /* ------------------------------------------------------------------ */
-/* Responsive breakpoints (v0.48.2 — Bug 8)                            */
+/* Responsive breakpoints (v0.48.2 — Bug 8; extended v0.57.0)          */
 /* ------------------------------------------------------------------ */
-/* Single breakpoint at the tablet boundary (768px). The desktop CSS
- * above is the canonical layout; adjustments below override only what
- * needs to shrink/scroll/wrap on narrower viewports. The screen-reader
- * + keyboard-navigation experience is unchanged across breakpoints.   */
+/* Primary breakpoint: 768px (tablet/phone boundary).
+ * Narrow breakpoints: 480px, 360px (modern phones, WCAG 1.4.10).
+ * Desktop CSS above is the canonical layout; adjustments below
+ * override only what needs to shrink/scroll/wrap on narrow viewports.
+ * Screen-reader + keyboard-navigation experience is unchanged.         */
 
 @media (max-width: 768px) {
   /* Tighter padding around the main content area so 32px*2 isn't
@@ -353,5 +375,43 @@ pub const CHROME_RESPONSIVE_CSS: &str = r#"
   .setup-lang-picker {
     flex-wrap: wrap;
   }
+}
+
+/* 480px — small phones (iPhone SE, Galaxy A series). */
+@media (max-width: 480px) {
+  /* Body text remains readable; reduce display-size headings. */
+  .stat__value { font-size: var(--font-size-h2); }
+  /* Auth card: full-bleed on small phones (no rounded corners
+   * bleeding into screen edge). The card already uses width:100%;
+   * just tighten the padding. */
+  .auth-card, .consent-card {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    padding: var(--space-4) var(--space-3);
+  }
+  /* Route tabs: let items break freely so they stack instead of
+   * truncating. Already have flex-wrap:wrap from the class. */
+  .route-tabs__link {
+    padding: var(--space-2) var(--space-2);
+  }
+  /* Danger zone: reduce padding to keep content in frame. */
+  .danger-zone { padding: var(--space-3); }
+}
+
+/* 360px — minimum supported phone (WCAG 1.4.10 reflow target).
+ * Text must reflow to a single column without horizontal scrolling
+ * at 320–360px when zoomed to 400%. */
+@media (max-width: 360px) {
+  /* Push main content edge-to-edge. */
+  .app-main { padding: var(--space-2) var(--space-2); }
+  /* Form action rows: stack vertically so buttons don't overflow. */
+  .form-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .form-actions > * { width: 100%; text-align: center; }
+  /* Stat / metric cards: stacked layout prevents overflow. */
+  .grid-cards { grid-template-columns: 1fr; }
 }
 "#;

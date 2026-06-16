@@ -49,6 +49,7 @@ pub fn Shell(
     children: Children,
 ) -> impl IntoView {
     let stylesheet = format!("{}\n{}", TOKENS_CSS, components_css());
+    let t = lang.strings();
     let lang_tag = lang.tag();
     let dir_attr = lang.direction();
     view! {
@@ -63,19 +64,24 @@ pub fn Shell(
                 <script src="/static/copy.js" defer></script>
             </head>
             <body>
+                // RFC-MI-080: skip link must be the first focusable
+                // element so keyboard users can bypass the nav (WCAG 2.4.1).
+                <a href="#main-content" class="skip-link">
+                    {t.a11y_skip_to_main}
+                </a>
                 {dev_mode.unwrap_or(false).then(|| view! {
                     <div class="dev-banner" role="alert">
                         <strong>"DEV MODE"</strong>
                         " — not for production. cookie_secure=false, HIBP off, lockout disabled."
                     </div>
                 })}
-                <header class="app-header">
+                <header class="app-header" role="banner">
                     <h1 class="app-header__brand">"sui-id"</h1>
                     {show_nav.then(|| view! {
                         <Nav current=current.clone() lang=lang csrf_token=csrf_token.clone() />
                     })}
                 </header>
-                <main class="app-main">{children()}</main>
+                <main class="app-main" id="main-content">{children()}</main>
                 <Footer lang=lang />
             </body>
         </html>
@@ -93,6 +99,7 @@ pub fn AuthShell(
     children: Children,
 ) -> impl IntoView {
     let stylesheet = format!("{}\n{}", TOKENS_CSS, components_css());
+    let t = lang.strings();
     let lang_tag = lang.tag();
     let dir_attr = lang.direction();
     view! {
@@ -106,10 +113,13 @@ pub fn AuthShell(
                 <script src="/static/theme-init.js" defer></script>
             </head>
             <body>
-                <header class="app-header">
+                <a href="#main-content" class="skip-link">
+                    {t.a11y_skip_to_main}
+                </a>
+                <header class="app-header" role="banner">
                     <h1 class="app-header__brand">"sui-id"</h1>
                 </header>
-                <main class="app-main app-main--narrow auth-page">
+                <main class="app-main app-main--narrow auth-page" id="main-content">
                     <div class="auth-card">{children()}</div>
                 </main>
                 <Footer lang=lang />
