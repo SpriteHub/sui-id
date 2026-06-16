@@ -714,6 +714,7 @@ pub static STRINGS_JA: Strings = Strings {
 
     // /me/security タブ (RFC 040)
     me_tab_overview: "概要",
+    me_tab_password: "パスワード",
     me_tab_mfa: "MFA",
     me_tab_passkey: "パスキー",
     me_tab_sessions: "セッション",

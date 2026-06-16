@@ -5,6 +5,69 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.1] — Unreleased
+
+**Phase 2 complete.** `RFC-MI-022` (Route-Based Tab Component)
+ships — the last Phase 2 RFC. Phase 2 is now fully closed.
+
+---
+
+### Route-based tab component (`RFC-MI-022`)
+
+**CSS** — `.route-tabs` + `.route-tabs__link` added to
+`components/tabs.rs`. Active link identified by
+`aria-current="page"` with a visible underline and colour change;
+focus ring via `:focus-visible`; no colour-only state indicator.
+
+**Rust** — `RouteTab { key, href, label }` struct and
+`route_tabs(aria_label, current, tabs)` function added to
+`components/tabs.rs`, re-exported from `components.rs`.
+
+**`MeTab::Password` added** — `MeTab` gains a `Password` variant
+(`key="password"`, href=`/me/security/password`). The self-service
+tab strip now lists all six tabs: Overview, Password, MFA, Passkeys,
+Sessions, Language. The `me_tab_password` i18n key is added to all
+three locale files (en: "Password", ja: "パスワード", zh: "密码").
+
+**Both tab helpers migrated to `.route-tabs` markup:**
+
+- `me_security_tabs()` — was `<nav class="tabs">` + `<a class="tab
+  tab--active">`; now `<nav class="route-tabs">` + `<a class="route-tabs__link"
+  aria-current="page">`.
+- `settings_tabs()` — was `<nav class="app-nav"
+  style="margin-bottom:var(--space-4);flex-wrap:wrap">` + `<a
+  class="app-nav__link">`; now `<nav class="route-tabs">` + `<a
+  class="route-tabs__link" aria-current="page">`.
+
+**`inline-style-bound` drops from 17 to 16.** The `style=`
+attribute in `settings_tabs()` is the eliminated site.
+
+**Deferred:** `ShellCurrent` typed enum (will land in a future
+maintenance RFC); tab strip on `render_password_change` (owned by
+RFC-MI-060, Phase 6).
+
+### Tests, CI, and compatibility
+
+- `cargo check --workspace` passes clean.
+- **228/228 library tests pass**.
+- `text-leaks` = 0, `css-tokens` = 148, `semantic-palette-parity`
+  = 36, **`inline-style-bound` = 16** (was 17; improved).
+- No route changes; no handler changes.
+- The `me_tab_password` i18n key addition is additive and does not
+  break existing code.
+
+### Phase 2 complete — 7 of 16 MI RFCs now in `done/`
+
+With RFC-MI-022, all three Phase-2 blockers (D-01, D-02, D-03) are
+resolved and 7 of the original 16 MI RFCs have shipped.
+
+### Version bumps
+
+Workspace, all six crate `Cargo.toml`, and `Cargo.lock`:
+`0.51.0` → `0.51.1`.
+
+---
+
 ## [0.51.0] — Unreleased
 
 **Phase 2 of the Mockup Integration arc opens with `RFC-MI-020`

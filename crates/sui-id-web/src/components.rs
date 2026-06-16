@@ -61,6 +61,7 @@ pub mod utilities;
 // status_badge` and `crate::components::StatusKind` continue to
 // resolve unchanged.
 pub use badges::{status_badge, StatusKind};
+pub use tabs::{route_tabs, RouteTab};
 
 /// The concatenated component stylesheet served by [`crate::layout`].
 ///

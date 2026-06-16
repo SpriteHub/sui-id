@@ -6,10 +6,26 @@ use super::common::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeTab {
     Overview,
+    Password,
     Mfa,
     Passkey,
     Sessions,
     Language,
+}
+
+impl MeTab {
+    /// Returns the URL path slug that identifies this tab (matches the
+    /// route segment under `/me/security/`).
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Overview  => "overview",
+            Self::Password  => "password",
+            Self::Mfa       => "mfa",
+            Self::Passkey   => "passkeys",
+            Self::Sessions  => "sessions",
+            Self::Language  => "language",
+        }
+    }
 }
 
 
@@ -19,28 +35,55 @@ pub struct MeShellData {
     pub active_tab: MeTab,
 }
 
+/// Static tab definitions for `/me/security/*`.
+/// Order matches the visual left-to-right order.
+/// Labels are resolved at render time via the `lang` argument.
+static ME_SECURITY_TABS_KEYS: &[(&str, &str)] = &[
+    ("overview",  "/me/security/overview"),
+    ("password",  "/me/security/password"),
+    ("mfa",       "/me/security/mfa"),
+    ("passkeys",  "/me/security/passkeys"),
+    ("sessions",  "/me/security/sessions"),
+    ("language",  "/me/security/language"),
+];
 
-fn me_security_tabs(active: MeTab, lang: sui_id_i18n::Locale) -> impl IntoView {
+/// Render the `/me/security/*` route-based tab strip.
+///
+/// `active` identifies the current tab; `aria-current="page"` is
+/// applied to the matching link.
+pub fn me_security_tabs(active: MeTab, lang: sui_id_i18n::Locale) -> impl IntoView {
     let t = lang.strings();
-    let items = [
-        (MeTab::Overview, t.me_tab_overview, "/me/security/overview"),
-        (MeTab::Mfa,      t.me_tab_mfa,      "/me/security/mfa"),
-        (MeTab::Passkey,  t.me_tab_passkey,  "/me/security/passkeys"),
-        (MeTab::Sessions, t.me_tab_sessions, "/me/security/sessions"),
-        (MeTab::Language, t.me_tab_language, "/me/security/language"),
+    // Labels resolved at render time (locale-aware).
+    let labels: &[&str] = &[
+        t.me_tab_overview,
+        t.me_tab_password,
+        t.me_tab_mfa,
+        t.me_tab_passkey,
+        t.me_tab_sessions,
+        t.me_tab_language,
     ];
-    let tab_items: Vec<_> = items.iter().map(|(tab, label, href)| {
-        let cls = if *tab == active { "tab tab--active" } else { "tab" };
-        view! { <a href=*href class=cls>{*label}</a> }
-    }).collect();
+    // Build RouteTab entries inline — static keys/hrefs, runtime labels.
+    let items: Vec<_> = ME_SECURITY_TABS_KEYS
+        .iter()
+        .zip(labels.iter())
+        .map(|((key, href), label)| {
+            // SAFETY: we produce `impl IntoView` directly; no &'static needed
+            // for label since route_tabs takes &str.
+            view! {
+                <a class="route-tabs__link"
+                   href=*href
+                   aria-current={if *key == active.key() { Some("page") } else { None }}>
+                    {*label}
+                </a>
+            }
+        })
+        .collect();
     view! {
-        <nav class="tabs" aria-label=t.me_security_tabs_aria>
-            {tab_items}
+        <nav class="route-tabs" aria-label=t.me_security_tabs_aria>
+            {items}
         </nav>
     }
 }
-
-
 
 
 mod overview;

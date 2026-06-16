@@ -718,6 +718,7 @@ pub static STRINGS_ZH: Strings = Strings {
 
     // /me/security 选项卡 (RFC 040)
     me_tab_overview: "概览",
+    me_tab_password: "密码",
     me_tab_mfa: "多重认证",
     me_tab_passkey: "通行密钥",
     me_tab_sessions: "会话",

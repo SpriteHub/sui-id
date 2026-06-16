@@ -3,6 +3,7 @@
 use leptos::prelude::*;
 use super::common::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
     Basic,
     Security,
@@ -38,16 +39,20 @@ fn settings_tabs(active: SettingsTab, lang: sui_id_i18n::Locale) -> impl IntoVie
     ];
     let active_key = active.key();
     let links: Vec<_> = items
-        .into_iter()
+        .iter()
         .map(|(tab, label, href)| {
             let aria = if tab.key() == active_key { Some("page") } else { None };
             view! {
-                <a class="app-nav__link" href=href aria-current=aria>{label}</a>
+                <a class="route-tabs__link" href=*href aria-current=aria>{*label}</a>
             }
         })
         .collect();
+    // RFC-MI-022 (v0.51.1): migrated to .route-tabs markup.
+    // Previously used <nav class="app-nav" style="…"> with an inline
+    // style for margin-bottom; the .route-tabs class now carries
+    // margin-bottom:var(--space-4) in the CSS.
     view! {
-        <nav class="app-nav" aria-label=t.settings_tabs_aria style="margin-bottom:var(--space-4);flex-wrap:wrap">
+        <nav class="route-tabs" aria-label=t.settings_tabs_aria>
             {links}
         </nav>
     }

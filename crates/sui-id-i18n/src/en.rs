@@ -715,6 +715,7 @@ pub static STRINGS_EN: Strings = Strings {
 
     // /me/security tabs (RFC 040)
     me_tab_overview: "Overview",
+    me_tab_password: "Password",
     me_tab_mfa: "MFA",
     me_tab_passkey: "Passkeys",
     me_tab_sessions: "Sessions",

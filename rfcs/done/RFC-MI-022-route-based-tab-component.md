@@ -3,13 +3,86 @@
 ```toml
 id = "RFC-MI-022"
 title = "Route-Based Tab Component"
-status = "Proposed"
+status = "Implemented (v0.51.1)"
 phase = "Phase 2"
 created = "2026-05-18"
+implemented = "2026-05-18"
 project = "sui-id"
 scope = "Mockup integration into sui-id v0.48.4"
 language = "English"
 ```
+
+## Implementation note (added on transition to `done/`)
+
+Implemented in **v0.51.1** — the final Phase 2 release.
+
+### CSS: `.route-tabs` and `.route-tabs__link` (→ `components/tabs.rs`)
+
+Two new CSS classes replace the previous per-group ad-hoc markup:
+
+- `.route-tabs` — flex horizontal bar with `border-bottom` and
+  `margin-bottom: var(--space-4)`. Replaces the settings helper's
+  `style="margin-bottom:var(--space-4);flex-wrap:wrap"` inline style
+  (which was the last significant inline-style site outside auth pages).
+- `.route-tabs__link` — `<a>` anchor styled like a tab; `aria-current="page"`
+  on the active link triggers colour + underline; `font-weight: medium`
+  for non-colour state. Focus ring via `:focus-visible`.
+
+### Rust: `RouteTab` struct + `route_tabs()` fn (→ `components/tabs.rs`)
+
+`RouteTab { key, href, label }` and `route_tabs(aria_label, current, tabs)`.
+Re-exported from `components.rs` as `crate::components::{RouteTab, route_tabs}`.
+
+### `MeTab::Password` variant added
+
+`MeTab` gains a `Password` variant mapping to the key `"password"` and
+the href `/me/security/password`. The tab strip now lists all six
+self-service tabs (Overview, Password, MFA, Passkeys, Sessions, Language)
+in the order from the migration plan's `tab-routing-delta.md`. The
+`me_tab_password` i18n key is added to `Strings`, `en.rs`, `ja.rs`,
+and `zh.rs`.
+
+### Both tab helpers migrated
+
+- `me_security_tabs()` in `pages/me_security.rs`: rewrites from
+  `<nav class="tabs"> <a class="tab tab--active">` to
+  `<nav class="route-tabs"> <a class="route-tabs__link" aria-current="page">`.
+  The old `.tab` / `.tab--active` classes are now unused in the product
+  (CSS still present; no class cleanup in scope for this RFC).
+
+- `settings_tabs()` in `pages/settings.rs`: rewrites from
+  `<nav class="app-nav" style="…"> <a class="app-nav__link">` to
+  `<nav class="route-tabs"> <a class="route-tabs__link" aria-current="page">`.
+  The `style=` attribute is eliminated — `inline-style-bound` drops
+  from **17 → 16** in v0.51.1.
+
+### `ShellCurrent` enum deferred
+
+The RFC proposed a `ShellCurrent` typed enum to replace
+`current: Option<String>` in `Shell`. Deferred; the stringly-typed
+`current` param continues to work correctly; the enum is a code-quality
+improvement that can land in any future maintenance RFC without
+blocking Phase 3.
+
+### `render_password_change` tab strip deferred
+
+The `/me/security/password` route renders `render_password_change`
+(in `pages/auth.rs`) with `show_nav=false`. Adding the tab strip
+to that page is a screen-level layout change owned by RFC-MI-060
+(Phase 6, self-service security integration). The tab strip shown
+on other me_security pages already links to `/me/security/password`
+via the `MeTab::Password` entry.
+
+### Acceptance criteria
+
+- [x] No product tab uses `?tab=` as its state model (never was the product model; confirmed).
+- [x] Every tab is directly reachable by URL (all six me-security and six settings tabs are distinct routes).
+- [x] `aria-current="page"` is present on active tab (both helpers set it via `aria-current=Some("page")`).
+- [x] Tabs work without JavaScript (native `<a>` anchors; no client-side routing).
+- [x] Both self-service and settings tabs use the shared `.route-tabs` CSS pattern.
+- [x] `inline-style-bound` decreases (17 → 16).
+
+---
 
 ## 1. Summary
 

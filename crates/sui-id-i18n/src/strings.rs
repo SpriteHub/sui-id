@@ -586,6 +586,7 @@ pub struct Strings {
 
     // ---- /me/security tabs (RFC 040) ----
     pub me_tab_overview: &'static str,
+    pub me_tab_password: &'static str,
     pub me_tab_mfa: &'static str,
     pub me_tab_passkey: &'static str,
     pub me_tab_sessions: &'static str,

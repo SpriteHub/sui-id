@@ -67,12 +67,12 @@ migration plan, codebase handoff, and mockup handoff package.
 
 | Phase | Target version | Theme                                                   | RFCs                          |
 |-------|----------------|---------------------------------------------------------|-------------------------------|
-| **0** | v0.49.0        | RFCs + planning artifacts introduced                    | RFC-MI-000 → `done/`          |
+| **0** | v0.49.0        | RFCs + planning artifacts                               | RFC-MI-000 → `done/`          |
 | **0** | v0.49.1        | Baseline delta inventory                                | RFC-MI-000 → `done/`          |
 | **1** | v0.50.0        | CSS sharding (D-01 resolved)                            | RFC-MI-010 → `done/`          |
 | **1** | v0.50.1        | Token mapping + primitives; theme decision              | RFC-MI-011, 012 → `done/`     |
-| **2** | **v0.51.0**    | **Shell decision + server-rendered CSRF (this release)**| RFC-MI-020, 021 → `done/`     |
-| **2** | v0.51.1        | Route-based tab component                               | RFC-MI-022                    |
+| **2** | v0.51.0        | Shell decision + server-rendered CSRF                   | RFC-MI-020, 021 → `done/`     |
+| **2** | **v0.51.1**    | **Route-based tab component (this release; Phase 2 complete)** | RFC-MI-022 → `done/`   |
 | **3** | v0.52.0        | Read-only admin: dashboard, audit, tables               | RFC-MI-030, 031               |
 | **4** | v0.53.0        | Setup wizard + authentication surfaces                  | RFC-MI-040, 041               |
 | **5** | v0.54.0        | Form system + danger-zone / confirmation                | RFC-MI-050, 051               |
@@ -93,6 +93,7 @@ deferred (verification phase, spec §22).
 
 | Version | What shipped |
 |---|---|
+| v0.51.1 | **Phase 2 complete: RFC-MI-022 (Route-Based Tab Component).** `.route-tabs` + `.route-tabs__link` CSS added. `RouteTab` struct + `route_tabs()` fn added to `components/tabs.rs`. `MeTab::Password` added + `me_tab_password` i18n key in all three locales. Both tab helpers migrated: `me_security_tabs()` and `settings_tabs()` now emit `.route-tabs` markup with `aria-current="page"`. **`inline-style-bound` drops 17 → 16.** 7/16 MI RFCs in `done/`. **228/228 tests PASS.** |
 | v0.51.0 | **Phase 2 opens: RFC-MI-020 (Shell Layout decision) + RFC-MI-021 (Server-Rendered CSRF).** Shell: keep top-nav decision recorded; no structural code change. CSRF: Shell now requires `csrf_token: String`; Nav renders token directly into sign-out form hidden field; `logout-csrf.js` removed. 27 Shell call sites updated; 5 render function signatures updated. Sign-out works with JS disabled. **228/228 tests PASS; 0 warnings; all 4 CI invariants unchanged.** |
 | v0.50.1 | **Phase 1 complete: RFC-MI-011 (Token Mapping + Visual Primitives) + RFC-MI-012 (Theme Persistence).** Zero new CSS tokens (mockup vocabulary is a strict subset of the product's). Three CSS primitives adopted: `.callout` + tone variants (→ `cards.rs`), `.field__error` + `.field--invalid` (→ `forms.rs`), `.dl-grid` (→ `utilities.rs`). Theme persistence: **Option A chosen** (preserve `localStorage` model, no code change). Phase-1 blockers D-01/D-02/D-03 status: D-01 resolved (v0.50.0); D-02 and D-03 owned by Phase 2 (RFC-MI-022 and RFC-MI-021). **228/228 tests PASS; 0 warnings; all 4 CI invariants unchanged.** |
 | v0.50.0 | **Phase 1 opens: RFC-MI-010 (Component CSS Sharding).** `components.rs` (1094 lines) split into 11 bounded shards under `components/` (badges, banners, buttons, cards, chrome, confirm, forms, setup, tables, tabs, utilities). `StatusKind` + `status_badge` moved to `badges.rs`; re-exported from `components.rs` for backward compatibility. `components_css()` fn (OnceLock-cached) replaces the former `COMPONENTS_CSS` const — produces a byte-identical CSS body to v0.49.x. Phase-1 blocker `D-01` (CSS sharding) resolved. **228/228 tests PASS; 0 warnings; all 4 CI invariants unchanged.** |
@@ -132,24 +133,24 @@ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status
 
-The project is in **Phase 2 of the Mockup Integration arc**. Two
-Phase-2 RFCs ship in v0.51.0:
+**Phase 2 of the Mockup Integration arc is complete.**
 
-- **RFC-MI-020** (Shell Layout): keep top-nav decision recorded;
-  no structural code change required.
-- **RFC-MI-021** (Server-Rendered CSRF): Shell sign-out form now
-  server-renders the CSRF token. `logout-csrf.js` removed. Sign-out
-  works without JavaScript.
+v0.51.0 shipped the shell layout decision (keep top-nav) and
+server-rendered CSRF; v0.51.1 ships the route-based tab component.
+All three Phase-2 blockers (D-01, D-02, D-03) are resolved. 7 of
+the original 16 MI RFCs are in `rfcs/done/`.
 
-**Remaining Phase 2 work: RFC-MI-022** (Route-Based Tab Component,
-`v0.51.1`). This introduces the `route_tabs()` helper and migrates
-both tab groups (`/me/security/*`, `/admin/settings/*`) to use it.
-Blockers D-02 (route-based tabs) and D-03 (CSRF threading) are now
-both met — D-02 unblocked by this release, D-03 met here.
+**Phase 3** (`v0.52.0`) is the read-only admin layer:
+
+- **RFC-MI-030** — Dashboard + summary surface integration. Adopts
+  the mockup's metric-card and audit-excerpt layout into `/admin`.
+- **RFC-MI-031** — Audit log and read-only table integration. Adopts
+  the mockup's dense table headers, filter row, and chain-status
+  badge into `/admin/audit` and the user / client list pages.
 
 The project remains in **verification phase**. No v1.0 designation
-is scheduled. **No release will start with v1 until the bar is
-met.**
+is scheduled until sufficient soak and external review. **No
+release will start with v1 until that bar is met.**
 
 ---
 
