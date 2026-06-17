@@ -5,6 +5,75 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.62.3] — 2026-06-04
+
+**RFC 6749 §4.1.2.1 compliance — authorize endpoint error handling.**
+
+### Problem
+
+The `/oauth2/authorize` handler had two related defects:
+
+**1. Client validation happened after the login redirect.**
+When a request arrived with an invalid or unknown `client_id`, the handler
+redirected the user to the login page before checking whether the client
+existed. The user authenticated, was bounced back to `/oauth2/authorize`,
+and only then saw an HTML error page at sui-id. There was no way back to
+the calling application.
+
+**2. All protocol errors produced HTML pages.**
+Once the user was authenticated, any protocol error (invalid PKCE, bad
+`scope`, wrong `response_type`) rendered a full HTML error page at sui-id
+even though the redirect_uri had already been validated and it was safe —
+and required by RFC 6749 §4.1.2.1 — to redirect back to the RP with an
+`error=…` parameter.
+
+### Fix — three-phase authorize flow
+
+**Phase 1 (before login):** Validate `client_id` and `redirect_uri`
+against the database. On failure: render HTML error immediately (never
+redirect — the redirect_uri is not yet trusted). This is correct per
+RFC 6749 §4.1.2.1 and prevents users from wasting time logging in when
+the client is misconfigured.
+
+A new `validate_client_and_redirect_uri` function in
+`sui-id-core/src/authorize.rs` performs this check.
+
+**Phase 2 (login):** If no session exists, redirect to login as before.
+By the time the user returns, Phase 1 is already confirmed.
+
+**Phase 3 (request validation):** Validate `response_type`, PKCE,
+`scope`. On failure: call `protocol_error_redirect` which builds a
+`Location: {redirect_uri}?error={code}&error_description={...}&state={...}`
+redirect response, sending the user back to their application with an
+actionable error code rather than stranding them at sui-id.
+
+The new `protocol_error_redirect` helper is also applied to the
+`consent_post` handler's `begin_authorization` call.
+
+### Error codes returned to the RP (Phase 3)
+
+| Condition | `error` parameter |
+|---|---|
+| `response_type` ≠ `code` | `unsupported_response_type` |
+| `code_challenge` missing or empty | `invalid_request` |
+| `code_challenge_method` ≠ `S256` | `invalid_request` |
+| Scope not permitted for client | `invalid_scope` |
+
+### What still shows an HTML page (Phase 1, RFC-required)
+
+| Condition | Reason |
+|---|---|
+| `client_id` unknown | Cannot trust any redirect_uri |
+| Client is disabled / deleted | Same |
+| `redirect_uri` not registered for client | Security: open-redirector risk |
+
+### Tests and CI
+
+- `cargo check -p sui-id-core -p sui-id`: clean.
+- CI invariants unchanged.
+
+---
+
 ## [0.62.2] — 2026-05-24
 
 **Three UX fixes from mockup-integration soak.**

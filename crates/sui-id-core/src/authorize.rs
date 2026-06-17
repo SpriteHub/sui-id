@@ -49,6 +49,53 @@ pub struct AcceptedAuthorize {
     pub params: AuthorizeParams,
 }
 
+/// Phase 1 of the authorization endpoint: validate client identity and
+/// redirect_uri **before** redirecting the user to the login page.
+///
+/// This prevents the user from authenticating only to land on an error page
+/// because the caller sent an invalid `client_id`. Per RFC 6749 §4.1.2.1,
+/// errors at this phase must NEVER redirect — we render an HTML error
+/// instead because we cannot trust the `redirect_uri` without a valid
+/// client record.
+///
+/// Returns the resolved `ClientRow` so the caller can pass it forward
+/// to `begin_authorization` without an extra database round-trip.
+pub async fn validate_client_and_redirect_uri(
+    db: &Database,
+    client_id: ClientId,
+    redirect_uri: &str,
+) -> CoreResult<sui_id_store::models::ClientRow> {
+    let client = clients::get(db, client_id).await.map_err(|e| match e {
+        sui_id_store::StoreError::NotFound => CoreError::Protocol {
+            code: ProtocolError::InvalidClient,
+            description: "unknown client_id".into(),
+        },
+        other => CoreError::from(other),
+    })?;
+    if client.is_disabled || client.is_deleted {
+        return Err(CoreError::Protocol {
+            code: ProtocolError::UnauthorizedClient,
+            description: "client is not allowed to use the authorization endpoint".into(),
+        });
+    }
+    if !is_redirect_uri_registered(&client.redirect_uris, redirect_uri) {
+        return Err(CoreError::Protocol {
+            code: ProtocolError::InvalidRequest,
+            description: format!(
+                "redirect_uri does not match any registered URI for this client. \
+                 Submitted: \"{redirect_uri}\". Registered URIs: [{}]. \
+                 The comparison is exact — check for trailing slashes, \
+                 http vs https, and port numbers.",
+                client.redirect_uris.iter()
+                    .map(|u| format!("\"{u}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        });
+    }
+    Ok(client)
+}
+
 pub async fn begin_authorization(db: &Database, params: AuthorizeParams) -> CoreResult<AcceptedAuthorize> {
     // RFC 6749 §4.1.1 — only "code" is supported.
     if params.response_type != "code" {

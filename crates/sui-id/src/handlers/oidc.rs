@@ -53,12 +53,21 @@ pub struct AuthorizeQuery {
     pub code_challenge_method: String,
 }
 
-/// `GET /oauth2/authorize`. If the user is not authenticated, redirect them
-/// to the login page with a `next` parameter pointing back here. Otherwise
-/// validate the request and immediately issue an authorization code.
+/// `GET /oauth2/authorize`. Three-phase flow:
 ///
-/// (sui-id deliberately does not show a separate "consent" screen in the
-/// minimal version — see the spec's §11.5/§13.2 commentary.)
+/// **Phase 1 — client validation (before login).**
+/// Validates `client_id` and `redirect_uri` against the database.
+/// On failure: renders an HTML error page and stops — we must never
+/// redirect to an untrusted `redirect_uri` (RFC 6749 §4.1.2.1).
+///
+/// **Phase 2 — authentication.**
+/// If the user has no session, redirects to `/admin/login?next=...`.
+/// On return, execution continues at phase 3.
+///
+/// **Phase 3 — request validation and code issuance.**
+/// Validates `response_type`, PKCE, and scope. On failure: redirects
+/// to `redirect_uri?error=...&state=...` (RFC 6749 §4.1.2.1). The
+/// `redirect_uri` is already confirmed valid at this point.
 pub async fn authorize(
     state_ext: AppStateExt,
     Query(q): Query<AuthorizeQuery>,
@@ -66,7 +75,28 @@ pub async fn authorize(
 ) -> Result<Response, HttpError> {
     let axum::extract::State(app) = state_ext;
 
-    // Resolve a session if one exists; otherwise redirect to login.
+    // ── Phase 1: validate client + redirect_uri BEFORE any login redirect.
+    // Showing the error here avoids asking the user to authenticate only to
+    // land on an error page they cannot resolve.
+    let client_id = ClientId::from_str(&q.client_id).map_err(|_| {
+        HttpError::html(CoreError::Protocol {
+            code: ProtocolError::InvalidClient,
+            description: "client_id is not a valid identifier".into(),
+        })
+    })?;
+    authorize::validate_client_and_redirect_uri(&app.db, client_id, &q.redirect_uri)
+        .await
+        .map_err(|e| {
+            tracing::warn!(
+                client_id = %q.client_id,
+                redirect_uri = %q.redirect_uri,
+                error = %e,
+                "authorize: client or redirect_uri rejected (HTML error, no redirect)"
+            );
+            HttpError::html(e)
+        })?;
+
+    // ── Phase 2: ensure the user is authenticated.
     let (session_user, session_auth_methods) = match resolve_session(&app, &headers).await {
         Some(state) => state,
         None => {
@@ -77,13 +107,9 @@ pub async fn authorize(
         }
     };
 
-    let client_id = ClientId::from_str(&q.client_id).map_err(|_| {
-        HttpError::html(CoreError::Protocol {
-            code: ProtocolError::InvalidClient,
-            description: "client_id is not a valid identifier".into(),
-        })
-    })?;
-
+    // ── Phase 3: validate the remaining request parameters and issue the code.
+    // redirect_uri is confirmed valid from Phase 1; RFC 6749 §4.1.2.1 allows
+    // (and expects) error responses to be delivered via redirect from this point.
     let scope = q.scope.clone().unwrap_or_else(|| "openid".into());
     let params = AuthorizeParams {
         client_id,
@@ -96,23 +122,18 @@ pub async fn authorize(
         code_challenge_method: q.code_challenge_method.clone(),
     };
 
-    let accepted = authorize::begin_authorization(&app.db, params).await
-        .map_err(|e| {
-            // Log the protocol error so it appears in the audit log for
-            // operator debugging — especially useful for redirect_uri mismatches
-            // which are otherwise invisible unless the admin watches the console.
-            let desc = if let sui_id_core::errors::CoreError::Protocol { ref description, .. } = e {
-                description.clone()
-            } else {
-                e.to_string()
-            };
+    let accepted = match authorize::begin_authorization(&app.db, params).await {
+        Ok(a) => a,
+        Err(e) => {
             tracing::warn!(
                 client_id = %q.client_id,
-                error = %desc,
-                "OAuth 2.0 authorize request rejected"
+                error = %e,
+                "authorize: request parameters rejected (redirecting with error)"
             );
-            HttpError::html(e)
-        })?;
+            // Redirect the error back to the RP — the redirect_uri is trusted.
+            return Ok(protocol_error_redirect(&q.redirect_uri, q.state.as_deref(), e));
+        }
+    };
 
     // Consent gate (RFC 038) — look up client to check consent_policy.
     let client_for_consent = sui_id_store::repos::clients::get(
@@ -232,6 +253,32 @@ async fn resolve_session(
         return None;
     }
     Some((session.user_id, session.auth_methods))
+}
+
+/// Build an RFC 6749 §4.1.2.1 error redirect response.
+///
+/// Used when `client_id` and `redirect_uri` have been confirmed valid
+/// (Phase 1 succeeded) but a request-level parameter failed (Phase 3).
+/// The `state` parameter, if present, must be echoed back verbatim.
+fn protocol_error_redirect(
+    redirect_uri: &str,
+    state: Option<&str>,
+    err: sui_id_core::errors::CoreError,
+) -> Response {
+    let (code_str, description) = match err {
+        sui_id_core::errors::CoreError::Protocol { code, description } => {
+            (code.as_str(), description)
+        }
+        other => ("server_error", other.to_string()),
+    };
+    let mut url = format!("{redirect_uri}?error={code_str}");
+    url.push_str("&error_description=");
+    url.push_str(&utf8_percent_encode(&description, NON_ALPHANUMERIC).to_string());
+    if let Some(s) = state {
+        url.push_str("&state=");
+        url.push_str(&utf8_percent_encode(s, NON_ALPHANUMERIC).to_string());
+    }
+    Redirect::to(&url).into_response()
 }
 
 fn build_query_string(q: &AuthorizeQuery) -> String {
@@ -743,8 +790,17 @@ pub async fn consent_post(
         code_challenge_method: get_str("code_challenge_method"),
     };
 
-    let accepted = sui_id_core::authorize::begin_authorization(&app.db, params)
-        .await.map_err(HttpError::html)?;
+    let accepted = match sui_id_core::authorize::begin_authorization(&app.db, params).await {
+        Ok(a) => a,
+        Err(e) => {
+            // redirect_uri is from the consent cookie (already validated at consent
+            // display time), so protocol errors can safely redirect.
+            let redirect_uri = get_str("redirect_uri");
+            let state = cs["state"].as_str().map(|s| s.to_string());
+            tracing::warn!(error = %e, "consent: begin_authorization rejected");
+            return Ok(protocol_error_redirect(&redirect_uri, state.as_deref(), e));
+        }
+    };
 
     let redirect = sui_id_core::authorize::complete_authorization(
         &app.db, &app.clock, user_id, &auth_methods, accepted,
