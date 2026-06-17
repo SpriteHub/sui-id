@@ -95,6 +95,12 @@ pub struct Strings {
     /// Nav label for the consolidated self-service security surface
     /// (RFC 055, v0.44.0). Replaces the use of `nav_profile` which
     /// pointed to the legacy `/admin/profile` single page.
+    pub nav_apps: &'static str,
+    pub nav_my_account: &'static str,
+    pub settings_tab_general: &'static str,
+    pub settings_tab_advanced: &'static str,
+    pub me_overview_last_login: &'static str,
+    pub me_overview_first_login: &'static str,
     pub nav_security: &'static str,
     pub nav_logout: &'static str,
     pub a11y_skip_to_main: &'static str,
@@ -474,7 +480,6 @@ pub struct Strings {
     pub audit_col_outcome: &'static str,
     pub audit_col_note: &'static str,
     // ---- Settings tab (RFC 023 renames "Other" → "Advanced") ----
-    pub settings_tab_advanced: &'static str,
 
     // ---- Audit event labels (RFC 002 § D) ----
     pub audit_event_auth_login_success: &'static str,

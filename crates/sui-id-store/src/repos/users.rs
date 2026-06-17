@@ -68,13 +68,14 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
         preferred_lang: row.get::<_, Option<String>>(12)?,
         email_normalized: row.get::<_, Option<String>>(13)?,
         email_verified_at: row.get::<_, Option<chrono::DateTime<chrono::Utc>>>(14)?,
+        last_login_at: row.get::<_, Option<chrono::DateTime<chrono::Utc>>>(16)?,
     })
 }
 
 const SELECT_USER: &str = "SELECT id, username, display_name, is_admin, is_disabled, \
                            is_deleted, created_at, updated_at, user_uuid, \
                            failed_login_count, locked_until, email, preferred_lang, \
-                           email_normalized, email_verified_at, role \
+                           email_normalized, email_verified_at, role, last_login_at \
                            FROM users";
 
 pub async fn create(db: &Database, user: &UserRow) -> StoreResult<()> {
@@ -457,5 +458,23 @@ pub async fn count_admins(db: &Database) -> StoreResult<usize> {
             |row| row.get(0),
         )?;
         Ok(n as usize)
+    }).await
+}
+
+/// RFC 074: record a successful login timestamp.
+/// Called by the session-creation path after password / passkey / TOTP
+/// verification succeeds. Best-effort — a failed write must never abort login.
+pub async fn set_last_login(
+    db: &Database,
+    user_id: &UserId,
+    now: chrono::DateTime<chrono::Utc>,
+) -> StoreResult<()> {
+    let uid = user_id.to_string();
+    db.with_conn(move |conn| {
+        conn.execute(
+            "UPDATE users SET last_login_at = ?2 WHERE id = ?1",
+            rusqlite::params![uid, now],
+        )?;
+        Ok(())
     }).await
 }

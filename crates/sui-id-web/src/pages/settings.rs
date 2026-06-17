@@ -29,8 +29,11 @@ impl SettingsTab {
 
 fn settings_tabs(active: SettingsTab, lang: sui_id_i18n::Locale) -> impl IntoView {
     let t = lang.strings();
+    // RFC 074: Basic → "General", Other → "Advanced" (label-only rename;
+    // routes and underlying pages unchanged). Full 6→4 group consolidation
+    // is deferred to a future RFC (requires handler merging).
     let items = [
-        (SettingsTab::Basic,          t.settings_tab_basic,           "/admin/settings/basic"),
+        (SettingsTab::Basic,          t.settings_tab_general,         "/admin/settings/basic"),
         (SettingsTab::Security,       t.settings_tab_security,        "/admin/settings/security"),
         (SettingsTab::Authentication, t.settings_tab_authentication,  "/admin/settings/authentication"),
         (SettingsTab::Logs,           t.settings_tab_logs,            "/admin/settings/logs"),

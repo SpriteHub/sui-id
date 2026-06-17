@@ -394,6 +394,7 @@ mod integration_tests {
                 display_name: None,
                 is_admin: true,
         role: if true { sui_id_store::models::Role::Admin } else { sui_id_store::models::Role::User },
+        last_login_at: None,
                 is_disabled: false,
                 is_deleted: false,
                 user_uuid: uuid::Uuid::new_v4(),

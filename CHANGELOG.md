@@ -5,6 +5,60 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.61.0] — 2026-05-23
+
+**RFC 074 — Navigation restructuring and UX polish.**
+All pre-1.0 UI/UX cleanup items from the post-MI-arc audit are now shipped.
+
+---
+
+### Item 1 — Admin user-menu dropdown
+
+The admin top-nav's flat "Security" link is replaced by a `<details>/<summary>`
+user-menu dropdown at the right end of the nav bar. It shows the signed-in
+admin's username and contains "My account" → `/me/security/overview` and
+"Sign out." No JavaScript required. `Shell` gained an optional
+`admin_username: Option<String>` prop; `Nav` was rewritten to use it.
+
+New CSS: `.user-menu`, `.user-menu__toggle`, `.user-menu__panel`,
+`.user-menu__item`, `.user-menu__form` in `components/chrome.rs`.
+
+### Item 2 — "Apps" in admin nav
+
+The nav label for `/admin/clients` is now "Apps" (i18n: `nav_apps`).
+Route and handler code unchanged.
+
+### Item 3 — Settings tab labels
+
+Basic → **General**, Other → **Advanced** (label only; routes unchanged).
+Full 6→4 group consolidation is deferred.
+
+### Item 4 — Last sign-in line
+
+**Migration 0030** — `ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP`.
+
+`set_last_login(db, user_id, now)` — best-effort helper called after every
+successful `sessions::insert`. `/me/security/overview` now shows a
+`<p class="muted text-caption">` below the `<h1>`:
+- "You last signed in on {date}." (subsequent logins)
+- "Welcome — this is your first sign-in." (null / pre-migration)
+
+### New i18n keys (6 × 3 locales)
+
+`nav_apps`, `nav_my_account`, `settings_tab_general`, `settings_tab_advanced`,
+`me_overview_last_login`, `me_overview_first_login`.
+
+### Tests and CI
+
+- `cargo check --workspace` clean; 0 errors, 0 warnings.
+- **175/175 library tests pass** (sui-id-i18n 12, sui-id-shared 13,
+  sui-id-web 0, sui-id-store 36, sui-id-core 114).
+- 7 test `UserRow` constructors in `sui-id-core` gained `last_login_at: None`.
+- CI invariants unchanged: `text-leaks`=0, `inline-style-bound`=0,
+  `css-tokens`=148, `semantic-parity`=36.
+
+---
+
 ## [0.60.1] — 2026-05-23
 
 **Documentation and housekeeping.**

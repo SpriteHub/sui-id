@@ -241,6 +241,9 @@ pub async fn login_with_mfa(
     sessions::insert(db, &row).await?;
     enforce_concurrent_session_cap(db, clock, user.id).await;
     record_login_success(db, clock, user.id).await;
+    // RFC 074: update last_login_at for the anti-phishing line on /me/overview.
+    // Best-effort — a failed write must never abort login.
+    let _ = sui_id_store::repos::users::set_last_login(db, &user.id, clock.now()).await;
     Ok(LoginOutcome::SessionEstablished(row))
 }
 
@@ -492,6 +495,7 @@ mod session_limit_tests {
                 display_name: None,
                 is_admin: false,
         role: if false { sui_id_store::models::Role::Admin } else { sui_id_store::models::Role::User },
+        last_login_at: None,
                 is_disabled: false,
                 is_deleted: false,
                 user_uuid: uuid::Uuid::new_v4(),

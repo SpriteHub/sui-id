@@ -138,7 +138,7 @@ pub async fn overview_get(
         .collect();
     let csrf_tok = csrf::ensure_token(&jar);
     let resp = axum::response::Html(sui_id_web::render_me_overview(
-        MeOverviewData { shell, totp_enabled, passkey_count, active_session_count, recent_events, csrf_token: csrf_tok.clone() },
+        MeOverviewData { shell, totp_enabled, passkey_count, active_session_count, recent_events, csrf_token: csrf_tok.clone(), last_login_at: user.last_login_at },
         app.is_dev_mode, lang,
     )).into_response();
     Ok(with_csrf_cookie(resp, &app, &csrf_tok))

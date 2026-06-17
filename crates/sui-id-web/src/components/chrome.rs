@@ -174,6 +174,54 @@ pub const CHROME_LAYOUT_CSS: &str = r#"
     text-decoration: none;
 }
 
+/* RFC 074: user-menu dropdown — replaces the flat "Security" nav link.
+ * Uses <details>/<summary> so it works with JavaScript disabled.      */
+.user-menu { position: relative; margin-left: auto; }
+.user-menu__toggle {
+  list-style: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.user-menu__toggle::-webkit-details-marker { display: none; }
+.user-menu[open] .user-menu__toggle {
+  color: var(--fg-default);
+  background: var(--state-hover);
+}
+.user-menu__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-1));
+  min-width: 11rem;
+  background: var(--surface-overlay);
+  border: var(--border-width-default) solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) 0;
+}
+.user-menu__item {
+  display: block;
+  padding: var(--space-2) var(--space-4);
+  color: var(--fg-default);
+  font: inherit;
+  font-size: var(--font-size-body);
+  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.user-menu__item:hover,
+.user-menu__item:focus-visible {
+  background: var(--state-hover);
+  outline: none;
+}
+.user-menu__form { display: contents; }
+
+
 
 .app-main {
   max-width: var(--content-max-width);

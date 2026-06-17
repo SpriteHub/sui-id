@@ -75,6 +75,12 @@ pub static STRINGS_EN: Strings = Strings {
     nav_audit: "Audit log",
     nav_settings: "Settings",
     nav_profile: "Profile",
+    nav_apps: "Apps",
+    nav_my_account: "My account",
+    settings_tab_general: "General",
+    settings_tab_advanced: "Advanced",
+    me_overview_last_login: "You last signed in on {date}.",
+    me_overview_first_login: "Welcome — this is your first sign-in.",
     nav_security: "Security",
     nav_logout: "Sign out",
     a11y_skip_to_main: "Skip to main content",
@@ -400,7 +406,6 @@ pub static STRINGS_EN: Strings = Strings {
     audit_col_note: "Note",
 
     // Settings tab (RFC 023: "Other" renamed to "Advanced")
-    settings_tab_advanced: "Advanced",
 
     // Audit event labels (RFC 002 § D)
     audit_event_auth_login_success: "Login",

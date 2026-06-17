@@ -78,6 +78,12 @@ pub static STRINGS_ZH: Strings = Strings {
     nav_audit: "审计日志",
     nav_settings: "设置",
     nav_profile: "个人资料",
+    nav_apps: "应用",
+    nav_my_account: "我的账户",
+    settings_tab_general: "通用",
+    settings_tab_advanced: "高级",
+    me_overview_last_login: "您上次登录时间：{date}。",
+    me_overview_first_login: "欢迎 — 这是您的首次登录。",
     nav_security: "安全",
     nav_logout: "退出登录",
     a11y_skip_to_main: "跳转到主要内容",
@@ -403,7 +409,6 @@ pub static STRINGS_ZH: Strings = Strings {
     audit_col_note: "备注",
 
     // 设置选项卡（RFC 023：将"其他"重命名为"高级"）
-    settings_tab_advanced: "高级",
 
     // 审计事件标签（RFC 002 § D）
     audit_event_auth_login_success: "登录",

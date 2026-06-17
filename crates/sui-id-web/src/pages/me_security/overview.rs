@@ -12,6 +12,9 @@ pub struct MeOverviewData {
     pub active_session_count: usize,
     pub recent_events: Vec<MeAuditEntry>,
     pub csrf_token: String,
+    /// RFC 074: timestamp of the user's previous successful login.
+    /// None = no prior login recorded (first login, or pre-migration row).
+    pub last_login_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 
@@ -23,6 +26,7 @@ pub fn render_me_overview(
     render(move || {
         let t = lang.strings();
         let tabs = me_security_tabs(MeTab::Overview, lang);
+        let last_login_at = data.last_login_at;
         let MeOverviewData { shell: _, totp_enabled, passkey_count, active_session_count, recent_events, .. } = data;
         let event_rows: Vec<_> = recent_events.iter().map(|e| {
             let badge = match e.result.as_str() {
@@ -38,9 +42,21 @@ pub fn render_me_overview(
                 </tr>
             }
         }).collect();
+        // RFC 074: anti-phishing last-login line.
+        let last_login_line = match last_login_at {
+            Some(ts) => {
+                let date = fmt_time(ts);
+                let text = t.me_overview_last_login.replace("{date}", &date);
+                view! { <p class="muted text-caption">{text}</p> }.into_any()
+            }
+            None => view! { <p class="muted text-caption">{t.me_overview_first_login}</p> }.into_any(),
+        };
         view! {
             <Shell title=t.me_tab_overview.to_string() show_nav=true current=Some("me".to_string()) lang=lang csrf_token=data.csrf_token.clone()>
-                <header class="page-header"><h1 class="page-header__title">{t.me_tab_overview}</h1></header>
+                <header class="page-header">
+                    <h1 class="page-header__title">{t.me_tab_overview}</h1>
+                    {last_login_line}
+                </header>
                 {tabs}
                 <div class="stack mt-4">
                     <section class="card">

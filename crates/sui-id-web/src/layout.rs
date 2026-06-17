@@ -46,6 +46,10 @@ pub fn Shell(
     csrf_token: String,
     /// When true, renders the DEV MODE banner (RFC 032).
     #[prop(optional)] dev_mode: Option<bool>,
+    /// RFC 074: username/display-name for the user-menu dropdown.
+    /// `None` → nav renders without the user-menu (anonymous / me-only
+    /// pages that never show the admin nav).
+    #[prop(optional)] admin_username: Option<String>,
     children: Children,
 ) -> impl IntoView {
     let stylesheet = format!("{}\n{}", TOKENS_CSS, components_css());
@@ -64,8 +68,6 @@ pub fn Shell(
                 <script src="/static/copy.js" defer></script>
             </head>
             <body>
-                // RFC-MI-080: skip link must be the first focusable
-                // element so keyboard users can bypass the nav (WCAG 2.4.1).
                 <a href="#main-content" class="skip-link">
                     {t.a11y_skip_to_main}
                 </a>
@@ -77,10 +79,14 @@ pub fn Shell(
                 })}
                 <header class="app-header" role="banner">
                     <h1 class="app-header__brand">"sui-id"</h1>
-                    {show_nav.then(|| view! {
-                        <Nav current=current.clone() lang=lang csrf_token=csrf_token.clone() />
-                    })}
-                </header>
+                    {show_nav.then(|| {
+                        let au = admin_username.clone();
+                        view! {
+                            <Nav current=current.clone() lang=lang
+                                 csrf_token=csrf_token.clone()
+                                 admin_username=au />
+                        }
+                    })}</header>
                 <main class="app-main" id="main-content">{children()}</main>
                 <Footer lang=lang />
             </body>
@@ -129,26 +135,24 @@ pub fn AuthShell(
 }
 
 #[component]
-fn Nav(current: Option<String>, lang: sui_id_i18n::Locale, csrf_token: String) -> impl IntoView {
+fn Nav(
+    current: Option<String>,
+    lang: sui_id_i18n::Locale,
+    csrf_token: String,
+    // RFC 074: display name for the user-menu dropdown. None = omit menu.
+    admin_username: Option<String>,
+) -> impl IntoView {
     let t = lang.strings();
-    let items: [(&'static str, &'static str, &'static str); 7] = [
+    // RFC 074: "clients" renamed to "apps" in nav label (route unchanged).
+    // "me" (Security link) removed — replaced by user-menu dropdown.
+    let items: [(&'static str, &'static str, &'static str); 6] = [
         ("dashboard",    t.nav_dashboard,    "/admin"),
         ("users",        t.nav_users,        "/admin/users"),
-        ("clients",      t.nav_clients,      "/admin/clients"),
+        ("clients",      t.nav_apps,         "/admin/clients"),   // label: Apps
         ("signing-keys", t.nav_signing_keys, "/admin/signing-keys"),
         ("audit",        t.nav_audit,        "/admin/audit"),
         ("settings",     t.nav_settings,     "/admin/settings"),
-        // RFC 055 (v0.44.0): "Profile" → "Security", pointing to the
-        // consolidated tabbed /me/security/* surface. The current-tab
-        // key is "me" to match the highlight Shell/`current=` already
-        // uses across the tabbed render_me_* views.
-        ("me",           t.nav_security,     "/me/security/overview"),
     ];
-    // RFC-MI-021 (v0.51.0): the CSRF token is now server-rendered
-    // directly into the hidden input. The previous JS fallback
-    // (logout-csrf.js reading the sui_id_csrf cookie at submit time)
-    // is no longer needed and the script reference has been removed.
-    // Sign-out now works with JavaScript disabled.
     view! {
         <nav class="app-nav" aria-label=t.nav_aria_main>
             {items.into_iter().map(|(key, label, href)| {
@@ -157,17 +161,47 @@ fn Nav(current: Option<String>, lang: sui_id_i18n::Locale, csrf_token: String) -
                     <a class="app-nav__link" href=href aria-current=aria>{label}</a>
                 }
             }).collect::<Vec<_>>()}
-            // Sign out uses POST + CSRF to prevent logout-CSRF attacks.
-            // The CSRF token is rendered server-side from the session
-            // context — no JavaScript is required (RFC-MI-021).
-            <form method="post" action="/admin/logout" class="app-nav__signout-form"
-                  id="logout-form">
-                <input type="hidden" name="_csrf" id="logout-csrf" value=csrf_token />
-                <button type="submit" class="app-nav__link app-nav__signout"
-                        aria-label=t.nav_aria_signout>
-                    {t.nav_logout}
-                </button>
-            </form>
+
+            // RFC 074: user-menu dropdown — replaces the old flat
+            // "Security" link and "Sign out" button. Pure HTML
+            // (<details>/<summary>); no JavaScript required.
+            {if let Some(uname) = admin_username {
+                let csrf_val = csrf_token.clone();
+                view! {
+                    <details class="user-menu">
+                        <summary class="app-nav__link user-menu__toggle">
+                            {uname} " ▾"
+                        </summary>
+                        <div class="user-menu__panel" role="menu">
+                            <a class="user-menu__item" href="/me/security/overview"
+                               role="menuitem">
+                                {t.nav_my_account}
+                            </a>
+                            <form method="post" action="/admin/logout"
+                                  class="user-menu__form">
+                                <input type="hidden" name="_csrf" value=csrf_val />
+                                <button type="submit" class="user-menu__item"
+                                        role="menuitem">
+                                    {t.nav_logout}
+                                </button>
+                            </form>
+                        </div>
+                    </details>
+                }.into_any()
+            } else {
+                // Fallback sign-out when admin_username is None (e.g. /me/* pages).
+                let csrf_val = csrf_token.clone();
+                view! {
+                    <form method="post" action="/admin/logout"
+                          class="app-nav__signout-form" id="logout-form">
+                        <input type="hidden" name="_csrf" id="logout-csrf" value=csrf_val />
+                        <button type="submit" class="app-nav__link app-nav__signout"
+                                aria-label=t.nav_aria_signout>
+                            {t.nav_logout}
+                        </button>
+                    </form>
+                }.into_any()
+            }}
         </nav>
     }
 }

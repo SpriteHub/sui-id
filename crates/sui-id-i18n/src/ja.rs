@@ -75,6 +75,12 @@ pub static STRINGS_JA: Strings = Strings {
     nav_audit: "監査ログ",
     nav_settings: "設定",
     nav_profile: "プロフィール",
+    nav_apps: "アプリ",
+    nav_my_account: "マイアカウント",
+    settings_tab_general: "一般",
+    settings_tab_advanced: "詳細",
+    me_overview_last_login: "最終サインイン: {date}。",
+    me_overview_first_login: "ようこそ — 初めてのサインインです。",
     nav_security: "セキュリティ",
     nav_logout: "サインアウト",
     a11y_skip_to_main: "メインコンテンツへスキップ",
@@ -400,7 +406,6 @@ pub static STRINGS_JA: Strings = Strings {
     audit_col_note: "備考",
 
     // 設定タブ (RFC 023: "その他" → "詳細")
-    settings_tab_advanced: "詳細",
 
     // 監査イベントラベル (RFC 002 § D)
     audit_event_auth_login_success: "ログイン",

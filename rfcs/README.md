@@ -79,23 +79,28 @@ Phase-1 blockers resolved:
 | 070 | [ureq → reqwest migration](./done/070-ureq-to-reqwest.md) | v0.57.1 |
 | 069 | [rand 0.10 migration](./done/069-rand-0.10-migration.md) | v0.57.1 |
 
-### Implemented — UX rethink
+### Implemented — UX rethink + pre-1.0 polish
 
 | RFC | Title | Release |
 |-----|-------|---------|
 | 073 | [Dashboard action items](./done/073-dashboard-action-items.md) | v0.58.0 |
 | 071 | [Auditor role](./done/071-auditor-role.md) | v0.59.0 |
 | 072 | [End-user app-access surface](./done/072-end-user-app-access.md) | v0.60.0 |
+| 074 | [Navigation restructuring and UX polish](./done/074-nav-ux-polish.md) | v0.61.0 |
 
-All three UX-rethink RFCs identified in the post-MI-arc audit are now
-implemented. The remaining items in `rfcs/proposed/` are post-1.0
-exploratory work (federation, LDAP, metrics, multi-tenant, etc.).
+All pre-1.0 RFCs are now implemented. The remaining items in
+`rfcs/proposed/` are all post-1.0 exploratory work.
 
-### Proposed — pre-1.0 polish
+### Proposed — verification-soak (pre-v1.0 recommended)
+
+Identified during the v0.61.0 soak audit. Neither is a hard blocker
+for v1.0 but both are recommended before a v1.0 designation.
 
 | RFC | Title | Priority | Scope |
 |-----|-------|----------|-------|
-| 074 | [Navigation restructuring and UX polish](./proposed/074-nav-ux-polish.md) | P2 | Admin user-menu dropdown, "Apps" rename, settings tabs 6→4, last-login line |
+| 075 | [File-size refactor](./proposed/075-file-size-refactor.md) | P3 | Mechanical split of `backup.rs`, `main.rs`, `admin.rs` |
+| 076 | [Configuration reference](./proposed/076-configuration-reference.md) | P2 | Replace 6-line stub with full field-by-field reference |
+
 
 
 ### Proposed — maintenance / dependency refresh

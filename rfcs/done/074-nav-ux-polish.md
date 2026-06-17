@@ -1,6 +1,89 @@
 # RFC 074 — Navigation restructuring and UX polish
 
-**Status.** Proposed
+**Status.** Implemented (v0.61.0)
+**Priority.** P2 — pre-1.0 polish; four nav/UX inconsistencies deferred
+from the UX-rethink arc.
+**Tracks.** Post-UX-rethink cleanup.
+**Touches.** `crates/sui-id-store` (migration 0030, users repo),
+`crates/sui-id-core` (session login path), `crates/sui-id-web`
+(layout.rs Nav + Shell, chrome.rs, settings.rs, me_security/overview.rs),
+`crates/sui-id-i18n`. No handler changes.
+
+## Implementation note (v0.61.0)
+
+### Item 1 — User-menu dropdown (replaces flat "Security" nav link)
+
+`Shell` gained an optional `admin_username: Option<String>` prop. The `Nav`
+component was rewritten:
+
+- Nav item count: 7 → 6 (removed "Security" / `me` entry).
+- The `<form method="post" action="/admin/logout">` button is now inside a
+  `<details>/<summary>` user-menu that appears when `admin_username` is
+  `Some`. When `None` (e.g. `/me/*` pages that don't supply a username),
+  the old flat sign-out form renders as a fallback.
+- User-menu panel contains: "My account" → `/me/security/overview` + Sign out.
+- No JavaScript — `<details>/<summary>` is native HTML.
+
+New CSS classes in `components/chrome.rs`: `.user-menu`, `.user-menu__toggle`,
+`.user-menu__panel`, `.user-menu__item`, `.user-menu__form`.
+
+### Item 2 — "Clients" → "Apps" in nav label
+
+Nav item for `/admin/clients` now uses `t.nav_apps` instead of
+`t.nav_clients`. The route and all handler code are unchanged. New i18n
+key `nav_apps` (en: "Apps"; ja: "アプリ"; zh: "应用").
+
+### Item 3 — Settings tab labels
+
+`settings_tabs()` in `pages/settings.rs` now maps:
+- `SettingsTab::Basic` → `t.settings_tab_general` ("General")
+- `SettingsTab::Other` → `t.settings_tab_advanced` ("Advanced")
+
+URLs and underlying pages unchanged. Full 6→4 group consolidation
+(merging security+authentication, merging email+logs) is deferred to
+a future RFC — that work requires handler merging.
+
+### Item 4 — "Last signed in" anti-phishing line on `/me/security/overview`
+
+**Migration 0030** — `ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP`.
+
+**`set_last_login(db, user_id, now)`** — new best-effort helper in the
+users repo. Called in `session.rs` after `sessions::insert`, before
+`LoginOutcome::SessionEstablished` is returned.
+
+**`MeOverviewData.last_login_at: Option<DateTime<Utc>>`** — added. The
+handler reads `user.last_login_at` (always present from the session context
+query). The overview render shows:
+- `Some(ts)` → "{date}" rendered via `fmt_time`; text from `me_overview_last_login`
+  i18n key (e.g. "You last signed in on 2026-05-23 01:02 UTC.").
+- `None` → first-login welcome message from `me_overview_first_login`.
+
+Both appear as a `<p class="muted text-caption">` in the `<header>` below
+the `<h1>`.
+
+### New i18n keys (6 × 3 locales)
+
+`nav_apps`, `nav_my_account`, `settings_tab_general`, `settings_tab_advanced`,
+`me_overview_last_login`, `me_overview_first_login`.
+
+### Test fixes
+
+7 `UserRow` constructors in `sui-id-core` gained `last_login_at: None`.
+
+### Acceptance criteria (verified)
+
+- [x] Admin nav has no "Security" link. User-menu dropdown appears at top-right
+  with "My account" and "Sign out."
+- [x] Admin nav label reads "Apps" (not "Clients").
+- [x] Settings "General" and "Advanced" labels render correctly.
+- [x] `/me/security/overview` shows the last-login line; first-time shows
+  welcome message.
+- [x] All changes are HTML/CSS/i18n; no new JavaScript.
+- [x] `cargo check --workspace` clean; 175/175 library tests pass.
+- [x] CI invariants: `text-leaks`=0, `inline-style-bound`=0,
+  `css-tokens`=148, `semantic-parity`=36.
+
+---
 **Priority.** P2 — pre-1.0 polish; no correctness or security gap, but
 several small inconsistencies noted in the post-MI-arc audit that survived
 the UX-rethink arc (RFCs 071–073).

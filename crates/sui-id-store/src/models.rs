@@ -81,6 +81,9 @@ pub struct UserRow {
     pub role: Role,
     pub is_disabled: bool,
     pub is_deleted: bool,
+    /// RFC 074: timestamp of the user's most recent successful login
+    /// (migration 0030). NULL until first login after this column was added.
+    pub last_login_at: Option<DateTime<Utc>>,
     /// Stable per-user UUID handle for WebAuthn `user.id`. Backfilled
     /// at migration 0004 time for users created before that. Decoupled
     /// from `id` (sui-id `UserId`) on purpose so the relying-party
