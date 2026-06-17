@@ -91,15 +91,12 @@ Phase-1 blockers resolved:
 All pre-1.0 RFCs are now implemented. The remaining items in
 `rfcs/proposed/` are all post-1.0 exploratory work.
 
-### Proposed — verification-soak (pre-v1.0 recommended)
+### Implemented — verification-soak
 
-Identified during the v0.61.0 soak audit. Neither is a hard blocker
-for v1.0 but both are recommended before a v1.0 designation.
-
-| RFC | Title | Priority | Scope |
-|-----|-------|----------|-------|
-| 075 | [File-size refactor](./proposed/075-file-size-refactor.md) | P3 | Mechanical split of `backup.rs`, `main.rs`, `admin.rs` |
-| 076 | [Configuration reference](./proposed/076-configuration-reference.md) | P2 | Replace 6-line stub with full field-by-field reference |
+| RFC | Title | Release |
+|-----|-------|---------|
+| 075 | [File-size refactor](./done/075-file-size-refactor.md) | v0.62.0 |
+| 076 | [Configuration reference documentation](./done/076-configuration-reference.md) | v0.62.0 |
 
 
 

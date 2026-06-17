@@ -306,7 +306,7 @@ pub async fn users_detail_get(
 
 pub async fn users_disable_confirm_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
     Path(id): Path<String>,
 ) -> Result<Response, HttpError> {
@@ -331,7 +331,7 @@ pub async fn users_disable_confirm_get(
 
 pub async fn users_delete_confirm_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,
@@ -362,7 +362,7 @@ pub async fn users_delete_confirm_get(
 
 pub async fn users_mfa_reset_confirm_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,

@@ -23,7 +23,7 @@ use super::with_csrf_cookie;
 
 pub async fn clients_delete_confirm_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(admin_id, role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     ctx: crate::handlers::SessionContext,
     jar: CookieJar,
     Path(id): Path<String>,

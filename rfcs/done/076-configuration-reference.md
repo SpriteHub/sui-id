@@ -1,13 +1,33 @@
 # RFC 076 — Configuration reference documentation
 
-**Status.** Proposed
-**Priority.** P2 — recommended before v1.0. The `configuration.md` page
-in `docs/src/reference/` is a 6-line stub that redirects to
-`operators.md`. For a v1.0 product, operators expect a self-contained,
-field-by-field reference with types, defaults, valid values, and notes.
+**Status.** Implemented (v0.62.0)
+**Priority.** P2 — recommended before v1.0.
 **Tracks.** Verification-soak documentation.
 **Touches.** `docs/src/reference/configuration.md` only. No code changes.
-`docs/src/SUMMARY.md` if the section heading is adjusted.
+
+## Implementation note (v0.62.0)
+
+Replaced the 6-line stub with a 193-line complete reference covering:
+
+- **All 10 config fields** across all 5 TOML sections (`[server]` × 4,
+  `[storage]` × 2, `[tokens]` × 3, `[log]` × 4, `[security]` × 1), each
+  with type, required/optional status, default value, valid values/range,
+  and description.
+- **3 environment variables** (`SUI_ID_MASTER_KEY`, `SUI_ID_SETUP_TOKEN`,
+  `SUI_ID_BACKUP_PASSPHRASE`) with purpose and usage notes.
+- **4 runtime flags** (`--config`, `--dev`, `--print-sample-config`,
+  `--help`) and a **5-row subcommand reference**.
+- **Startup validation rules** for `issuer`, `trusted_proxies`,
+  `access_lifetime_secs`, and `refresh_lifetime_secs`.
+- **Minimal configuration** (4-line TOML, no extras needed).
+- **Production-ready annotated configuration** (full `[server]`,
+  `[storage]`, `[tokens]`, `[log]`, `[security]` with comments).
+- **Cross-references** to `deployment.md`, `operators.md`, and
+  `upgrade.md`.
+
+No code changes. `cargo check --workspace` clean before and after.
+
+---
 
 ---
 

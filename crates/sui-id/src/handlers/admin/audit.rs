@@ -2,7 +2,7 @@
 
 use crate::errors::HttpError;
 use crate::handlers::{
-    AppStateExt, CurrentAdmin, CurrentAdminOrAuditor,
+    AppStateExt, CurrentAdminOrAuditor,
 };
 use axum::extract::State;
 use axum::http::header;

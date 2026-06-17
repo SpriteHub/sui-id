@@ -1,10 +1,8 @@
 # RFC 075 — File-size refactor
 
-**Status.** Proposed
-**Priority.** P3 — non-blocking for v1.0, but the three affected files
-exceed the project's 500-ELOC guidance and will become harder to navigate
-as the codebase matures. Addressing them now (before v1.0 locks the
-reference shape of the codebase) is preferable to deferring indefinitely.
+**Status.** Implemented (v0.62.0)
+**Priority.** P3 — non-blocking for v1.0 but addressed during soak to
+keep the codebase navigable as it matures.
 **Tracks.** Verification-soak maintenance.
 **Touches.** `crates/sui-id/src/backup.rs` → `backup/`,
 `crates/sui-id/src/main.rs` → `cli.rs` extracted,

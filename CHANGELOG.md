@@ -5,6 +5,44 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.62.0] — 2026-05-23
+
+**RFC 075 — File-size refactor** and **RFC 076 — Configuration reference.**
+Two verification-soak items from the v0.61.0 audit. No behaviour changes
+and no schema changes.
+
+---
+
+### RFC 075 — File-size refactor
+
+Three source files exceeded the project's 500-effective-LoC split
+threshold. Split mechanically; all public names re-exported so zero
+callsites outside the affected crates changed.
+
+| Before | After |
+|---|---|
+| `sui-id-core/src/admin.rs` — 785 lines | `admin/mod.rs` (71), `users.rs` (239), `clients.rs` (287), `signing_keys.rs` (73) |
+| `sui-id/src/backup.rs` — 1063 lines | `backup/mod.rs` (14), `types.rs` (55), `ops.rs` (466), `tar.rs` (112), `tests.rs` (437) |
+| `sui-id/src/main.rs` — 825 lines | `main.rs` (318), `cli.rs` (519) |
+
+### RFC 076 — Configuration reference
+
+Replaced the 6-line stub in `docs/src/reference/configuration.md` with
+a 193-line complete reference covering all 10 config fields across 5 TOML
+sections, 3 environment variables, 4 runtime flags, a subcommand table,
+startup validation rules, a minimal configuration block, and a
+production-ready annotated configuration block.
+
+### Tests and CI
+
+- `cargo check --workspace` clean; 0 errors, 0 warnings.
+- **175/175 library tests pass** (sui-id-i18n 12, sui-id-shared 13,
+  sui-id-web 0, sui-id-store 36, sui-id-core 114).
+- CI invariants unchanged: `text-leaks`=0, `inline-style-bound`=0,
+  `css-tokens`=148, `semantic-parity`=36.
+
+---
+
 ## [0.61.0] — 2026-05-23
 
 **RFC 074 — Navigation restructuring and UX polish.**
