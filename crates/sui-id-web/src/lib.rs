@@ -22,7 +22,7 @@ pub mod tokens;
 pub use components::{status_badge, StatusKind};
 
 pub use pages::{
-    render_audit, render_client_edit, render_clients, render_dashboard, render_error,
+    render_audit, render_client_edit, render_clients, render_clients_new, render_dashboard, render_error,
     DashboardEventRow,
     render_forgot_password, render_forgot_password_sent, render_login, render_me_security,
     render_mfa_challenge, render_mfa_setup, render_password_change,
@@ -34,7 +34,7 @@ pub use pages::{
     render_me_apps,                              // RFC 072
     render_consent, render_confirm_delete_client, render_confirm_delete_signing_key,
     render_confirm_delete_user, render_confirm_disable_user, render_confirm_reset_mfa,
-    render_signing_keys, render_step_up, render_users,
+    render_signing_keys, render_step_up, render_users, render_users_new,
     ConfirmDeleteClientData, ConfirmDeleteSigningKeyData, ConfirmDeleteUserData,
     MeShellData, MeTab, MeOverviewData, MeMfaData, MeSessionsData, MePasskeyData, MeLanguageData,
     ConsentData, ConfirmDisableData, ConfirmResetMfaData, ClientEditData, DashboardData,

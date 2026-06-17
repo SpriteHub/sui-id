@@ -24,7 +24,7 @@ use sui_id_web::{
         UserDetailData, UserDetailSession,
     }, render_confirm_delete_user,
     render_confirm_disable_user, render_confirm_reset_mfa, render_user_detail,
-    render_users, Flash, FlashKind,
+    render_users, render_users_new, Flash, FlashKind,
 };
 use super::forms::{DisableForm, ConfirmedReasonForm};
 use super::with_csrf_cookie;
@@ -56,6 +56,19 @@ pub async fn users_get(
     let token = crate::csrf::ensure_token(&jar);
     let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
     let resp = Html(render_users(role.is_admin(), summaries, None, admin.username, token.clone(), app.is_dev_mode, lang)).into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+/// `GET /admin/users/new` — isolated create-user form.
+pub async fn users_new_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(_admin_id): CurrentAdmin,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let token = crate::csrf::ensure_token(&jar);
+    let lang = crate::handlers::resolve_admin_locale(&app, _admin_id).await;
+    let resp = Html(render_users_new(None, token.clone(), app.is_dev_mode, lang)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 
@@ -121,23 +134,12 @@ pub async fn users_create(
     match create_result {
         Ok(_) => Ok(Redirect::to("/admin/users").into_response()),
         Err(CoreError::Conflict(msg)) => {
-            // Duplicate username: stay on the users page and show the
-            // conflict message in-line rather than rendering a bare error page.
-            let rows = admin_uc::list_users(&app.db, admin_id).await.map_err(HttpError::html)?;
-            let admin = users::get(&app.db, admin_id).await.map_err(|e| HttpError::html(CoreError::from(e)))?;
+            // Duplicate username: re-render the create form with the error
+            // so the admin can correct it without re-entering everything.
             let token = crate::csrf::ensure_token(&jar);
-            let mut summaries = Vec::with_capacity(rows.len());
-            for r in rows {
-                let mfa_enabled = sui_id_core::mfa::is_mfa_enabled(&app.db, r.id).await.unwrap_or(false);
-                summaries.push(UserSummary {
-                    id: r.id, username: r.username, display_name: r.display_name,
-                    is_admin: r.is_admin, is_disabled: r.is_disabled, is_deleted: r.is_deleted,
-                    mfa_enabled, created_at: r.created_at,
-                });
-            }
             let flash = Flash { kind: FlashKind::Error, text: msg };
-    let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
-            let resp = Html(render_users(true, summaries, Some(flash), admin.username, token.clone(), app.is_dev_mode, lang)).into_response();
+            let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+            let resp = Html(render_users_new(Some(flash), token.clone(), app.is_dev_mode, lang)).into_response();
             Ok((axum::http::StatusCode::CONFLICT, with_csrf_cookie(resp, &app, &token)).into_response())
         }
         Err(e) => Err(HttpError::html(e)),

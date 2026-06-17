@@ -316,6 +316,35 @@ pub const CHROME_PAGE_HEADER_CSS: &str = r#"
   gap: var(--space-2);
   align-items: center;
 }
+/* Icon-only action button in page headers (users, clients, signing-keys).
+ * Use class="button button--icon" with aria-label on the element. */
+.button--icon {
+  width: var(--space-5);
+  height: var(--space-5);
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+/* CSS-only toggle for create/action panels (users, clients, signing-keys).
+ * A hidden <input type="checkbox" class="create-toggle"> holds open/closed
+ * state; the <label for="id"> anywhere in the page (e.g. the header icon
+ * button) acts as the toggle. The .create-panel is hidden until checked.
+ * The checkbox is visually hidden but not display:none so focus management
+ * and the :checked selector still work. */
+.create-toggle {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+.create-panel { display: none; }
+.create-toggle:checked + .create-panel { display: block; }
 
 "#;
 

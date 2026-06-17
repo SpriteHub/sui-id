@@ -145,6 +145,7 @@ pub static STRINGS_JA: Strings = Strings {
     login_password_label: "パスワード",
     login_submit: "サインイン",
     login_passkey_button: "パスキーでサインイン",
+    login_no_admin_access: "このアカウントには管理パネルへのアクセス権がありません。",
     login_passkey_primary: "パスキーでサインイン",
     login_forgot_password_link: "パスワードをお忘れですか?",
     login_invalid_credentials: "ユーザー名またはパスワードが正しくありません。",

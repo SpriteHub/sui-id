@@ -148,6 +148,7 @@ pub static STRINGS_ZH: Strings = Strings {
     login_password_label: "密码",
     login_submit: "登录",
     login_passkey_button: "使用通行密钥登录",
+    login_no_admin_access: "此帐户无权访问管理面板。",
     login_passkey_primary: "使用通行密钥登录",
     login_forgot_password_link: "忘记密码？",
     login_invalid_credentials: "用户名或密码不正确。",

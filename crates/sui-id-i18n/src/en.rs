@@ -145,6 +145,7 @@ pub static STRINGS_EN: Strings = Strings {
     login_password_label: "Password",
     login_submit: "Sign in",
     login_passkey_button: "Sign in with passkey",
+    login_no_admin_access: "This account does not have access to the admin panel.",
     login_passkey_primary: "Sign in with passkey",
     login_forgot_password_link: "Forgot your password?",
     login_invalid_credentials: "The username or password is incorrect.",

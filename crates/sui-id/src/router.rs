@@ -97,6 +97,7 @@ pub fn build_router(app: AppState) -> Router {
         )
         .route("/admin", get(admin::dashboard))
         .route("/admin/users", get(admin::users_get).post(admin::users_create))
+        .route("/admin/users/new", get(admin::users_new_get))
         .route("/admin/users/{id}", get(admin::users_detail_get))
         .route("/admin/users/{id}/disabled", post(admin::users_set_disabled))
         .route("/admin/users/{id}/disable-confirm",
@@ -112,6 +113,7 @@ pub fn build_router(app: AppState) -> Router {
             "/admin/clients",
             get(admin::clients_get).post(admin::clients_create),
         )
+        .route("/admin/clients/new", get(admin::clients_new_get))
         .route(
             "/admin/clients/{id}/disabled",
             post(admin::clients_set_disabled),

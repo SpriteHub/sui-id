@@ -97,7 +97,6 @@ pub fn render_clients(
     render(move || {
         let t = lang.strings();
         let csrf_for_rows = csrf_token.clone();
-        let csrf_for_form = csrf_token.clone();
         let client_count = clients.len();
         let secret_block = new_secret.map(|(cid, sec)| {
             view! {
@@ -125,56 +124,17 @@ pub fn render_clients(
                             {(t.clients_count_caption)(client_count)}
                         </p>
                     </div>
+                    {can_write.then(|| view! {
+                        <div class="page-header__actions">
+                            <a href="/admin/clients/new" class="button button--icon"
+                               aria-label=t.clients_create_section>
+                                "+"
+                            </a>
+                        </div>
+                    })}
                 </header>
                 {flash_banner(flash)}
                 {secret_block}
-
-                <section>
-                    <h2>{t.clients_create_section}</h2>
-                    <div class="card">
-                        <form method="post" action="/admin/clients" class="stack">
-                            <input type="hidden" name="_csrf" value=csrf_for_form />
-                            <div class="field">
-                                <label for="c-name" class="field__label">{t.clients_label_app_name}</label>
-                                <input id="c-name" name="name" type="text" required=true />
-                            </div>
-                            <div class="field">
-                                <label for="c-uris" class="field__label">{t.clients_label_redirect_uris}</label>
-                                <textarea id="c-uris" name="redirect_uris" required=true rows="3"></textarea>
-                                <span class="field__hint">{t.clients_hint_redirect_uris}</span>
-                            </div>
-                            <div class="field">
-                                <label for="c-scopes" class="field__label">{t.clients_label_allowed_scopes}</label>
-                                <input id="c-scopes" name="allowed_scopes" type="text" value="openid profile email" />
-                                <span class="field__hint">
-                                    {t.clients_hint_scopes_intro}
-                                    <code>"openid"</code>{t.clients_hint_scopes_openid_note}
-                                    <code>"profile"</code>{t.clients_hint_scopes_profile_note}
-                                    <code>"email"</code>{t.clients_hint_scopes_email_note}
-                                    <code>"offline_access"</code>{t.clients_hint_scopes_offline_note}
-                                    {t.clients_hint_scopes_default}
-                                </span>
-                            </div>
-                            // Single-realm note (RFC 027) — now via clients_single_realm_note key
-                            <p class="field__hint mb-0">
-                                "ℹ  "
-                                {t.clients_single_realm_note}
-                            </p>
-                            <div class="field">
-                                <label for="c-logout" class="field__label">{t.clients_label_post_logout_uris}</label>
-                                <textarea id="c-logout" name="post_logout_redirect_uris" rows="2"></textarea>
-                                <span class="field__hint">{t.clients_hint_one_per_line}</span>
-                            </div>
-                            <label class="row gap-2">
-                                <input name="confidential" type="checkbox" value="true" checked=true />
-                                <span>{t.clients_label_confidential_checkbox}</span>
-                            </label>
-                            <div>
-                                <button type="submit">{t.clients_button_register}</button>
-                            </div>
-                        </form>
-                    </div>
-                </section>
 
                 <section>
                     <h2>{t.clients_table_section}</h2>
@@ -201,6 +161,82 @@ pub fn render_clients(
                         </table>
                     </div>
                 </section>
+
+                {can_write.then(|| view! {
+                    <div>
+                        <a href="/admin/clients/new" class="button button--wide">{t.clients_create_section}</a>
+                    </div>
+                })}
+
+            </Shell>
+        }
+    })
+}
+
+// ---------- clients/new ----------
+
+pub fn render_clients_new(
+    flash: Option<Flash>,
+    csrf_token: String,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        view! {
+            <Shell title=t.clients_create_section.to_string() show_nav=true current=Some("clients".to_string()) dev_mode=dev_mode lang=lang csrf_token=csrf_token.clone()>
+                <header class="page-header">
+                    <div>
+                        <h1 class="page-header__title">{t.clients_create_section}</h1>
+                    </div>
+                    <div class="page-header__actions">
+                        <a href="/admin/clients" class="button secondary">{t.button_cancel}</a>
+                    </div>
+                </header>
+                {flash_banner(flash)}
+                <div class="card">
+                    <form method="post" action="/admin/clients" class="stack">
+                        <input type="hidden" name="_csrf" value=csrf_token />
+                        <div class="field">
+                            <label for="c-name" class="field__label">{t.clients_label_app_name}</label>
+                            <input id="c-name" name="name" type="text" required=true />
+                        </div>
+                        <div class="field">
+                            <label for="c-uris" class="field__label">{t.clients_label_redirect_uris}</label>
+                            <textarea id="c-uris" name="redirect_uris" required=true rows="3"></textarea>
+                            <span class="field__hint">{t.clients_hint_redirect_uris}</span>
+                        </div>
+                        <div class="field">
+                            <label for="c-scopes" class="field__label">{t.clients_label_allowed_scopes}</label>
+                            <input id="c-scopes" name="allowed_scopes" type="text" value="openid profile email" />
+                            <span class="field__hint">
+                                {t.clients_hint_scopes_intro}
+                                <code>"openid"</code>{t.clients_hint_scopes_openid_note}
+                                <code>"profile"</code>{t.clients_hint_scopes_profile_note}
+                                <code>"email"</code>{t.clients_hint_scopes_email_note}
+                                <code>"offline_access"</code>{t.clients_hint_scopes_offline_note}
+                                {t.clients_hint_scopes_default}
+                            </span>
+                        </div>
+                        <p class="field__hint mb-0">
+                            "ℹ  "
+                            {t.clients_single_realm_note}
+                        </p>
+                        <div class="field">
+                            <label for="c-logout" class="field__label">{t.clients_label_post_logout_uris}</label>
+                            <textarea id="c-logout" name="post_logout_redirect_uris" rows="2"></textarea>
+                            <span class="field__hint">{t.clients_hint_one_per_line}</span>
+                        </div>
+                        <label class="row gap-2">
+                            <input name="confidential" type="checkbox" value="true" checked=true />
+                            <span>{t.clients_label_confidential_checkbox}</span>
+                        </label>
+                        <div class="form-actions">
+                            <button type="submit">{t.clients_button_register}</button>
+                            <a href="/admin/clients" class="button secondary">{t.button_cancel}</a>
+                        </div>
+                    </form>
+                </div>
             </Shell>
         }
     })

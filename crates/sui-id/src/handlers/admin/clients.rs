@@ -16,7 +16,8 @@ use sui_id_shared::api::ClientSummary;
 use sui_id_shared::ids::ClientId;
 use sui_id_store::repos::clients;
 use sui_id_web::{
-    pages::ConfirmDeleteClientData, render_clients, render_confirm_delete_client,
+    pages::ConfirmDeleteClientData, render_clients, render_clients_new,
+    render_confirm_delete_client, Flash, FlashKind,
 };
 use super::forms::{DisableForm, ConfirmedReasonForm};
 use super::with_csrf_cookie;
@@ -77,6 +78,19 @@ pub async fn clients_get(
     let token = crate::csrf::ensure_token(&jar);
     let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
     let resp = Html(render_clients(role.is_admin(), summaries, None, None, token.clone(), app.is_dev_mode, lang)).into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
+}
+
+/// `GET /admin/clients/new` — isolated register-client form.
+pub async fn clients_new_get(
+    state_ext: AppStateExt,
+    CurrentAdmin(admin_id): CurrentAdmin,
+    jar: CookieJar,
+) -> Result<Response, HttpError> {
+    let State(app) = state_ext;
+    let token = crate::csrf::ensure_token(&jar);
+    let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+    let resp = Html(render_clients_new(None, token.clone(), app.is_dev_mode, lang)).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
 

@@ -13,7 +13,9 @@ use axum_extra::extract::cookie::CookieJar;
 use serde::Deserialize;
 use std::str::FromStr;
 use sui_id_core::session;
+use sui_id_core::errors::CoreError;
 use sui_id_shared::ids::SessionId;
+use sui_id_store::repos::users;
 use sui_id_web::{
     render_login, Flash, FlashKind,
 };
@@ -89,13 +91,44 @@ pub async fn login_post(
         app.config.security.max_lockout.as_secs(),
     ).await {
         Ok(session::LoginOutcome::SessionEstablished(row)) => {
-            let cookie = session_cookie(row.id.to_string(), app.config.server.cookie_secure);
-            let jar = jar.add(cookie);
             let target = if form.next.starts_with('/') {
                 form.next.clone()
             } else {
                 "/admin".into()
             };
+
+            // The admin login page also serves as the authentication gate
+            // for the OIDC authorize flow (next = "/oauth2/authorize?...").
+            // Any authenticated user — admin or not — may complete that
+            // flow. But the admin panel itself requires admin or auditor
+            // role; check here so a non-privileged user gets a clear
+            // message rather than a 403 page after being redirected.
+            //
+            // The session row is already written at this point; if the
+            // role check fails we simply don't hand out the cookie and the
+            // row expires unused after its normal 24-hour lifetime.
+            let is_oidc_or_me = target.starts_with("/oauth2/")
+                || target.starts_with("/me/");
+            if !is_oidc_or_me {
+                let user = users::get(&app.db, row.user_id).await
+                    .map_err(|e| HttpError::html(CoreError::from(e)))?;
+                if !user.role.can_read_admin() {
+                    let t = lang.strings();
+                    let flash = Flash {
+                        kind: FlashKind::Error,
+                        text: t.login_no_admin_access.into(),
+                    };
+                    let next = if form.next.is_empty() {
+                        None
+                    } else {
+                        Some(form.next)
+                    };
+                    return Ok(Html(render_login(Some(flash), next, lang, false)).into_response());
+                }
+            }
+
+            let cookie = session_cookie(row.id.to_string(), app.config.server.cookie_secure);
+            let jar = jar.add(cookie);
             Ok((jar, Redirect::to(&target)).into_response())
         }
         Ok(session::LoginOutcome::MfaRequired { pending }) => {

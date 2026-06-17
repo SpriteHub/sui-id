@@ -83,28 +83,17 @@ pub fn render_signing_keys(
                             {(t.signing_keys_count_caption)(key_count)}
                         </p>
                     </div>
+                    // RFC 071: auditors cannot rotate keys.
+                    {can_write.then(|| view! {
+                        <div class="page-header__actions">
+                            <a href="#rotate-key" class="button button--icon"
+                               aria-label=t.signing_keys_rotate_section>
+                                "↻"
+                            </a>
+                        </div>
+                    })}
                 </header>
                 {flash_banner(flash)}
-
-                // RFC 071: auditors cannot rotate keys.
-                {can_write.then(|| view! {
-                    <div class="card">
-                        <h3 class="card__title">{t.signing_keys_rotate_section}</h3>
-                        <p class="muted">
-                            {t.signing_keys_rotate_explanation_1}
-                            " "
-                            {t.signing_keys_rotate_explanation_2}
-                            " "
-                            {t.signing_keys_rotate_explanation_3}
-                        </p>
-                        <div class="card__footer">
-                            <form method="post" action="/admin/signing-keys/rotate">
-                                <input type="hidden" name="_csrf" value=csrf_for_form />
-                                <button type="submit">{t.signing_keys_rotate_button}</button>
-                            </form>
-                        </div>
-                    </div>
-                })}
 
                 <section>
                     <h2>{t.signing_keys_table_section}</h2>
@@ -130,6 +119,30 @@ pub fn render_signing_keys(
                         </table>
                     </div>
                 </section>
+
+                // RFC 071: auditors cannot rotate keys.
+                // Section is always visible below the table; the header ↻ button
+                // scrolls to it via the #rotate-key anchor.
+                {can_write.then(|| view! {
+                    <section id="rotate-key">
+                        <div class="card">
+                            <h3 class="card__title">{t.signing_keys_rotate_section}</h3>
+                            <p class="muted">
+                                {t.signing_keys_rotate_explanation_1}
+                                " "
+                                {t.signing_keys_rotate_explanation_2}
+                                " "
+                                {t.signing_keys_rotate_explanation_3}
+                            </p>
+                            <div class="card__footer">
+                                <form method="post" action="/admin/signing-keys/rotate">
+                                    <input type="hidden" name="_csrf" value=csrf_for_form />
+                                    <button type="submit">{t.signing_keys_rotate_button}</button>
+                                </form>
+                            </div>
+                        </div>
+                    </section>
+                })}
             </Shell>
         }
     })

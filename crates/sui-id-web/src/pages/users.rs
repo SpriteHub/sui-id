@@ -100,7 +100,6 @@ pub fn render_users(
     render(move || {
         let t = lang.strings();
         let csrf_for_rows = csrf_token.clone();
-        let csrf_for_form = csrf_token.clone();
         let user_count = users.len();
         let rows: Vec<_> = users
             .into_iter()
@@ -117,45 +116,17 @@ pub fn render_users(
                             {(t.users_count_caption)(user_count)}
                         </p>
                     </div>
+                    // RFC 071: add button only for admins (auditors can view, not create).
+                    {can_write.then(|| view! {
+                        <div class="page-header__actions">
+                            <a href="/admin/users/new" class="button button--icon"
+                               aria-label=t.users_create_section>
+                                "+"
+                            </a>
+                        </div>
+                    })}
                 </header>
                 {flash_banner(flash)}
-
-                // RFC 071: only admins can create users; auditors see the table only.
-                {can_write.then(|| view! {
-                    <section>
-                        <h2>{t.users_create_section}</h2>
-                        <div class="card">
-                            <form method="post" action="/admin/users" class="stack">
-                                <input type="hidden" name="_csrf" value=csrf_for_form />
-                                <div class="field">
-                                    <label for="u-name" class="field__label">{t.users_label_username}</label>
-                                    <input id="u-name" name="username" type="text"
-                                           required=true autocomplete="off" />
-                                </div>
-                                <div class="field">
-                                    <label for="u-disp" class="field__label">{t.users_label_display_name}</label>
-                                    <input id="u-disp" name="display_name" type="text" autocomplete="off" />
-                                </div>
-                                <div class="field">
-                                    <label for="u-email" class="field__label">{t.users_label_email}</label>
-                                    <input id="u-email" name="email" type="email" autocomplete="off" />
-                                </div>
-                                <div class="field">
-                                    <label for="u-pw" class="field__label">{t.users_label_password}</label>
-                                    <input id="u-pw" name="password" type="password"
-                                           required=true minlength="12" autocomplete="new-password" />
-                                </div>
-                                <label class="row gap-2">
-                                    <input name="is_admin" type="checkbox" value="true" />
-                                    <span>{t.users_is_admin_label}</span>
-                                </label>
-                                <div>
-                                    <button type="submit">{t.users_create_button}</button>
-                                </div>
-                            </form>
-                        </div>
-                    </section>
-                })}
 
                 <section>
                     <h2>{t.users_table_section}</h2>
@@ -181,6 +152,70 @@ pub fn render_users(
                         </table>
                     </div>
                 </section>
+
+                // RFC 071: only admins can create users.
+                {can_write.then(|| view! {
+                    <div>
+                        <a href="/admin/users/new" class="button button--wide">{t.users_create_section}</a>
+                    </div>
+                })}
+            </Shell>
+        }
+    })
+}
+
+// ---------- users/new ----------
+
+pub fn render_users_new(
+    flash: Option<Flash>,
+    csrf_token: String,
+    dev_mode: bool,
+    lang: sui_id_i18n::Locale,
+) -> String {
+    render(move || {
+        let t = lang.strings();
+        view! {
+            <Shell title=t.users_create_section.to_string() show_nav=true current=Some("users".to_string()) dev_mode=dev_mode lang=lang csrf_token=csrf_token.clone()>
+                <header class="page-header">
+                    <div>
+                        <h1 class="page-header__title">{t.users_create_section}</h1>
+                    </div>
+                    <div class="page-header__actions">
+                        <a href="/admin/users" class="button secondary">{t.button_cancel}</a>
+                    </div>
+                </header>
+                {flash_banner(flash)}
+                <div class="card">
+                    <form method="post" action="/admin/users" class="stack">
+                        <input type="hidden" name="_csrf" value=csrf_token />
+                        <div class="field">
+                            <label for="u-name" class="field__label">{t.users_label_username}</label>
+                            <input id="u-name" name="username" type="text"
+                                   required=true autocomplete="off" />
+                        </div>
+                        <div class="field">
+                            <label for="u-disp" class="field__label">{t.users_label_display_name}</label>
+                            <input id="u-disp" name="display_name" type="text" autocomplete="off" />
+                        </div>
+                        <div class="field">
+                            <label for="u-email" class="field__label">{t.users_label_email}</label>
+                            <input id="u-email" name="email" type="email" autocomplete="off" />
+                        </div>
+                        <div class="field">
+                            <label for="u-pw" class="field__label">{t.users_label_password}</label>
+                            <input id="u-pw" name="password" type="password"
+                                   required=true minlength="12" autocomplete="new-password" />
+                        </div>
+                        <label class="row gap-2">
+                            <input name="is_admin" type="checkbox" value="true" />
+                            <span>{t.users_is_admin_label}</span>
+                        </label>
+                        <div class="form-actions">
+                            <button type="submit">{t.users_create_button}</button>
+                            <a href="/admin/users" class="button secondary">{t.button_cancel}</a>
+                        </div>
+                    </form>
+                </div>
             </Shell>
         }
     })

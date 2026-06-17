@@ -178,6 +178,9 @@ pub struct Strings {
     pub login_password_label: &'static str,
     pub login_submit: &'static str,
     pub login_passkey_button: &'static str,
+    /// Shown when a non-admin user attempts to log in directly to the
+    /// admin panel (not via the OIDC flow). The session is not established.
+    pub login_no_admin_access: &'static str,
     pub login_passkey_primary: &'static str,
     pub login_forgot_password_link: &'static str,
     pub login_invalid_credentials: &'static str,

@@ -5,6 +5,53 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.63.1] — 2026-06-04
+
+**Three fixes across admin pages.**
+
+### Bug fix — non-admin stuck after logging in to admin panel
+
+`login_post` now checks the user's role before handing out the session
+cookie when the redirect target is not an OIDC or `/me/` path.
+Non-admin users see a localized error: "This account does not have
+access to the admin panel." The OIDC flow is unaffected.
+
+- New i18n key `login_no_admin_access` in all three locales (635 keys).
+- `crates/sui-id/src/handlers/admin/auth.rs`
+
+### Bug fix — page header buttons on users/clients didn't work
+
+The header buttons used `<a href="#add-user">` / `<a href="#register-client">`,
+which scrolled to the `<details id="…">` element — but `<details>` is
+closed by default, so the form stayed hidden. The `<details>` wrapper
+is removed; the create-form sections are always visible below the table.
+Clicking the header button now scrolls directly to the open form.
+
+### Improvement — icon-only header buttons; list-primary layout
+
+**Users, Apps, Signing keys:**
+
+- Page header action buttons are now icon-only circles (`+` for create,
+  `↻` for key rotation) with `aria-label` for accessibility. A new
+  `.button--icon` CSS modifier (32 px circle, `border-radius: 50%`) is
+  added to `chrome.rs`.
+- The list table renders first on all three pages.
+- The create / rotate section renders below the table with its anchor
+  id (`#add-user`, `#register-client`, `#rotate-key`).
+
+Files changed:
+- `crates/sui-id-web/src/pages/users.rs`
+- `crates/sui-id-web/src/pages/clients.rs`
+- `crates/sui-id-web/src/pages/signing_keys.rs`
+- `crates/sui-id-web/src/components/chrome.rs`
+
+### CI
+
+- `cargo check -p sui-id-web -p sui-id`: clean.
+- CI invariants unchanged.
+
+---
+
 ## [0.63.0] — 2026-06-04
 
 **RFC 077 — Headless setup (`sui-id setup` subcommand).**
