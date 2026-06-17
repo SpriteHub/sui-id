@@ -5,6 +5,45 @@ All notable changes to sui-id will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.62.2] — 2026-05-24
+
+**Three UX fixes from mockup-integration soak.**
+
+### Dashboard — Sign-in activity tab scroll to top
+
+Clicking a range tab (7d / 30d / 90d) in the Sign-in activity panel
+caused a full-page navigation that snapped the browser scroll position to
+the top. The user had to scroll back down to see the updated sparkline.
+
+Fix: tab hrefs now include a `#sparkline` fragment
+(`/admin?range=7d#sparkline`) and the enclosing `<section>` has
+`id="sparkline"`. The browser jumps to the panel automatically after load.
+
+### Settings — Chinese option removed from server default language dropdown
+
+`Locale::ALL` included `Locale::Zh`, causing "中文" to appear as a
+selectable server default. The zh translation file is complete and
+compiled in; the variant is retained for future use but removed from
+`ALL` until zh is officially a supported server-default locale.
+
+### Settings — Server default language: locale resolution + save flash
+
+All seven settings page handlers hardcoded `Locale::Ja` for the UI
+language. They now call `resolve_admin_locale` (same as every other admin
+handler) so the pages respect the signed-in admin's personal language.
+
+`basic_lang_post` previously redirected silently after save. It now
+re-renders with a success flash so the admin sees the new selection
+confirmed in the dropdown.
+
+### Tests and CI
+
+- `cargo check -p sui-id-i18n -p sui-id-web -p sui-id`: clean.
+- CI invariants unchanged: `text-leaks`=0, `inline-style-bound`=0,
+  `css-tokens`=148, `semantic-parity`=36.
+
+---
+
 ## [0.62.1] — 2026-05-23
 
 **Bug fix: OIDC redirect after login broken.**

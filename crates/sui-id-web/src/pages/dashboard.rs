@@ -215,7 +215,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, csrf_token: S
             .range_options
             .iter()
             .map(|(q, label)| {
-                let href = format!("/admin?range={q}");
+                let href = format!("/admin?range={q}#sparkline");
                 let aria = if *q == active_range { Some("page") } else { None };
                 view! {
                     <a class="app-nav__link" href=href aria-current=aria>{label.clone()}</a>
@@ -370,7 +370,7 @@ pub fn render_dashboard(data: DashboardData, flash: Option<Flash>, csrf_token: S
                     </div>
                 </section>
 
-                <section>
+                <section id="sparkline">
                     <div class="sparkline-header">
                         // RFC 063: dashboard sparkline is reference, not action.
                         // h3 (was h2) + dim opacity nudges it into the

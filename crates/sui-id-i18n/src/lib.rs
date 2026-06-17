@@ -76,7 +76,12 @@ pub enum Locale {
 
 impl Locale {
     /// All locales sui-id recognises, in display order.
-    pub const ALL: &'static [Locale] = &[Locale::Ja, Locale::En, Locale::Zh];
+    /// All locales available as selectable options in the UI.
+    /// Add a new variant here when its translation file is complete
+    /// and reviewed. `Zh` exists as a variant (and `zh.rs` is
+    /// compiled in) but is excluded here until the zh locale is
+    /// officially supported as a server-default option.
+    pub const ALL: &'static [Locale] = &[Locale::Ja, Locale::En];
 
     /// BCP-47 language tag. Used in HTML `lang=` attributes,
     /// cookies, and the user preference column. Stable.

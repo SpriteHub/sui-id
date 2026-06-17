@@ -38,7 +38,7 @@ pub async fn index_redirect() -> Redirect {
 
 pub async fn basic_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -56,7 +56,8 @@ pub async fn basic_get(
         default_lang: server_settings.default_lang,
         csrf_token: token.clone(),
     };
-    let html = sui_id_web::render_settings_basic(data, None, sui_id_i18n::Locale::Ja);
+        let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+    let html = sui_id_web::render_settings_basic(data, None, lang);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -75,28 +76,49 @@ pub struct BasicLangForm {
 
 pub async fn basic_lang_post(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdmin(admin_id): CurrentAdmin,
     jar: CookieJar,
     axum::Form(form): axum::Form<BasicLangForm>,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
     crate::handlers::enforce_csrf(&jar, Some(&form.csrf))?;
-    if sui_id_i18n::Locale::parse(&form.default_lang).is_none() {
-        return Err(HttpError::html(CoreError::BadRequest(
-            "unknown language tag".into(),
-        )));
-    }
+    let parsed = sui_id_i18n::Locale::parse(&form.default_lang)
+        .ok_or_else(|| HttpError::html(CoreError::BadRequest("unknown language tag".into())))?;
     let now = app.clock.now();
     sui_id_store::repos::server_settings::update_default_lang(&app.db, &form.default_lang, now).await
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
-    Ok(axum::response::Redirect::to("/admin/settings/basic").into_response())
+
+    // Re-render with a success flash so the admin sees the change took effect.
+    let t = parsed.strings();
+    let flash = Some(sui_id_web::Flash {
+        kind: sui_id_web::FlashKind::Info,
+        text: t.me_language_saved_flash.into(),
+    });
+    let cfg = app.config.as_ref();
+    let server_settings = sui_id_store::repos::server_settings::get(&app.db).await
+        .map_err(|e| HttpError::html(CoreError::from(e)))?;
+    let token = csrf::ensure_token(&jar);
+    let data = sui_id_web::SettingsBasicData {
+        issuer: cfg.server.issuer.clone(),
+        listen_addr: cfg.server.listen_addr.clone(),
+        cookie_secure: cfg.server.cookie_secure,
+        trusted_proxies: cfg.server.trusted_proxies.clone(),
+        discovery_url: format!("{}/.well-known/openid-configuration", cfg.server.issuer),
+        jwks_url: format!("{}/.well-known/jwks.json", cfg.server.issuer),
+        default_lang: server_settings.default_lang,
+        csrf_token: token.clone(),
+    };
+    let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+    let html = sui_id_web::render_settings_basic(data, flash, lang);
+    let resp = Html(html).into_response();
+    Ok(with_csrf_cookie(resp, &app, &token))
 }
 
 // ---------- セキュリティ ----------
 
 pub async fn security_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -116,7 +138,8 @@ pub async fn security_get(
         max_concurrent_sessions: server_settings.max_concurrent_sessions,
         csrf_token: token.clone(),
     };
-    let html = sui_id_web::render_settings_security(data, None, sui_id_i18n::Locale::Ja);
+        let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+    let html = sui_id_web::render_settings_security(data, None, lang);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -134,7 +157,7 @@ pub struct IdleTimeoutForm {
 
 pub async fn idle_timeout_post(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdmin(admin_id): CurrentAdmin,
     jar: CookieJar,
     axum::Form(form): axum::Form<IdleTimeoutForm>,
 ) -> Result<Response, HttpError> {
@@ -165,7 +188,7 @@ pub struct MaxSessionsForm {
 
 pub async fn max_sessions_post(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdmin(admin_id): CurrentAdmin,
     jar: CookieJar,
     axum::Form(form): axum::Form<MaxSessionsForm>,
 ) -> Result<Response, HttpError> {
@@ -186,7 +209,7 @@ pub async fn max_sessions_post(
 
 pub async fn authentication_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -205,7 +228,8 @@ pub async fn authentication_get(
         refresh_theft_detection: true,
     };
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_authentication(data, None, token.clone(), sui_id_i18n::Locale::Ja);
+        let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+    let html = sui_id_web::render_settings_authentication(data, None, token.clone(), lang);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -214,7 +238,7 @@ pub async fn authentication_get(
 
 pub async fn logs_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -254,7 +278,8 @@ pub async fn logs_get(
             .map_err(|e| HttpError::html(CoreError::from(e)))?,
     };
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_logs(data, None, token.clone(), sui_id_i18n::Locale::Ja);
+        let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+    let html = sui_id_web::render_settings_logs(data, None, token.clone(), lang);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -263,7 +288,7 @@ pub async fn logs_get(
 
 pub async fn other_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -284,7 +309,8 @@ pub async fn other_get(
         clock_now: Utc::now(),
     };
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_other(data, None, token.clone(), sui_id_i18n::Locale::Ja);
+        let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+    let html = sui_id_web::render_settings_other(data, None, token.clone(), lang);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -315,7 +341,7 @@ pub struct EmailSettingsForm {
 
 pub async fn email_get(
     state_ext: AppStateExt,
-    CurrentAdminOrAuditor(_admin_id, _role): CurrentAdminOrAuditor,
+    CurrentAdminOrAuditor(admin_id, _role): CurrentAdminOrAuditor,
     jar: CookieJar,
 ) -> Result<Response, HttpError> {
     let State(app) = state_ext;
@@ -323,7 +349,8 @@ pub async fn email_get(
         .map_err(|e| HttpError::html(CoreError::from(e)))?;
     let data = build_email_data(cfg_row.as_ref());
     let token = csrf::ensure_token(&jar);
-    let html = sui_id_web::render_settings_email(data, token.clone(), None, sui_id_i18n::Locale::Ja);
+        let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+    let html = sui_id_web::render_settings_email(data, token.clone(), None, lang);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
@@ -423,7 +450,7 @@ pub struct EmailTestForm {
 
 pub async fn email_test(
     state_ext: AppStateExt,
-    CurrentAdmin(_admin_id): CurrentAdmin,
+    CurrentAdmin(admin_id): CurrentAdmin,
     jar: CookieJar,
     axum::Form(form): axum::Form<EmailTestForm>,
 ) -> Result<Response, HttpError> {
@@ -458,7 +485,8 @@ pub async fn email_test(
             text: format!("SMTP 接続テストに失敗しました: {e}"),
         }),
     };
-    let html = sui_id_web::render_settings_email(data, token.clone(), flash, sui_id_i18n::Locale::Ja);
+        let lang = crate::handlers::resolve_admin_locale(&app, admin_id).await;
+    let html = sui_id_web::render_settings_email(data, token.clone(), flash, lang);
     let resp = Html(html).into_response();
     Ok(with_csrf_cookie(resp, &app, &token))
 }
