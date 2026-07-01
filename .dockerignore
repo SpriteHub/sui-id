@@ -1,0 +1,10 @@
+# flyctl launch added from .gitignore
+target
+**/**/*.rs.bk
+**/*.sqlite
+**/*.sqlite-journal
+**/*.sqlite-wal
+**/*.sqlite-shm
+**/*.key
+**/.DS_Store
+fly.toml
