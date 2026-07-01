@@ -5,5 +5,4 @@
 *.sqlite-wal
 *.sqlite-shm
 *.key
-sui-id.toml
 .DS_Store

@@ -1,0 +1,32 @@
+# sui-id configuration for fly.io deployment
+# TLS is terminated by the Fly proxy; sui-id listens on plain HTTP :8801.
+
+[server]
+# Listen on all interfaces inside the container.
+# Fly proxy connects to this port directly (no same-host reverse proxy).
+listen_addr = "0.0.0.0:8801"
+
+# Public URL — appears in OIDC `iss` claim and the Discovery document.
+issuer = "https://oidc.spritehub.xyz"
+
+# Session cookie: mark Secure because the public endpoint is HTTPS.
+cookie_secure = true
+
+# Rate-limit uses the socket peer (Fly proxy IP) when trusted_proxies is
+# empty. Fly edge already provides DDoS protection, so this is acceptable
+# for a scale-to-zero deployment.
+trusted_proxies = []
+
+[storage]
+# SQLite database and master key live on the Fly Volume mounted at /data.
+db_path = "/data/sui-id.sqlite"
+key_file = "/data/sui-id.key"
+
+[tokens]
+access_lifetime_secs = 900
+id_token_lifetime_secs = 900
+refresh_lifetime_secs = 1209600   # 14 days
+
+[log]
+format = "json"
+filter = "info,sui_id=info,sui_id_core=info,sui_id_store=info"
